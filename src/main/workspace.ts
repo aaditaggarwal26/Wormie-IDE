@@ -6,9 +6,11 @@ import {
   IPC_CHANNELS,
   type FileTreeNode,
   type OpenFile,
+  type SearchResult,
+  type WorkspaceMutation,
   type WorkspaceSnapshot
 } from '../shared/contracts'
-import { isPathInside } from './pathSafety'
+import { isPathInside, validateEntryName } from './pathSafety'
 
 type Preferences = {
   recentWorkspace?: string
@@ -31,6 +33,7 @@ const ignoredDirectories = new Set([
 
 const maxFileBytes = 2 * 1024 * 1024
 const maxTreeEntries = 5000
+const maxSearchResults = 100
 
 function languageFor(filePath: string): string {
   const extension = path.extname(filePath).toLowerCase()
@@ -102,8 +105,67 @@ async function createSnapshot(rootPath: string): Promise<WorkspaceSnapshot> {
   }
 }
 
-export function registerWorkspaceHandlers(store: Store<Preferences>): void {
+async function searchDirectory(
+  rootPath: string,
+  directoryPath: string,
+  query: string,
+  results: SearchResult[]
+): Promise<void> {
+  if (results.length >= maxSearchResults) return
+
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true })
+  for (const entry of entries) {
+    if (results.length >= maxSearchResults) return
+    if (entry.isSymbolicLink()) continue
+    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
+
+    const entryPath = path.join(directoryPath, entry.name)
+    if (entry.isDirectory()) {
+      await searchDirectory(rootPath, entryPath, query, results)
+      continue
+    }
+    if (!entry.isFile()) continue
+
+    const relativePath = path.relative(rootPath, entryPath)
+    if (entry.name.toLowerCase().includes(query)) {
+      results.push({ path: entryPath, relativePath, line: 1, column: 1, preview: relativePath })
+      if (results.length >= maxSearchResults) return
+    }
+
+    try {
+      const stats = await fs.stat(entryPath)
+      if (stats.size > maxFileBytes) continue
+      const content = await fs.readFile(entryPath, 'utf8')
+      if (content.includes('\0')) continue
+
+      const lines = content.split(/\r?\n/)
+      let matchesInFile = 0
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const column = lines[lineIndex].toLowerCase().indexOf(query)
+        if (column === -1) continue
+        results.push({
+          path: entryPath,
+          relativePath,
+          line: lineIndex + 1,
+          column: column + 1,
+          preview: lines[lineIndex].trim().slice(0, 180)
+        })
+        matchesInFile += 1
+        if (matchesInFile === 3 || results.length >= maxSearchResults) break
+      }
+    } catch {
+      continue
+    }
+  }
+}
+
+export function registerWorkspaceHandlers(store: Store<Preferences>): () => string | null {
   let activeWorkspaceRoot: string | null = null
+
+  function requireWorkspaceRoot(): string {
+    if (!activeWorkspaceRoot) throw new Error('Open a workspace first.')
+    return activeWorkspaceRoot
+  }
 
   async function setWorkspace(rootPath: string): Promise<WorkspaceSnapshot> {
     const resolvedRoot = await fs.realpath(rootPath)
@@ -116,10 +178,10 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): void {
   }
 
   async function resolveWorkspaceFile(filePath: string): Promise<string> {
-    if (!activeWorkspaceRoot) throw new Error('Open a workspace before accessing files.')
+    const workspaceRoot = requireWorkspaceRoot()
 
     const resolvedPath = await fs.realpath(filePath)
-    if (!isPathInside(activeWorkspaceRoot, resolvedPath)) {
+    if (!isPathInside(workspaceRoot, resolvedPath)) {
       throw new Error('The requested file is outside the active workspace.')
     }
 
@@ -144,6 +206,8 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): void {
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.refreshWorkspace, () => createSnapshot(requireWorkspaceRoot()))
+
   ipcMain.handle(IPC_CHANNELS.readFile, async (_event, filePath: string): Promise<OpenFile> => {
     const resolvedPath = await resolveWorkspaceFile(filePath)
     const stats = await fs.stat(resolvedPath)
@@ -167,4 +231,93 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): void {
     if (!stats.isFile()) throw new Error('The requested path is not a file.')
     await fs.writeFile(resolvedPath, content, 'utf8')
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.createEntry,
+    async (_event, parentPath: string, name: string, type: 'file' | 'directory'): Promise<WorkspaceMutation> => {
+      const workspaceRoot = requireWorkspaceRoot()
+      if (type !== 'file' && type !== 'directory') throw new Error('Unsupported workspace entry type.')
+      const resolvedParent = await fs.realpath(parentPath)
+      const parentStats = await fs.stat(resolvedParent)
+      if (!parentStats.isDirectory() || !isPathInside(workspaceRoot, resolvedParent)) {
+        throw new Error('New entries must be created inside a workspace folder.')
+      }
+
+      const entryPath = path.resolve(resolvedParent, validateEntryName(name))
+      if (!isPathInside(workspaceRoot, entryPath)) throw new Error('The requested path is outside the workspace.')
+
+      if (type === 'directory') await fs.mkdir(entryPath)
+      else await fs.writeFile(entryPath, '', { encoding: 'utf8', flag: 'wx' })
+
+      return { workspace: await createSnapshot(workspaceRoot), path: entryPath }
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.renameEntry,
+    async (_event, entryPath: string, name: string): Promise<WorkspaceMutation> => {
+      const workspaceRoot = requireWorkspaceRoot()
+      const resolvedPath = await resolveWorkspaceFile(entryPath)
+      if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be renamed here.')
+
+      const nextPath = path.join(path.dirname(resolvedPath), validateEntryName(name))
+      if (!isPathInside(workspaceRoot, nextPath)) throw new Error('The requested path is outside the workspace.')
+      if (nextPath !== resolvedPath) {
+        try {
+          await fs.access(nextPath)
+          throw new Error('A file or folder with that name already exists.')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+      }
+      await fs.rename(resolvedPath, nextPath)
+
+      return {
+        workspace: await createSnapshot(workspaceRoot),
+        path: nextPath,
+        previousPath: resolvedPath
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.deleteEntry,
+    async (_event, entryPath: string): Promise<WorkspaceMutation | null> => {
+      const workspaceRoot = requireWorkspaceRoot()
+      const resolvedPath = await resolveWorkspaceFile(entryPath)
+      if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be deleted.')
+
+      const confirmation = await dialog.showMessageBox({
+        type: 'warning',
+        title: 'Delete from workspace',
+        message: `Delete "${path.basename(resolvedPath)}"?`,
+        detail: 'This action cannot be undone.',
+        buttons: ['Delete', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true
+      })
+      if (confirmation.response !== 0) return null
+
+      const stats = await fs.stat(resolvedPath)
+      if (stats.isDirectory()) await fs.rm(resolvedPath, { recursive: true })
+      else await fs.unlink(resolvedPath)
+
+      return { workspace: await createSnapshot(workspaceRoot), path: resolvedPath }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.searchWorkspace, async (_event, rawQuery: string): Promise<SearchResult[]> => {
+    const workspaceRoot = requireWorkspaceRoot()
+    if (typeof rawQuery !== 'string') throw new Error('Enter a valid search query.')
+    const query = rawQuery.trim().toLowerCase()
+    if (!query) return []
+    if (query.length > 200) throw new Error('Search queries are limited to 200 characters.')
+
+    const results: SearchResult[] = []
+    await searchDirectory(workspaceRoot, workspaceRoot, query, results)
+    return results
+  })
+
+  return () => activeWorkspaceRoot
 }

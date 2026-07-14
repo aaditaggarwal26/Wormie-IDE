@@ -1,10 +1,35 @@
-import Editor, { type BeforeMount } from '@monaco-editor/react'
+import { useEffect, useRef } from 'react'
+import Editor, { loader, type BeforeMount } from '@monaco-editor/react'
 import { motion } from 'framer-motion'
-import { BookOpenCheck, FolderOpen, Save, X } from 'lucide-react'
+import { BookOpenCheck, FileText, FolderOpen, Save, X } from 'lucide-react'
+import * as monaco from 'monaco-editor'
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
+import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
+import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
+import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { useWorkbench } from '@/store/workbench'
 
+const monacoScope = self as typeof self & { MonacoEnvironment: monaco.Environment }
+
+monacoScope.MonacoEnvironment = {
+  getWorker(_moduleId: string, label: string) {
+    if (label === 'json') return new jsonWorker()
+    if (label === 'css' || label === 'scss' || label === 'less') return new cssWorker()
+    if (label === 'html' || label === 'handlebars' || label === 'razor') return new htmlWorker()
+    if (label === 'typescript' || label === 'javascript') return new tsWorker()
+    return new editorWorker()
+  }
+}
+
+loader.config({ monaco })
+
 type EditorPaneProps = {
+  hasWorkspace: boolean
+  openingFile: boolean
   saving: boolean
+  suggestedFileName: string | null
+  onOpenSuggestedFile: () => void
   onOpenWorkspace: () => void
   onSave: () => void
 }
@@ -34,13 +59,35 @@ const configureEditor: BeforeMount = (monaco) => {
   })
 }
 
-export function EditorPane({ saving, onOpenWorkspace, onSave }: EditorPaneProps): React.JSX.Element {
+export function EditorPane({
+  hasWorkspace,
+  openingFile,
+  saving,
+  suggestedFileName,
+  onOpenSuggestedFile,
+  onOpenWorkspace,
+  onSave
+}: EditorPaneProps): React.JSX.Element {
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
   const setActivePath = useWorkbench((state) => state.setActivePath)
   const closeDocument = useWorkbench((state) => state.closeDocument)
   const updateDocument = useWorkbench((state) => state.updateDocument)
+  const revealLine = useWorkbench((state) => state.revealLine)
+  const consumeRevealLine = useWorkbench((state) => state.consumeRevealLine)
+  const setCursorPosition = useWorkbench((state) => state.setCursorPosition)
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const activeDocument = documents.find((document) => document.path === activePath)
+
+  useEffect(() => {
+    if (!revealLine || !editorRef.current) return
+    requestAnimationFrame(() => {
+      editorRef.current?.setPosition({ lineNumber: revealLine, column: 1 })
+      editorRef.current?.revealLineInCenter(revealLine)
+      editorRef.current?.focus()
+      consumeRevealLine()
+    })
+  }, [activePath, consumeRevealLine, revealLine])
 
   if (!activeDocument) {
     return (
@@ -52,11 +99,29 @@ export function EditorPane({ saving, onOpenWorkspace, onSave }: EditorPaneProps)
           transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         >
           <div className="welcome-kicker"><BookOpenCheck size={14} /> Learning workbench</div>
-          <h1>Understand the change.<br /><em>Then</em> write the code.</h1>
-          <p>Open a project to start reading and editing. The learning gate will sit between intent and AI-generated changes.</p>
-          <button className="welcome-action" onClick={onOpenWorkspace} type="button">
-            <FolderOpen size={17} /> Open a project
-          </button>
+          <h1>
+            {hasWorkspace ? <>Pick a file.<br /><em>Start</em> by reading.</> : <>Understand the change.<br /><em>Then</em> write the code.</>}
+          </h1>
+          <p>
+            {hasWorkspace
+              ? 'Choose a file from Explorer to open it in the editor. The learning gate will sit between intent and AI-generated changes.'
+              : 'Open a project to start reading and editing. The learning gate will sit between intent and AI-generated changes.'}
+          </p>
+          {hasWorkspace ? (
+            <button
+              className="welcome-action"
+              disabled={!suggestedFileName || openingFile}
+              onClick={onOpenSuggestedFile}
+              type="button"
+            >
+              <FileText size={17} />
+              {openingFile ? 'Opening...' : suggestedFileName ? `Open ${suggestedFileName}` : 'No text files found'}
+            </button>
+          ) : (
+            <button className="welcome-action" onClick={onOpenWorkspace} type="button">
+              <FolderOpen size={17} /> Open a project
+            </button>
+          )}
           <div className="welcome-sequence" aria-label="Core workflow">
             <span><b>01</b> Learn</span>
             <span><b>02</b> Prove</span>
@@ -114,6 +179,12 @@ export function EditorPane({ saving, onOpenWorkspace, onSave }: EditorPaneProps)
           beforeMount={configureEditor}
           language={activeDocument.language}
           onChange={(value) => updateDocument(activeDocument.path, value ?? '')}
+          onMount={(mountedEditor) => {
+            editorRef.current = mountedEditor
+            mountedEditor.onDidChangeCursorPosition(({ position }) => {
+              setCursorPosition(position.lineNumber, position.column)
+            })
+          }}
           options={{
             automaticLayout: true,
             bracketPairColorization: { enabled: true },
@@ -141,4 +212,3 @@ export function EditorPane({ saving, onOpenWorkspace, onSave }: EditorPaneProps)
 function FileCode2Icon(): React.JSX.Element {
   return <span className="tab-file-icon">&lt;/&gt;</span>
 }
-

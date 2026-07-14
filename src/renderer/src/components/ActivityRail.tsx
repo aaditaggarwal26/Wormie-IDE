@@ -1,8 +1,10 @@
-import { BookOpenText, FolderTree, Settings2 } from 'lucide-react'
+import { BookOpenText, FolderTree, GitBranch, Search, Settings2 } from 'lucide-react'
 import { useWorkbench } from '@/store/workbench'
 
 const activities = [
   { id: 'explorer' as const, label: 'Explorer', icon: FolderTree },
+  { id: 'search' as const, label: 'Search', icon: Search },
+  { id: 'sourceControl' as const, label: 'Source Control', icon: GitBranch },
   { id: 'learning' as const, label: 'Knowledge', icon: BookOpenText }
 ]
 
@@ -47,4 +49,3 @@ export function ActivityRail(): React.JSX.Element {
     </nav>
   )
 }
-

@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import Store from 'electron-store'
+import { registerGitHandlers } from './git'
+import { registerTerminalHandlers } from './terminal'
 import { registerWorkspaceHandlers } from './workspace'
 
 type Preferences = {
@@ -56,7 +58,9 @@ function createWindow(): void {
   }
 }
 
-registerWorkspaceHandlers(store)
+const getWorkspaceRoot = registerWorkspaceHandlers(store)
+registerGitHandlers(getWorkspaceRoot)
+registerTerminalHandlers(getWorkspaceRoot)
 
 void app.whenReady().then(() => {
   createWindow()

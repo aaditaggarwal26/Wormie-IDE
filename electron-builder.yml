@@ -17,4 +17,3 @@ linux:
     - AppImage
     - deb
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
-

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { isPathInside } from './pathSafety'
+import { isPathInside, validateEntryName } from './pathSafety'
 
 describe('isPathInside', () => {
   const root = path.resolve('workspace')
@@ -13,5 +13,17 @@ describe('isPathInside', () => {
   it('rejects paths outside the workspace', () => {
     expect(isPathInside(root, path.resolve('workspace-other', 'secret.txt'))).toBe(false)
     expect(isPathInside(root, path.resolve('secret.txt'))).toBe(false)
+  })
+})
+
+describe('validateEntryName', () => {
+  it('accepts a portable file name', () => {
+    expect(validateEntryName('  feature.ts  ')).toBe('feature.ts')
+  })
+
+  it('rejects traversal and path separators', () => {
+    expect(() => validateEntryName('..')).toThrow()
+    expect(() => validateEntryName('../secret')).toThrow()
+    expect(() => validateEntryName('folder\\secret')).toThrow()
   })
 })

@@ -1,16 +1,13 @@
 import path from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
 import Store from 'electron-store'
+import { registerAgentHandlers } from './agent'
 import { registerGitHandlers } from './git'
+import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
 import { registerWorkspaceHandlers } from './workspace'
 
-type Preferences = {
-  recentWorkspace?: string
-  windowBounds?: { width: number; height: number }
-}
-
-const store = new Store<Preferences>({ name: 'preferences' })
+const store = new Store<AppPreferences>({ name: 'preferences' })
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds')
@@ -61,6 +58,7 @@ function createWindow(): void {
 const getWorkspaceRoot = registerWorkspaceHandlers(store)
 registerGitHandlers(getWorkspaceRoot)
 registerTerminalHandlers(getWorkspaceRoot)
+registerAgentHandlers(store, getWorkspaceRoot)
 
 void app.whenReady().then(() => {
   createWindow()

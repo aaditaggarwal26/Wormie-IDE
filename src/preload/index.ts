@@ -25,7 +25,17 @@ const desktopApi: DesktopApi = {
     const listener = (_event: IpcRendererEvent, exit: { code: number | null }) => callback(exit)
     ipcRenderer.on(IPC_CHANNELS.terminalExit, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalExit, listener)
-  }
+  },
+  getAgentConfig: () => ipcRenderer.invoke(IPC_CHANNELS.agentGetConfig),
+  saveAgentConfig: (config) => ipcRenderer.invoke(IPC_CHANNELS.agentSaveConfig, config),
+  setAgentPassingScore: (score) => ipcRenderer.invoke(IPC_CHANNELS.agentSetPassingScore, score),
+  getCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentGetCodexAccount),
+  connectCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentConnectCodexAccount),
+  startLearning: (request) => ipcRenderer.invoke(IPC_CHANNELS.agentStartLearning, request),
+  submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),
+  generateProposal: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.agentGenerateProposal, sessionId),
+  applyProposal: (proposalId) => ipcRenderer.invoke(IPC_CHANNELS.agentApplyProposal, proposalId),
+  cancelAgent: () => ipcRenderer.send(IPC_CHANNELS.agentCancel)
 }
 
 contextBridge.exposeInMainWorld('desktop', desktopApi)

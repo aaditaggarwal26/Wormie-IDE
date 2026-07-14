@@ -11,11 +11,7 @@ import {
   type WorkspaceSnapshot
 } from '../shared/contracts'
 import { isPathInside, validateEntryName } from './pathSafety'
-
-type Preferences = {
-  recentWorkspace?: string
-  windowBounds?: { width: number; height: number }
-}
+import type { AppPreferences } from './preferences'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -93,7 +89,7 @@ async function readTree(directoryPath: string, count: { value: number }): Promis
   return nodes
 }
 
-async function createSnapshot(rootPath: string): Promise<WorkspaceSnapshot> {
+export async function createWorkspaceSnapshot(rootPath: string): Promise<WorkspaceSnapshot> {
   const count = { value: 0 }
   const entries = await readTree(rootPath, count)
 
@@ -159,7 +155,7 @@ async function searchDirectory(
   }
 }
 
-export function registerWorkspaceHandlers(store: Store<Preferences>): () => string | null {
+export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => string | null {
   let activeWorkspaceRoot: string | null = null
 
   function requireWorkspaceRoot(): string {
@@ -174,7 +170,7 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): () => stri
 
     activeWorkspaceRoot = resolvedRoot
     store.set('recentWorkspace', resolvedRoot)
-    return createSnapshot(resolvedRoot)
+    return createWorkspaceSnapshot(resolvedRoot)
   }
 
   async function resolveWorkspaceFile(filePath: string): Promise<string> {
@@ -206,7 +202,7 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): () => stri
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.refreshWorkspace, () => createSnapshot(requireWorkspaceRoot()))
+  ipcMain.handle(IPC_CHANNELS.refreshWorkspace, () => createWorkspaceSnapshot(requireWorkspaceRoot()))
 
   ipcMain.handle(IPC_CHANNELS.readFile, async (_event, filePath: string): Promise<OpenFile> => {
     const resolvedPath = await resolveWorkspaceFile(filePath)
@@ -249,7 +245,7 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): () => stri
       if (type === 'directory') await fs.mkdir(entryPath)
       else await fs.writeFile(entryPath, '', { encoding: 'utf8', flag: 'wx' })
 
-      return { workspace: await createSnapshot(workspaceRoot), path: entryPath }
+      return { workspace: await createWorkspaceSnapshot(workspaceRoot), path: entryPath }
     }
   )
 
@@ -273,7 +269,7 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): () => stri
       await fs.rename(resolvedPath, nextPath)
 
       return {
-        workspace: await createSnapshot(workspaceRoot),
+        workspace: await createWorkspaceSnapshot(workspaceRoot),
         path: nextPath,
         previousPath: resolvedPath
       }
@@ -303,7 +299,7 @@ export function registerWorkspaceHandlers(store: Store<Preferences>): () => stri
       if (stats.isDirectory()) await fs.rm(resolvedPath, { recursive: true })
       else await fs.unlink(resolvedPath)
 
-      return { workspace: await createSnapshot(workspaceRoot), path: resolvedPath }
+      return { workspace: await createWorkspaceSnapshot(workspaceRoot), path: resolvedPath }
     }
   )
 

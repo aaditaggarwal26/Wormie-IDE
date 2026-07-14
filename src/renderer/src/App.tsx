@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BookOpenText, Command, FolderOpen, Gauge, Search, Settings2 } from 'lucide-react'
@@ -10,7 +10,7 @@ import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
 import { useWorkbench } from '@/store/workbench'
-import type { FileTreeNode } from '@shared/contracts'
+import type { AgentConfig, AgentProvider, CodexAccountStatus, FileTreeNode } from '@shared/contracts'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected error occurred.'
@@ -308,6 +308,82 @@ function LearningSidebar(): React.JSX.Element {
 function SettingsSidebar(): React.JSX.Element {
   const passingScore = useWorkbench((state) => state.passingScore)
   const setPassingScore = useWorkbench((state) => state.setPassingScore)
+  const addOutput = useWorkbench((state) => state.addOutput)
+  const [provider, setProvider] = useState<AgentProvider>('openai-compatible')
+  const [model, setModel] = useState('gpt-5.4-mini')
+  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
+  const [apiKey, setApiKey] = useState('')
+  const [savedConfig, setSavedConfig] = useState<AgentConfig | null>(null)
+  const [codexAccount, setCodexAccount] = useState<CodexAccountStatus | null>(null)
+
+  const loadCodexAccount = useCallback(() => window.desktop.getCodexAccount().then((status) => {
+    setCodexAccount(status)
+    return status
+  }), [])
+
+  useEffect(() => {
+    void window.desktop.getAgentConfig()
+      .then((config) => {
+        setSavedConfig(config)
+        setProvider(config.provider)
+        setModel(config.model)
+        setBaseUrl(config.baseUrl)
+        setPassingScore(config.passingScore)
+        if (config.provider === 'codex-account') {
+          void loadCodexAccount().catch((error) => addOutput(`Could not check Codex account: ${errorMessage(error)}`))
+        }
+      })
+      .catch((error) => addOutput(`Could not load AI settings: ${errorMessage(error)}`))
+  }, [addOutput, loadCodexAccount, setPassingScore])
+
+  const codexStatusMutation = useMutation({
+    mutationFn: loadCodexAccount,
+    onError: (error) => addOutput(`Could not check Codex account: ${errorMessage(error)}`)
+  })
+
+  const connectCodexMutation = useMutation({
+    mutationFn: window.desktop.connectCodexAccount,
+    onSuccess: (status) => {
+      setCodexAccount(status)
+      addOutput(`Connected Codex account${status.email ? ` for ${status.email}` : ''}.`)
+    },
+    onError: (error) => addOutput(`Could not connect Codex account: ${errorMessage(error)}`)
+  })
+
+  const saveAgentMutation = useMutation({
+    mutationFn: () => window.desktop.saveAgentConfig({ provider, model, baseUrl, apiKey: apiKey || undefined }),
+    onSuccess: (config) => {
+      setSavedConfig(config)
+      setApiKey('')
+      addOutput('Saved AI provider settings.')
+    },
+    onError: (error) => addOutput(`Could not save AI settings: ${errorMessage(error)}`)
+  })
+
+  const clearKeyMutation = useMutation({
+    mutationFn: () => window.desktop.saveAgentConfig({ provider, model, baseUrl, clearApiKey: true }),
+    onSuccess: (config) => {
+      setSavedConfig(config)
+      setApiKey('')
+      addOutput('Removed the stored AI API key.')
+    },
+    onError: (error) => addOutput(`Could not remove AI key: ${errorMessage(error)}`)
+  })
+
+  const codexReady = codexAccount?.connected === true && codexAccount.authMode === 'chatgpt'
+  const connectionLabel = provider === 'codex-account'
+    ? codexReady ? 'Connected' : codexAccount?.available === false ? 'Unavailable' : 'Sign in required'
+    : savedConfig?.hasApiKey ? 'Connected' : 'Key required'
+
+  const selectProvider = (nextProvider: AgentProvider) => {
+    setProvider(nextProvider)
+    if (nextProvider === 'codex-account') {
+      if (provider !== 'codex-account') setModel('')
+      codexStatusMutation.mutate()
+    } else if (!model.trim()) {
+      setModel('gpt-5.4-mini')
+    }
+  }
 
   return (
     <aside className="side-panel info-panel">
@@ -318,12 +394,95 @@ function SettingsSidebar(): React.JSX.Element {
           id="passing-score"
           max="100"
           min="60"
-          onChange={(event) => setPassingScore(Number(event.target.value))}
+          onChange={(event) => {
+            const score = Number(event.target.value)
+            setPassingScore(score)
+            void window.desktop.setAgentPassingScore(score).catch((error) => addOutput(`Could not save passing score: ${errorMessage(error)}`))
+          }}
           step="5"
           type="range"
           value={passingScore}
         />
         <p>Code generation unlocks after this threshold.</p>
+      </div>
+      <div className="settings-block ai-settings">
+        <div className="settings-title"><span>AI provider</span><b>{connectionLabel}</b></div>
+        <label className="field-label" htmlFor="ai-provider">Connection</label>
+        <select id="ai-provider" onChange={(event) => selectProvider(event.target.value as AgentProvider)} value={provider}>
+          <option value="openai-compatible">OpenAI-compatible API</option>
+          <option value="codex-account">ChatGPT / Codex account</option>
+        </select>
+        {provider === 'codex-account' ? (
+          <>
+            <div className="codex-account-card" data-connected={codexReady}>
+              <span className="codex-account-dot" />
+              <div>
+                <b>{codexReady ? codexAccount.email ?? 'ChatGPT account connected' : 'Connect your ChatGPT account'}</b>
+                <small>{codexReady
+                  ? `${codexAccount.planType ?? 'ChatGPT'} plan · Codex usage`
+                  : codexAccount?.error ?? 'A secure browser window will open for official Codex sign-in.'}</small>
+              </div>
+            </div>
+            <label className="field-label" htmlFor="ai-model">Model override · optional</label>
+            <input
+              id="ai-model"
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="Use the Codex default"
+              spellCheck={false}
+              type="text"
+              value={model}
+            />
+            <div className="settings-actions">
+              <button
+                disabled={connectCodexMutation.isPending || codexStatusMutation.isPending || codexReady}
+                onClick={() => connectCodexMutation.mutate()}
+                type="button"
+              >
+                {connectCodexMutation.isPending ? 'Waiting for sign-in…' : codexReady ? 'Account connected' : 'Connect ChatGPT'}
+              </button>
+              <button
+                disabled={saveAgentMutation.isPending || !codexReady}
+                onClick={() => saveAgentMutation.mutate()}
+                type="button"
+              >Use Codex</button>
+            </div>
+            <button
+              className="settings-link-button"
+              disabled={codexStatusMutation.isPending}
+              onClick={() => codexStatusMutation.mutate()}
+              type="button"
+            >Refresh account status</button>
+            <p>Uses your ChatGPT plan's Codex allowance through the official bundled runtime. It does not turn your ChatGPT login into an API key.</p>
+            <p>Wormie runs Codex in an isolated, read-only profile with tools, browsing, MCP, and shell access disabled.</p>
+          </>
+        ) : (
+          <>
+            <label className="field-label" htmlFor="ai-model">Model ID</label>
+            <input id="ai-model" onChange={(event) => setModel(event.target.value)} spellCheck={false} type="text" value={model} />
+            <label className="field-label" htmlFor="ai-base-url">Base URL</label>
+            <input id="ai-base-url" onChange={(event) => setBaseUrl(event.target.value)} spellCheck={false} type="url" value={baseUrl} />
+            <label className="field-label" htmlFor="ai-key">API key</label>
+            <input
+              autoComplete="off"
+              id="ai-key"
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={savedConfig?.hasApiKey ? 'Stored securely · enter to replace' : 'Paste a provider key'}
+              spellCheck={false}
+              type="password"
+              value={apiKey}
+            />
+            <div className="settings-actions">
+              <button disabled={saveAgentMutation.isPending || !model.trim() || !baseUrl.trim()} onClick={() => saveAgentMutation.mutate()} type="button">Save provider</button>
+              {savedConfig?.hasApiKey && <button disabled={clearKeyMutation.isPending} onClick={() => clearKeyMutation.mutate()} type="button">Remove key</button>}
+            </div>
+            <p>
+              Keys never enter the renderer. {savedConfig?.keyStorage === 'session'
+                ? 'Secure OS storage is unavailable, so this key lasts only until the app closes.'
+                : 'When available, the OS credential encryption service protects the stored key.'}
+            </p>
+            <p>Custom providers must expose an OpenAI-compatible <code>/chat/completions</code> API. Local HTTP is allowed only on loopback.</p>
+          </>
+        )}
       </div>
     </aside>
   )

@@ -1,0 +1,70 @@
+import path from 'node:path'
+import { app, BrowserWindow, shell } from 'electron'
+import Store from 'electron-store'
+import { registerWorkspaceHandlers } from './workspace'
+
+type Preferences = {
+  recentWorkspace?: string
+  windowBounds?: { width: number; height: number }
+}
+
+const store = new Store<Preferences>({ name: 'preferences' })
+
+function createWindow(): void {
+  const savedBounds = store.get('windowBounds')
+  const mainWindow = new BrowserWindow({
+    width: savedBounds?.width ?? 1440,
+    height: savedBounds?.height ?? 900,
+    minWidth: 1040,
+    minHeight: 680,
+    backgroundColor: '#090b0d',
+    show: false,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    titleBarOverlay:
+      process.platform === 'darwin'
+        ? undefined
+        : { color: '#090b0d', symbolColor: '#a9b2b9', height: 42 },
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+
+  mainWindow.once('ready-to-show', () => {
+    if (process.argv.includes('--smoke-test')) {
+      app.quit()
+      return
+    }
+    mainWindow.show()
+  })
+  mainWindow.on('close', () => {
+    const { width, height } = mainWindow.getBounds()
+    store.set('windowBounds', { width, height })
+  })
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+  } else {
+    void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  }
+}
+
+registerWorkspaceHandlers(store)
+
+void app.whenReady().then(() => {
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})

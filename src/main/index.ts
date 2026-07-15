@@ -7,12 +7,16 @@ import { registerGitHandlers } from './git'
 import { createRendererUrlValidator } from './ipcTrust'
 import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
+import { UnderstandingController } from './understanding'
+import { UnderstandingRepository } from './understanding/store'
 import { registerWorkspaceHandlers } from './workspace'
 
 const store = new Store<AppPreferences>({ name: 'preferences' })
 const trustedWebContents = new Set<number>()
 const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
+const understandingStore = new Store({ name: 'understanding-state' })
+const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds')
@@ -71,9 +75,10 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   const workspace = registerWorkspaceHandlers(store)
+  const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
   registerAssignmentHandlers(
     store,
-    path.join(app.getPath('userData'), 'assignment-progress'),
+    progressStorageRoot,
     workspace.getWorkspaceRoot,
     workspace.setWorkspace,
     (event: IpcMainInvokeEvent) =>
@@ -81,9 +86,10 @@ if (!app.requestSingleInstanceLock()) {
       event.senderFrame === event.sender.mainFrame &&
       isTrustedRendererUrl(event.senderFrame.url)
   )
-  registerGitHandlers(workspace.getWorkspaceRoot)
+  understanding.registerIpc()
+  registerGitHandlers(workspace.getWorkspaceRoot, understanding)
   registerTerminalHandlers(workspace.getWorkspaceRoot)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, path.join(app.getPath('userData'), 'assignment-progress'))
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
 
   app.on('second-instance', () => {
     const mainWindow = BrowserWindow.getAllWindows()[0]

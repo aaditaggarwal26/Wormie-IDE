@@ -11,6 +11,8 @@ import { Explorer } from '@/components/Explorer'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
+import { QuizHistory } from '@/components/QuizHistory'
+import { UnderstandingSettings } from '@/components/UnderstandingSettings'
 import { useWorkbench } from '@/store/workbench'
 import type {
   AgentConfig,
@@ -582,11 +584,7 @@ function LearningSidebar(): React.JSX.Element {
   return (
     <aside className="side-panel info-panel">
       <div className="panel-heading"><span>Knowledge</span><BookOpenText size={15} /></div>
-      <div className="knowledge-empty">
-        <div className="knowledge-orbit"><span>0%</span></div>
-        <h3>Your profile starts here.</h3>
-        <p>Mastery will grow as lessons and quizzes are completed.</p>
-      </div>
+      <QuizHistory compact />
     </aside>
   )
 }
@@ -770,6 +768,7 @@ function SettingsSidebar(): React.JSX.Element {
           </>
         )}
       </div>
+      <UnderstandingSettings />
     </aside>
   )
 }

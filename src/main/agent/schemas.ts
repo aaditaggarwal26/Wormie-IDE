@@ -38,5 +38,99 @@ export const proposalDraftSchema = z.object({
   verification: z.array(z.string().min(1).max(500)).min(1).max(10)
 })
 
+export const changeConceptDraftSchema = z.object({
+  concepts: z.array(z.object({
+    id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
+    name: z.string().min(1).max(100),
+    summary: z.string().min(1).max(500),
+    prerequisite: z.boolean().default(false)
+  })).min(1).max(10),
+  beforeBehavior: z.string().min(1).max(1200),
+  afterBehavior: z.string().min(1).max(1200),
+  importantSymbols: z.array(z.string().min(1).max(160)).max(20)
+})
+
+const sourceReferenceSchema = z.object({
+  path: z.string().min(1).max(500),
+  startLine: z.number().int().positive().max(1_000_000).optional(),
+  endLine: z.number().int().positive().max(1_000_000).optional(),
+  label: z.string().min(1).max(160).optional()
+})
+
+const quizOptionSchema = z.object({ id: z.string().min(1).max(80), label: z.string().min(1).max(400) })
+
+const understandingQuestionDraftSchema = z.object({
+  id: z.string().min(1).max(80),
+  type: z.enum(['multiple_choice', 'multiple_select', 'true_false', 'predict_behavior', 'spot_the_bug', 'short_answer', 'code_ordering']),
+  conceptId: z.string().min(1).max(80),
+  prompt: z.string().min(1).max(900),
+  code: z.string().max(8_000).optional(),
+  options: z.array(quizOptionSchema).min(2).max(8).optional(),
+  correctAnswer: z.union([z.string().max(4_000), z.array(z.string().max(160)).max(12), z.boolean()]),
+  explanation: z.string().min(1).max(900),
+  gradingRubric: z.string().min(1).max(1200).optional(),
+  difficulty: z.enum(['easy', 'medium', 'hard']),
+  sourceReferences: z.array(sourceReferenceSchema).min(1).max(5),
+  weight: z.number().int().min(1).max(3)
+}).superRefine((question, context) => {
+  const selectable = ['multiple_choice', 'multiple_select', 'code_ordering'].includes(question.type)
+  if (selectable && !question.options?.length) {
+    context.addIssue({ code: 'custom', message: 'Selectable questions require options.', path: ['options'] })
+    return
+  }
+  if (question.options) {
+    const optionIds = new Set(question.options.map((option) => option.id))
+    const answers = Array.isArray(question.correctAnswer) ? question.correctAnswer : [question.correctAnswer]
+    if (selectable && answers.some((answer) => typeof answer !== 'string' || !optionIds.has(answer))) {
+      context.addIssue({ code: 'custom', message: 'Correct answers must reference available options.', path: ['correctAnswer'] })
+    }
+  }
+  if (question.type === 'true_false' && typeof question.correctAnswer !== 'boolean') {
+    context.addIssue({ code: 'custom', message: 'True/false answers must be boolean.', path: ['correctAnswer'] })
+  }
+  if (['short_answer', 'predict_behavior', 'spot_the_bug'].includes(question.type) && !question.gradingRubric) {
+    context.addIssue({ code: 'custom', message: 'Written questions require a grading rubric.', path: ['gradingRubric'] })
+  }
+})
+
+export const understandingQuizDraftSchema = z.object({
+  title: z.string().min(1).max(160),
+  summary: z.string().min(1).max(1600),
+  whyThisMatters: z.string().min(1).max(1000),
+  flowSummary: z.string().min(1).max(1200),
+  risks: z.array(z.string().min(1).max(500)).max(8),
+  concepts: z.array(z.object({
+    id: z.string().min(1).max(80),
+    name: z.string().min(1).max(100),
+    summary: z.string().min(1).max(500)
+  })).min(1).max(10),
+  questions: z.array(understandingQuestionDraftSchema).min(2).max(8)
+}).superRefine((draft, context) => {
+  const conceptIds = new Set(draft.concepts.map((concept) => concept.id))
+  const questionIds = new Set<string>()
+  draft.questions.forEach((question, index) => {
+    if (!conceptIds.has(question.conceptId)) context.addIssue({ code: 'custom', message: 'Question concept must exist.', path: ['questions', index, 'conceptId'] })
+    if (questionIds.has(question.id)) context.addIssue({ code: 'custom', message: 'Question IDs must be unique.', path: ['questions', index, 'id'] })
+    questionIds.add(question.id)
+  })
+})
+
+export const semanticGradeSchema = z.object({
+  score: z.number().min(0).max(100),
+  isCorrect: z.boolean(),
+  demonstratedConcepts: z.array(z.string().min(1).max(160)).max(12),
+  missingConcepts: z.array(z.string().min(1).max(160)).max(12),
+  misconceptions: z.array(z.string().min(1).max(300)).max(8),
+  feedback: z.string().min(1).max(900)
+})
+
+export const remediationDraftSchema = z.object({
+  lesson: z.string().min(1).max(1600)
+})
+
 export type LearningDraft = z.infer<typeof learningDraftSchema>
 export type ProposalDraft = z.infer<typeof proposalDraftSchema>
+export type ChangeConceptDraft = z.infer<typeof changeConceptDraftSchema>
+export type UnderstandingQuizDraft = z.infer<typeof understandingQuizDraftSchema>
+export type SemanticGradeDraft = z.infer<typeof semanticGradeSchema>
+export type RemediationDraft = z.infer<typeof remediationDraftSchema>

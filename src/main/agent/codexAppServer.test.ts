@@ -2,15 +2,25 @@ import { existsSync, promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CodexAppServer, resolveCodexExecutable } from './codexAppServer'
+import { CodexAppServer, restrictedThreadConfig, resolveCodexExecutable } from './codexAppServer'
 
 const temporaryHomes: string[] = []
 
 afterEach(async () => {
-  await Promise.all(temporaryHomes.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })))
+  await Promise.all(temporaryHomes.splice(0).map((directory) => fs.rm(directory, {
+    recursive: true,
+    force: true,
+    maxRetries: 8,
+    retryDelay: 100
+  })))
 })
 
 describe('Codex app-server integration', () => {
+  it('disables web search without sending an invalid nested tool value', () => {
+    expect(restrictedThreadConfig.web_search).toBe('disabled')
+    expect(restrictedThreadConfig).not.toHaveProperty('tools.web_search')
+  })
+
   it('resolves the bundled native runtime', () => {
     expect(existsSync(resolveCodexExecutable())).toBe(true)
   })

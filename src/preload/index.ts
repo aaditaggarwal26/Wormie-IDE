@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC_CHANNELS, type DesktopApi } from '../shared/contracts'
+import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi } from '../shared/contracts'
 
 const desktopApi: DesktopApi = {
   platform: process.platform,
@@ -35,6 +35,22 @@ const desktopApi: DesktopApi = {
   submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),
   generateProposal: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.agentGenerateProposal, sessionId),
   applyProposal: (proposalId) => ipcRenderer.invoke(IPC_CHANNELS.agentApplyProposal, proposalId),
+  prepareProposalQuiz: (proposalId) => ipcRenderer.invoke(IPC_CHANNELS.agentPrepareProposalQuiz, proposalId),
+  rejectProposal: (proposalId) => ipcRenderer.invoke(IPC_CHANNELS.agentRejectProposal, proposalId),
+  getUnderstandingSettings: () => ipcRenderer.invoke(IPC_CHANNELS.understandingGetSettings),
+  saveUnderstandingSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.understandingSaveSettings, settings),
+  getUnderstandingHistory: () => ipcRenderer.invoke(IPC_CHANNELS.understandingGetHistory),
+  getUnderstandingGate: (changeId, fingerprint) => ipcRenderer.invoke(IPC_CHANNELS.understandingGetGate, changeId, fingerprint),
+  saveUnderstandingAnswers: (quizId, answers) => ipcRenderer.invoke(IPC_CHANNELS.understandingSaveAnswers, quizId, answers),
+  submitUnderstanding: (submission) => ipcRenderer.invoke(IPC_CHANNELS.understandingSubmit, submission),
+  bypassUnderstanding: (quizId, reason) => ipcRenderer.invoke(IPC_CHANNELS.understandingBypass, quizId, reason),
+  analyzeStagedChange: (repositoryRoot, forceNew) => ipcRenderer.invoke(IPC_CHANNELS.gitAnalyzeStaged, repositoryRoot, forceNew),
+  commitStagedChange: (request) => ipcRenderer.invoke(IPC_CHANNELS.gitCommitStaged, request),
+  onAgentActivity: (callback) => {
+    const listener = (_event: IpcRendererEvent, activity: AgentActivityEvent) => callback(activity)
+    ipcRenderer.on(IPC_CHANNELS.agentActivity, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.agentActivity, listener)
+  },
   cancelAgent: () => ipcRenderer.send(IPC_CHANNELS.agentCancel),
   getAssignment: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentGet, workspaceRoot),
   saveAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentSave, request),

@@ -1,6 +1,7 @@
-import { AlertCircle, CheckCircle2, TerminalSquare } from 'lucide-react'
+import { CheckCircle2, TerminalSquare } from 'lucide-react'
 import { TerminalPane } from '@/components/TerminalPane'
 import { useWorkbench } from '@/store/workbench'
+import { QuizHistory } from '@/components/QuizHistory'
 
 export function BottomPanel(): React.JSX.Element {
   const bottomView = useWorkbench((state) => state.bottomView)
@@ -23,7 +24,7 @@ export function BottomPanel(): React.JSX.Element {
           </div>
         )}
         {bottomView === 'problems' && <div className="empty-row"><CheckCircle2 size={14} /> No problems detected.</div>}
-        {bottomView === 'quiz' && <div className="empty-row"><AlertCircle size={14} /> No quiz has been completed in this workspace.</div>}
+        {bottomView === 'quiz' && <QuizHistory />}
         <div className="terminal-host" data-active={bottomView === 'terminal'}>
           <TerminalPane active={bottomView === 'terminal'} workspaceRoot={workspaceRoot} />
         </div>

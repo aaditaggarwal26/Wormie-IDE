@@ -23,6 +23,18 @@ export const IPC_CHANNELS = {
   agentSubmitQuiz: 'agent:submit-quiz',
   agentGenerateProposal: 'agent:generate-proposal',
   agentApplyProposal: 'agent:apply-proposal',
+  agentActivity: 'agent:activity',
+  agentPrepareProposalQuiz: 'agent:prepare-proposal-quiz',
+  agentRejectProposal: 'agent:reject-proposal',
+  understandingGetSettings: 'understanding:get-settings',
+  understandingSaveSettings: 'understanding:save-settings',
+  understandingGetHistory: 'understanding:get-history',
+  understandingGetGate: 'understanding:get-gate',
+  understandingSaveAnswers: 'understanding:save-answers',
+  understandingSubmit: 'understanding:submit',
+  understandingBypass: 'understanding:bypass',
+  gitAnalyzeStaged: 'git:analyze-staged',
+  gitCommitStaged: 'git:commit-staged',
   agentCancel: 'agent:cancel'
 } as const
 
@@ -116,6 +128,7 @@ export type CodexAccountStatus = {
 }
 
 export type LearningRequest = {
+  runId: string
   request: string
   activePath?: string | null
   openPaths?: string[]
@@ -136,6 +149,7 @@ export type QuizQuestion = {
 
 export type LearningSession = {
   id: string
+  runId: string
   request: string
   concepts: ConceptLesson[]
   lessonSummary: string
@@ -158,6 +172,204 @@ export type QuizResult = {
   }>
 }
 
+export type ChangeSource = 'ai_proposal' | 'git_commit'
+export type ChangeSignificanceLevel = 'trivial' | 'minor' | 'major' | 'critical'
+export type QuizDepth = 'none' | 'standard' | 'deep'
+export type ChangeFileStatus = 'added' | 'modified' | 'deleted' | 'renamed'
+
+export type ChangeFileInput = {
+  path: string
+  status: ChangeFileStatus
+  additions: number
+  deletions: number
+  patch?: string
+  beforeContent?: string
+  afterContent?: string
+  binary?: boolean
+}
+
+export type ChangeInput = {
+  id: string
+  source: ChangeSource
+  title: string
+  description?: string
+  files: ChangeFileInput[]
+  generatedCodeConfidence?: number
+}
+
+export type ChangeSignificanceResult = {
+  level: ChangeSignificanceLevel
+  score: number
+  triggerReasons: string[]
+  changedFiles: string[]
+  detectedConcepts: string[]
+  riskFactors: string[]
+  recommendedQuizDepth: QuizDepth
+  quizRequired: boolean
+  additions: number
+  deletions: number
+}
+
+export type UnderstandingSettings = {
+  enabled: boolean
+  triggerLevel: 'minor' | 'major'
+  passingScore: number
+  minimumQuestions: number
+  maximumQuestions: number
+  allowRetryBeforeRemediation: boolean
+  requireBeforeAiApply: boolean
+  requireBeforeCommit: boolean
+  strictMode: boolean
+  developerBypass: boolean
+  bypassRequiresReason: boolean
+}
+
+export type UnderstandingQuestionType =
+  | 'multiple_choice'
+  | 'multiple_select'
+  | 'true_false'
+  | 'predict_behavior'
+  | 'spot_the_bug'
+  | 'short_answer'
+  | 'code_ordering'
+
+export type QuizOption = { id: string; label: string }
+export type SourceReference = { path: string; startLine?: number; endLine?: number; label?: string }
+
+export type PublicQuizQuestion = {
+  id: string
+  type: UnderstandingQuestionType
+  conceptId: string
+  prompt: string
+  code?: string
+  options?: QuizOption[]
+  difficulty: 'easy' | 'medium' | 'hard'
+  sourceReferences: SourceReference[]
+}
+
+export type PrivateQuizQuestion = PublicQuizQuestion & {
+  correctAnswer: unknown
+  explanation: string
+  gradingRubric?: string
+  weight: number
+}
+
+export type QuizConcept = {
+  id: string
+  name: string
+  summary: string
+}
+
+export type UnderstandingQuiz = {
+  id: string
+  changeId: string
+  source: ChangeSource
+  fingerprint: string
+  diffFingerprint: string
+  quizVersion: number
+  promptVersion: string
+  modelIdentifier: string
+  title: string
+  summary: string
+  whyThisMatters: string
+  flowSummary: string
+  risks: string[]
+  concepts: QuizConcept[]
+  questions: PublicQuizQuestion[]
+  passingScore: number
+  estimatedMinutes: number
+  significance: ChangeSignificanceResult
+  createdAt: string
+  updatedAt: string
+}
+
+export type UnderstandingAnswer = { value: string | string[] | boolean; savedAt?: string }
+
+export type UnderstandingSubmission = {
+  quizId: string
+  answers: Record<string, UnderstandingAnswer>
+}
+
+export type UnderstandingQuestionFeedback = {
+  questionId: string
+  correct: boolean
+  explanation: string
+  misconception?: string
+}
+
+export type UnderstandingResult = {
+  quizId: string
+  score: number
+  passed: boolean
+  attempt: number
+  feedback: UnderstandingQuestionFeedback[]
+  weakConceptIds: string[]
+  remediation?: string
+}
+
+export type UnderstandingGateStatus = {
+  changeId: string
+  source: ChangeSource
+  fingerprint: string
+  state: 'not_required' | 'required' | 'in_progress' | 'remediation' | 'passed' | 'bypassed'
+  quiz: UnderstandingQuiz | null
+  draftAnswers: Record<string, UnderstandingAnswer>
+  lastResult: UnderstandingResult | null
+  unlocked: boolean
+}
+
+export type UnderstandingHistoryEntry = {
+  id: string
+  changeId: string
+  source: ChangeSource
+  title: string
+  significance: ChangeSignificanceLevel
+  score: number | null
+  outcome: 'passed' | 'failed' | 'bypassed' | 'rejected'
+  concepts: string[]
+  completedAt: string
+  durationSeconds?: number
+  bypassReason?: string
+}
+
+export type KnowledgeMastery = {
+  conceptId: string
+  name: string
+  mastery: number
+  attempts: number
+  correct: number
+  updatedAt: string
+  evidenceQuizIds: string[]
+}
+
+export type ChangeUnderstandingPreparation = {
+  changeId: string
+  fingerprint: string
+  significance: ChangeSignificanceResult
+  gate: UnderstandingGateStatus | null
+  generationError?: string
+}
+
+export type UnderstandingOverview = {
+  history: UnderstandingHistoryEntry[]
+  mastery: KnowledgeMastery[]
+}
+
+export type StagedChangeAnalysis = ChangeUnderstandingPreparation & {
+  repositoryRoot: string
+  stagedFiles: string[]
+}
+
+export type CommitStagedRequest = {
+  repositoryRoot: string
+  message: string
+}
+
+export type CommitStagedResult = {
+  commit: string
+  summary: string
+}
+
 export type ProposedFileChange = {
   relativePath: string
   action: 'create' | 'update'
@@ -172,12 +384,29 @@ export type CodeProposal = {
   changes: ProposedFileChange[]
   risks: string[]
   verification: string[]
+  understanding?: ChangeUnderstandingPreparation
 }
 
 export type AppliedProposal = {
   applied: boolean
   changedPaths: string[]
   workspace: WorkspaceSnapshot
+}
+
+export type AgentActivityState = 'pending' | 'active' | 'completed' | 'failed' | 'stopped'
+export type AgentActivityPhase = 'context' | 'learning' | 'model' | 'validation' | 'quiz' | 'proposal' | 'approval' | 'apply' | 'complete'
+export type AgentActivityFile = { path: string; action: 'create' | 'update' | 'applied' }
+export type AgentActivityEvent = {
+  id: string
+  runId: string
+  timestamp: string
+  kind: 'phase' | 'protocol' | 'files'
+  phase: AgentActivityPhase
+  label: string
+  state: AgentActivityState
+  detail?: string
+  protocolMethod?: string
+  files?: AgentActivityFile[]
 }
 
 export type DesktopApi = {
@@ -206,5 +435,17 @@ export type DesktopApi = {
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
   generateProposal: (sessionId: string) => Promise<CodeProposal>
   applyProposal: (proposalId: string) => Promise<AppliedProposal>
+  prepareProposalQuiz: (proposalId: string) => Promise<ChangeUnderstandingPreparation>
+  rejectProposal: (proposalId: string) => Promise<void>
+  getUnderstandingSettings: () => Promise<UnderstandingSettings>
+  saveUnderstandingSettings: (settings: UnderstandingSettings) => Promise<UnderstandingSettings>
+  getUnderstandingHistory: () => Promise<UnderstandingOverview>
+  getUnderstandingGate: (changeId: string, fingerprint?: string) => Promise<UnderstandingGateStatus | null>
+  saveUnderstandingAnswers: (quizId: string, answers: Record<string, UnderstandingAnswer>) => Promise<UnderstandingGateStatus>
+  submitUnderstanding: (submission: UnderstandingSubmission) => Promise<UnderstandingResult>
+  bypassUnderstanding: (quizId: string, reason: string) => Promise<UnderstandingGateStatus>
+  analyzeStagedChange: (repositoryRoot: string, forceNew?: boolean) => Promise<StagedChangeAnalysis>
+  commitStagedChange: (request: CommitStagedRequest) => Promise<CommitStagedResult>
+  onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void
   cancelAgent: () => void
 }

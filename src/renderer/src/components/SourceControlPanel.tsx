@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
-import { FolderGit2, GitBranch, RefreshCw } from 'lucide-react'
-import type { GitStatusSnapshot, WorkspaceSnapshot } from '@shared/contracts'
+import { useMutation } from '@tanstack/react-query'
+import { FolderGit2, GitBranch, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
+import { UnderstandingQuiz } from '@/components/UnderstandingQuiz'
+import { resolveSourcePath } from '@/components/understandingQuizModel'
+import { useWorkbench } from '@/store/workbench'
+import type { GitStatusSnapshot, StagedChangeAnalysis, WorkspaceSnapshot } from '@shared/contracts'
 
 type SourceControlPanelProps = {
   workspace: WorkspaceSnapshot | null
@@ -12,6 +16,9 @@ type SourceControlPanelProps = {
 
 export function SourceControlPanel({ workspace, status, busy, onRefresh, onOpenFile }: SourceControlPanelProps): React.JSX.Element {
   const [selectedRoot, setSelectedRoot] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
+  const [analysis, setAnalysis] = useState<StagedChangeAnalysis | null>(null)
+  const addOutput = useWorkbench((state) => state.addOutput)
   const repositories = status?.repositories ?? []
   const selectedRepository = repositories.find((repository) => repository.rootPath === selectedRoot) ?? repositories[0]
 
@@ -20,6 +27,26 @@ export function SourceControlPanel({ workspace, status, busy, onRefresh, onOpenF
       setSelectedRoot(repositories[0]?.rootPath ?? null)
     }
   }, [status, selectedRoot])
+
+  useEffect(() => { setAnalysis(null) }, [selectedRepository?.rootPath, selectedRepository?.files.map((file) => `${file.path}:${file.index}`).join('|')])
+
+  const analyzeMutation = useMutation<StagedChangeAnalysis, Error, boolean>({
+    mutationFn: (forceNew = false) => window.desktop.analyzeStagedChange(selectedRepository!.rootPath, forceNew),
+    onSuccess: setAnalysis,
+    onError: (cause) => addOutput(`Could not analyze staged changes: ${cause instanceof Error ? cause.message : 'Unknown error'}`)
+  })
+
+  const commitMutation = useMutation({
+    mutationFn: () => window.desktop.commitStagedChange({ repositoryRoot: selectedRepository!.rootPath, message }),
+    onSuccess: (result) => {
+      addOutput(`Created commit ${result.commit.slice(0, 8)} · ${result.summary}.`)
+      setMessage(''); setAnalysis(null); onRefresh()
+    },
+    onError: (cause) => addOutput(`Could not create commit: ${cause instanceof Error ? cause.message : 'Unknown error'}`)
+  })
+
+  const stagedCount = selectedRepository?.files.filter((file) => file.index.trim()).length ?? 0
+  const commitUnlocked = Boolean(analysis) && (!analysis!.significance.quizRequired || analysis!.gate?.unlocked)
 
   return (
     <aside className="side-panel source-panel">
@@ -78,6 +105,28 @@ export function SourceControlPanel({ workspace, status, busy, onRefresh, onOpenF
                 <code>{file.index.trim() || file.workingTree.trim() || 'M'}</code>
               </button>
             ))}
+          </div>
+          <div className="commit-workflow">
+            <label htmlFor="commit-message">Commit message</label>
+            <textarea id="commit-message" maxLength={2000} onChange={(event) => setMessage(event.target.value)} placeholder="Describe the staged change…" value={message} />
+            {!analysis && <button className="commit-primary" disabled={stagedCount === 0 || analyzeMutation.isPending} onClick={() => analyzeMutation.mutate(false)} type="button">
+              {analyzeMutation.isPending ? <LoaderCircle className="spin" size={12} /> : <ShieldCheck size={12} />} Analyze {stagedCount} staged file{stagedCount === 1 ? '' : 's'}
+            </button>}
+            {analysis && <UnderstandingQuiz
+              preparation={analysis}
+              onGateChange={(gate) => setAnalysis((current) => current ? { ...current, gate, generationError: undefined } : current)}
+              onOpenSource={(relativePath) => {
+                onOpenFile(resolveSourcePath(selectedRepository.rootPath, relativePath, window.desktop.platform))
+              }}
+              onRetry={async () => {
+                const next = await window.desktop.analyzeStagedChange(selectedRepository.rootPath, true)
+                setAnalysis(next)
+                return next
+              }}
+            />}
+            {analysis && <button className="commit-primary" disabled={!message.trim() || !commitUnlocked || commitMutation.isPending} onClick={() => commitMutation.mutate()} type="button">
+              {commitMutation.isPending ? <LoaderCircle className="spin" size={12} /> : <GitBranch size={12} />}{commitUnlocked ? 'Create commit' : 'Pass check to commit'}
+            </button>}
           </div>
         </>
       )}

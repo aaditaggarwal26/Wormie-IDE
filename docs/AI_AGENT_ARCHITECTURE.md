@@ -14,6 +14,16 @@ The invariant is enforced in Electron's main process:
 
 Renderer state is never trusted to unlock generation or apply a proposal.
 
+## Major-change understanding gates
+
+Generated proposals now pass through a second, change-specific gate after generation and before apply. Staged Git changes use the same domain before the desktop app can create a commit. A deterministic classifier scores file/line scope together with authentication, database, dependency, shared API, state, Electron IPC, filesystem, network, environment, concurrency, security-boundary, test-removal, and generated-confidence signals. Default policy gates major and critical changes; critical checks require at least 90%.
+
+Every pass is bound to a SHA-256 fingerprint of normalized paths, statuses, patches, before/after proposal content, and staged Git contents. Apply and commit handlers recompute classification and fingerprints in the main process immediately before mutation. A modified proposal or staged diff cannot reuse a stale pass.
+
+`understanding-state` is a versioned `electron-store` document because that is the repository's established persistence abstraction. It stores active public quiz state, main-process-only answer keys and rubrics, autosaved answers, attempts, pass/bypass state, history, mastery, and privacy-safe audit metadata. Migration normalizes old or malformed settings. Source, diff, answer, and filename contents are never included in audit events.
+
+Quiz generation uses separate structured model operations for concept extraction, grounded quiz generation, and semantic grading. Context excludes sensitive paths, binaries, dependency lockfile noise, and large hunks, then redacts likely credentials. The renderer receives no correct answers or rubrics. Exact formats are graded locally; written reasoning is conservatively graded through the configured provider and fails closed when verification is unavailable.
+
 ## Runtime states
 
 ```mermaid
@@ -93,7 +103,7 @@ Future permissions should be explicit capabilities with three values: deny, ask 
 ## Reliability requirements
 
 - Stream status and structured partial output over IPC without exposing provider internals.
-- Persist learning history in SQLite, but keep active gate state server-owned and expiring.
+- Move consolidated learning history to SQLite when the repository introduces its planned database layer; keep current gate state main-process-owned in the versioned local store.
 - Retry rate limits and transient 5xx failures with bounded exponential backoff and jitter; never retry auth, validation, or safety failures.
 - Add per-provider health checks, model capability detection, token estimates, cost ceilings, and request cancellation.
 - Redact provider errors before logging; never log prompts by default because source code may be sensitive.
@@ -102,13 +112,11 @@ Future permissions should be explicit capabilities with three values: deny, ask 
 
 ## Learning quality roadmap
 
-1. Generate a concept graph and prerequisite check before the lesson.
-2. Mix question types instead of relying only on multiple choice.
-3. Generate a new remedial lesson and new questions after failure; do not reveal an answer key and reuse the same quiz.
-4. Calibrate confidence using question difficulty, retries, response time, and free-response evidence.
-5. Use spaced repetition and project evidence to update mastery; never equate one passed quiz with permanent mastery.
-6. Explain each accepted file, function, risk, security implication, and verification result after implementation.
-7. Let advanced users test out of known concepts while preserving server-side proof of mastery.
+1. Expand the current change concept extraction into a persistent prerequisite graph.
+2. Calibrate understanding confidence beyond the current weighted difficulty, retry, and free-response evidence.
+3. Add spaced review scheduling to the persisted concept mastery model; never equate one passed quiz with permanent mastery.
+4. Explain each accepted function, security implication, and verification result after implementation.
+5. Let advanced users test out of known concepts while preserving main-process proof of mastery.
 
 ## Definition of world-class
 

@@ -1,14 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type MessageBoxOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type MessageBoxOptions, type WebContents } from 'electron'
 import type Store from 'electron-store'
 import {
   IPC_CHANNELS,
   type AgentConfig,
+  type AgentActivityEvent,
+  type AgentActivityFile,
+  type AgentActivityPhase,
   type AgentConfigUpdate,
   type AppliedProposal,
   type CodeProposal,
+  type ChangeInput,
   type LearningRequest,
   type LearningSession,
   type ProposedFileChange,
@@ -20,9 +24,11 @@ import type { AppPreferences } from '../preferences'
 import { createWorkspaceSnapshot } from '../workspace'
 import { buildWorkspaceContext } from './context'
 import { CodexAppServer } from './codexAppServer'
+import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
 import { ModelGateway, validateBaseUrl } from './provider'
-import { learningDraftSchema, proposalDraftSchema } from './schemas'
+import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
+import type { UnderstandingController } from '../understanding'
 
 type InternalSession = {
   publicSession: LearningSession
@@ -37,6 +43,7 @@ type InternalSession = {
 type InternalChange = ProposedFileChange & {
   absolutePath: string
   expectedHash: string | null
+  beforeContent: string | null
 }
 
 type InternalProposal = {
@@ -44,6 +51,7 @@ type InternalProposal = {
   changes: InternalChange[]
   workspaceRoot: string
   createdAt: number
+  changeInput: ChangeInput
 }
 
 const defaultConfig = {
@@ -110,12 +118,14 @@ function validateRelativeChangePath(rootPath: string, relativePath: string): str
 
 export function registerAgentHandlers(
   store: Store<AppPreferences>,
-  getWorkspaceRoot: () => string | null
+  getWorkspaceRoot: () => string | null,
+  understanding: UnderstandingController
 ): void {
   const sessions = new Map<string, InternalSession>()
   const proposals = new Map<string, InternalProposal>()
   let sessionApiKey: string | null = null
   let activeController: AbortController | null = null
+  let activeActivity: { sender: WebContents; runId: string } | null = null
   const codexRuntime = new CodexAppServer(path.join(app.getPath('userData'), 'codex'))
 
   app.once('before-quit', () => codexRuntime.stop())
@@ -150,21 +160,92 @@ export function registerAgentHandlers(
     }
   }
 
-  async function runModel<T>(operation: (gateway: ModelGateway, signal: AbortSignal) => Promise<T>): Promise<T> {
+  function validateRunId(value: unknown): string {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(value)) throw new Error('Invalid agent activity run.')
+    return value
+  }
+
+  function emitActivity(
+    sender: WebContents,
+    runId: string,
+    input: Omit<AgentActivityEvent, 'id' | 'runId' | 'timestamp'>
+  ): void {
+    if (sender.isDestroyed()) return
+    const activity = sanitizeAgentActivity({
+      ...input,
+      id: randomUUID(),
+      runId,
+      timestamp: new Date().toISOString()
+    })
+    sender.send(IPC_CHANNELS.agentActivity, activity)
+  }
+
+  function emitPhase(
+    sender: WebContents,
+    runId: string,
+    phase: AgentActivityPhase,
+    label: string,
+    state: AgentActivityEvent['state'],
+    detail?: string
+  ): void {
+    emitActivity(sender, runId, { kind: 'phase', phase, label, state, ...(detail ? { detail } : {}) })
+  }
+
+  function emitFiles(sender: WebContents, runId: string, phase: 'proposal' | 'apply', label: string, files: AgentActivityFile[]): void {
+    emitActivity(sender, runId, { kind: 'files', phase, label, state: 'completed', files })
+  }
+
+  async function runModel<T>(
+    operation: (
+      gateway: ModelGateway,
+      signal: AbortSignal,
+      onProtocolEvent?: (method: string, detail: string) => void
+    ) => Promise<T>,
+    activity?: { sender: WebContents; runId: string }
+  ): Promise<T> {
     if (activeController) throw new Error('Another AI request is already running.')
     const controller = new AbortController()
     activeController = controller
+    activeActivity = activity ?? null
     const timeout = setTimeout(() => controller.abort(), 120_000)
     const key = readApiKey()
     try {
-      return await operation(new ModelGateway(getConfig(), key.value, codexRuntime), controller.signal)
+      const onProtocolEvent = activity
+        ? (method: string, detail: string) => emitActivity(activity.sender, activity.runId, {
+            kind: 'protocol',
+            phase: 'model',
+            label: 'Codex runtime event',
+            state: method === 'turn/completed' ? 'completed' : 'active',
+            protocolMethod: method,
+            detail
+          })
+        : undefined
+      return await operation(new ModelGateway(getConfig(), key.value, codexRuntime), controller.signal, onProtocolEvent)
     } catch (error) {
-      throw cleanError(error, key.value)
+      const cleaned = cleanError(error, key.value)
+      if (activity) emitPhase(
+        activity.sender,
+        activity.runId,
+        'model',
+        cleaned.message === 'The AI request was cancelled.' ? 'AI request stopped' : 'AI request failed',
+        cleaned.message === 'The AI request was cancelled.' ? 'stopped' : 'failed',
+        cleaned.message
+      )
+      throw cleaned
     } finally {
       clearTimeout(timeout)
       if (activeController === controller) activeController = null
+      if (activeActivity?.runId === activity?.runId) activeActivity = null
     }
   }
+
+  understanding.setAi({
+    extractConcepts: (prompt) => runModel((gateway, signal) => gateway.generateStructured('change-concepts', prompt, changeConceptDraftSchema, signal)),
+    generateQuiz: (prompt) => runModel((gateway, signal) => gateway.generateStructured('understanding-quiz', prompt, understandingQuizDraftSchema, signal)),
+    gradeAnswer: (prompt) => runModel((gateway, signal) => gateway.generateStructured('semantic-grade', prompt, semanticGradeSchema, signal)),
+    generateRemediation: (prompt) => runModel((gateway, signal) => gateway.generateStructured('remediation', prompt, remediationDraftSchema, signal)),
+    modelIdentifier: () => getConfig().model || 'codex-default'
+  })
 
   ipcMain.handle(IPC_CHANNELS.agentGetConfig, getConfig)
 
@@ -215,30 +296,37 @@ export function registerAgentHandlers(
     return getConfig()
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentStartLearning, async (_event, request: LearningRequest): Promise<LearningSession> => {
+  ipcMain.handle(IPC_CHANNELS.agentStartLearning, async (event, request: LearningRequest): Promise<LearningSession> => {
     pruneExpired()
+    const runId = validateRunId(request?.runId)
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace before asking the tutor for a code change.')
     const intent = typeof request?.request === 'string' ? request.request.trim() : ''
     if (!intent || intent.length > maxRequestLength) throw new Error('Describe the change in 1 to 4,000 characters.')
     const passingScore = store.get('learningPassingScore') ?? 80
     const contextRequest: LearningRequest = {
+      runId,
       request: intent,
       activePath: typeof request.activePath === 'string' ? request.activePath : null,
       openPaths: Array.isArray(request.openPaths)
         ? request.openPaths.filter((filePath): filePath is string => typeof filePath === 'string').slice(0, 6)
         : []
     }
+    emitPhase(event.sender, runId, 'context', 'Gathering workspace context', 'active')
     const context = await buildWorkspaceContext(rootPath, contextRequest)
-    const draft = await runModel((gateway, signal) => gateway.generateStructured(
+    emitPhase(event.sender, runId, 'context', 'Workspace context ready', 'completed', `${contextRequest.openPaths?.length ?? 0} open files considered`)
+    emitPhase(event.sender, runId, 'learning', 'Preparing the learning plan', 'active')
+    const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'learning',
       `Analyze this requested change and teach only the prerequisite concepts. Do not provide implementation code yet.
 Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test applied understanding, not trivia.
 
 <user-request>\n${intent}\n</user-request>\n\n${context}`,
       learningDraftSchema,
-      signal
-    ))
+      signal,
+      onProtocolEvent
+    ), { sender: event.sender, runId })
+    emitPhase(event.sender, runId, 'validation', 'Structured learning plan validated', 'completed')
 
     const sessionId = randomUUID()
     const quiz = draft.quiz.map((question, index) => ({
@@ -248,6 +336,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     }))
     const publicSession: LearningSession = {
       id: sessionId,
+      runId,
       request: intent,
       concepts: draft.concepts,
       lessonSummary: draft.lessonSummary,
@@ -267,10 +356,12 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
       attempts: 0,
       createdAt: Date.now()
     })
+    emitPhase(event.sender, runId, 'learning', 'Learning plan ready', 'completed', `${draft.concepts.length} concepts prepared`)
+    emitPhase(event.sender, runId, 'quiz', 'Waiting for your learning check', 'active')
     return publicSession
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentSubmitQuiz, (_event, submission: QuizSubmission): QuizResult => {
+  ipcMain.handle(IPC_CHANNELS.agentSubmitQuiz, (event, submission: QuizSubmission): QuizResult => {
     pruneExpired()
     const session = sessions.get(submission?.sessionId)
     if (!session) throw new Error('This learning session expired. Start the request again.')
@@ -278,10 +369,18 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     session.attempts += 1
     const result = gradeQuiz(submission, session.answerKey, session.publicSession.passingScore)
     session.passed = result.passed
+    emitPhase(
+      event.sender,
+      session.publicSession.runId,
+      'quiz',
+      result.passed ? 'Learning check passed' : 'Learning check needs another attempt',
+      result.passed ? 'completed' : 'active',
+      `${result.score}% score`
+    )
     return result
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentGenerateProposal, async (_event, sessionId: string): Promise<CodeProposal> => {
+  ipcMain.handle(IPC_CHANNELS.agentGenerateProposal, async (event, sessionId: string): Promise<CodeProposal> => {
     pruneExpired()
     const session = sessions.get(sessionId)
     if (!session) throw new Error('This learning session expired. Start the request again.')
@@ -289,9 +388,11 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace first.')
     if (rootPath !== session.workspaceRoot) throw new Error('Return to the workspace where this learning session started.')
+    const runId = session.publicSession.runId
+    emitPhase(event.sender, runId, 'proposal', 'Preparing proposed files', 'active')
     const currentContext = await buildWorkspaceContext(rootPath, session.contextRequest)
 
-    const draft = await runModel((gateway, signal) => gateway.generateStructured(
+    const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'proposal',
       `Create a minimal, production-quality implementation for the request below.
 Return complete UTF-8 file contents for every changed file. Use only relative workspace paths.
@@ -300,8 +401,10 @@ Prefer the smallest coherent change and include concrete verification steps.
 
 <user-request>\n${session.publicSession.request}\n</user-request>\n\n${currentContext}`,
       proposalDraftSchema,
-      signal
-    ))
+      signal,
+      onProtocolEvent
+    ), { sender: event.sender, runId })
+    emitPhase(event.sender, runId, 'validation', 'Validating proposed file changes', 'active')
 
     const internalChanges: InternalChange[] = []
     const proposedPaths = new Set<string>()
@@ -309,11 +412,13 @@ Prefer the smallest coherent change and include concrete verification steps.
       const candidatePath = validateRelativeChangePath(rootPath, change.relativePath)
       let absolutePath = candidatePath
       let expectedHash: string | null = null
+      let beforeContent: string | null = null
       if (change.action === 'update') {
         const resolvedPath = await fs.realpath(candidatePath).catch(() => null)
         if (!resolvedPath || !isPathInside(rootPath, resolvedPath)) throw new Error(`Cannot update missing file: ${change.relativePath}`)
         absolutePath = resolvedPath
         const existing = await fs.readFile(resolvedPath, 'utf8')
+        beforeContent = existing
         expectedHash = hash(existing)
       } else {
         const parent = await fs.realpath(path.dirname(candidatePath)).catch(() => null)
@@ -329,10 +434,33 @@ Prefer the smallest coherent change and include concrete verification steps.
       const canonicalProposalPath = process.platform === 'win32' ? absolutePath.toLowerCase() : absolutePath
       if (proposedPaths.has(canonicalProposalPath)) throw new Error(`The model proposed ${change.relativePath} more than once.`)
       proposedPaths.add(canonicalProposalPath)
-      internalChanges.push({ ...change, absolutePath, expectedHash })
+      internalChanges.push({ ...change, absolutePath, expectedHash, beforeContent })
     }
 
     const proposalId = randomUUID()
+    const changeInput: ChangeInput = {
+      id: proposalId,
+      source: 'ai_proposal',
+      title: draft.summary.slice(0, 160),
+      description: draft.summary,
+      files: internalChanges.map((change) => {
+        const beforeLines = change.beforeContent?.split(/\r?\n/) ?? []
+        const afterLines = change.content.split(/\r?\n/)
+        let prefix = 0
+        while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix += 1
+        let suffix = 0
+        while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]) suffix += 1
+        return {
+          path: change.relativePath,
+          status: change.action === 'create' ? 'added' as const : 'modified' as const,
+          additions: Math.max(0, afterLines.length - prefix - suffix),
+          deletions: change.action === 'create' ? 0 : Math.max(0, beforeLines.length - prefix - suffix),
+          beforeContent: change.beforeContent ?? undefined,
+          afterContent: change.content,
+          patch: `--- before/${change.relativePath}\n${(change.beforeContent ?? '').slice(0, 18_000)}\n+++ after/${change.relativePath}\n${change.content.slice(0, 18_000)}`
+        }
+      })
+    }
     const publicProposal: CodeProposal = {
       id: proposalId,
       sessionId,
@@ -341,8 +469,41 @@ Prefer the smallest coherent change and include concrete verification steps.
       risks: draft.risks,
       verification: draft.verification
     }
-    proposals.set(proposalId, { publicProposal, changes: internalChanges, workspaceRoot: rootPath, createdAt: Date.now() })
+    proposals.set(proposalId, { publicProposal, changes: internalChanges, workspaceRoot: rootPath, createdAt: Date.now(), changeInput })
+    try {
+      publicProposal.understanding = await understanding.prepare(changeInput)
+    } catch (error) {
+      const analysis = understanding.analyze(changeInput)
+      publicProposal.understanding = {
+        changeId: changeInput.id,
+        ...analysis,
+        gate: null,
+        generationError: cleanError(error).message
+      }
+    }
+    emitPhase(event.sender, runId, 'validation', 'Proposal validated', 'completed')
+    emitPhase(event.sender, runId, 'proposal', 'Proposal ready for review', 'completed', `${draft.changes.length} file${draft.changes.length === 1 ? '' : 's'} proposed`)
+    emitFiles(event.sender, runId, 'proposal', 'Proposed files', draft.changes.map((change) => ({ path: change.relativePath, action: change.action })))
+    emitPhase(event.sender, runId, 'approval', 'Waiting for your proposal review', 'active')
     return publicProposal
+  })
+
+  ipcMain.handle(IPC_CHANNELS.agentPrepareProposalQuiz, async (_event, proposalId: string) => {
+    pruneExpired()
+    if (typeof proposalId !== 'string' || proposalId.length > 200) throw new Error('Invalid proposal ID.')
+    const proposal = proposals.get(proposalId)
+    if (!proposal) throw new Error('This proposal expired. Generate a fresh proposal.')
+    const prepared = await understanding.prepare(proposal.changeInput, true)
+    proposal.publicProposal.understanding = prepared
+    return prepared
+  })
+
+  ipcMain.handle(IPC_CHANNELS.agentRejectProposal, (_event, proposalId: string): void => {
+    if (typeof proposalId !== 'string' || proposalId.length > 200) throw new Error('Invalid proposal ID.')
+    const proposal = proposals.get(proposalId)
+    if (!proposal) return
+    understanding.gates.recordRejected(proposal.changeInput, understanding.analyze(proposal.changeInput).significance)
+    proposals.delete(proposalId)
   })
 
   ipcMain.handle(IPC_CHANNELS.agentApplyProposal, async (event, proposalId: string): Promise<AppliedProposal> => {
@@ -351,9 +512,14 @@ Prefer the smallest coherent change and include concrete verification steps.
     if (!proposal) throw new Error('This proposal expired or was already applied.')
     const session = sessions.get(proposal.publicProposal.sessionId)
     if (!session?.passed) throw new Error('The learning gate is no longer unlocked.')
+    const runId = session.publicSession.runId
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace first.')
     if (rootPath !== proposal.workspaceRoot) throw new Error('Return to the workspace where this proposal was generated.')
+    const analysis = understanding.analyze(proposal.changeInput)
+    if (analysis.significance.quizRequired) {
+      understanding.gates.assertUnlocked(proposal.changeInput.id, proposal.changeInput.source, analysis.fingerprint)
+    }
 
     for (const change of proposal.changes) {
       if (change.action === 'update') {
@@ -386,9 +552,12 @@ Prefer the smallest coherent change and include concrete verification steps.
       ? await dialog.showMessageBox(parentWindow, confirmationOptions)
       : await dialog.showMessageBox(confirmationOptions)
     if (confirmation.response !== 0) {
+      emitPhase(event.sender, runId, 'approval', 'Apply cancelled', 'stopped')
       return { applied: false, changedPaths: [], workspace: await createWorkspaceSnapshot(rootPath) }
     }
 
+    emitPhase(event.sender, runId, 'approval', 'Apply approved', 'completed')
+    emitPhase(event.sender, runId, 'apply', 'Applying approved file changes', 'active')
     const originals = new Map<string, string | null>()
     try {
       for (const change of proposal.changes) {
@@ -400,16 +569,24 @@ Prefer the smallest coherent change and include concrete verification steps.
         if (content === null) await fs.unlink(filePath).catch(() => undefined)
         else await fs.writeFile(filePath, content, 'utf8').catch(() => undefined)
       }
+      emitPhase(event.sender, runId, 'apply', 'File changes rolled back', 'failed', cleanError(error).message)
       throw error
     }
 
     proposals.delete(proposalId)
+    const changedPaths = proposal.changes.map((change) => change.absolutePath)
+    emitFiles(event.sender, runId, 'apply', 'Changed files', changedPaths.map((filePath) => ({ path: filePath, action: 'applied' })))
+    emitPhase(event.sender, runId, 'apply', 'Approved file changes applied', 'completed', `${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'} changed`)
+    emitPhase(event.sender, runId, 'complete', 'Agent workflow completed', 'completed')
     return {
       applied: true,
-      changedPaths: proposal.changes.map((change) => change.absolutePath),
+      changedPaths,
       workspace: await createWorkspaceSnapshot(rootPath)
     }
   })
 
-  ipcMain.on(IPC_CHANNELS.agentCancel, () => activeController?.abort())
+  ipcMain.on(IPC_CHANNELS.agentCancel, () => {
+    if (activeActivity) emitPhase(activeActivity.sender, activeActivity.runId, 'complete', 'AI request stopped', 'stopped')
+    activeController?.abort()
+  })
 }

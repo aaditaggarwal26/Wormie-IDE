@@ -5,9 +5,13 @@ import { registerAgentHandlers } from './agent'
 import { registerGitHandlers } from './git'
 import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
+import { UnderstandingController } from './understanding'
+import { UnderstandingRepository } from './understanding/store'
 import { registerWorkspaceHandlers } from './workspace'
 
 const store = new Store<AppPreferences>({ name: 'preferences' })
+const understandingStore = new Store({ name: 'understanding-state' })
+const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds')
@@ -57,9 +61,10 @@ function createWindow(): void {
 }
 
 const getWorkspaceRoot = registerWorkspaceHandlers(store)
-registerGitHandlers(getWorkspaceRoot)
+understanding.registerIpc()
+registerGitHandlers(getWorkspaceRoot, understanding)
 registerTerminalHandlers(getWorkspaceRoot)
-registerAgentHandlers(store, getWorkspaceRoot)
+registerAgentHandlers(store, getWorkspaceRoot, understanding)
 
 void app.whenReady().then(() => {
   createWindow()

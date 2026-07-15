@@ -14,7 +14,7 @@ export function ActivityRail(): React.JSX.Element {
 
   return (
     <nav className="activity-rail" aria-label="Workbench views">
-      <div className="worm-mark" aria-label="Learn Before You Code">
+      <div className="worm-mark" aria-label="Wormie">
         <span />
         <span />
         <span />

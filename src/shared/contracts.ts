@@ -13,7 +13,17 @@ export const IPC_CHANNELS = {
   terminalWrite: 'terminal:write',
   terminalStop: 'terminal:stop',
   terminalData: 'terminal:data',
-  terminalExit: 'terminal:exit'
+  terminalExit: 'terminal:exit',
+  agentGetConfig: 'agent:get-config',
+  agentSaveConfig: 'agent:save-config',
+  agentSetPassingScore: 'agent:set-passing-score',
+  agentGetCodexAccount: 'agent:get-codex-account',
+  agentConnectCodexAccount: 'agent:connect-codex-account',
+  agentStartLearning: 'agent:start-learning',
+  agentSubmitQuiz: 'agent:submit-quiz',
+  agentGenerateProposal: 'agent:generate-proposal',
+  agentApplyProposal: 'agent:apply-proposal',
+  agentCancel: 'agent:cancel'
 } as const
 
 export type FileTreeNode = {
@@ -77,6 +87,99 @@ export type TerminalExit = {
   code: number | null
 }
 
+export type AgentProvider = 'openai-compatible' | 'codex-account'
+
+export type AgentConfig = {
+  provider: AgentProvider
+  model: string
+  baseUrl: string
+  hasApiKey: boolean
+  keyStorage: 'encrypted' | 'session' | 'none'
+  passingScore: number
+}
+
+export type AgentConfigUpdate = {
+  provider: AgentProvider
+  model: string
+  baseUrl: string
+  apiKey?: string
+  clearApiKey?: boolean
+}
+
+export type CodexAccountStatus = {
+  available: boolean
+  connected: boolean
+  email: string | null
+  planType: string | null
+  authMode: 'chatgpt' | 'apiKey' | null
+  error?: string
+}
+
+export type LearningRequest = {
+  request: string
+  activePath?: string | null
+  openPaths?: string[]
+}
+
+export type ConceptLesson = {
+  name: string
+  whyItMatters: string
+  mentalModel: string
+  commonMistake: string
+}
+
+export type QuizQuestion = {
+  id: string
+  prompt: string
+  options: string[]
+}
+
+export type LearningSession = {
+  id: string
+  request: string
+  concepts: ConceptLesson[]
+  lessonSummary: string
+  quiz: QuizQuestion[]
+  passingScore: number
+}
+
+export type QuizSubmission = {
+  sessionId: string
+  answers: Record<string, number>
+}
+
+export type QuizResult = {
+  score: number
+  passed: boolean
+  feedback: Array<{
+    questionId: string
+    correct: boolean
+    explanation: string
+  }>
+}
+
+export type ProposedFileChange = {
+  relativePath: string
+  action: 'create' | 'update'
+  content: string
+  explanation: string
+}
+
+export type CodeProposal = {
+  id: string
+  sessionId: string
+  summary: string
+  changes: ProposedFileChange[]
+  risks: string[]
+  verification: string[]
+}
+
+export type AppliedProposal = {
+  applied: boolean
+  changedPaths: string[]
+  workspace: WorkspaceSnapshot
+}
+
 export type DesktopApi = {
   platform: string
   openWorkspace: () => Promise<WorkspaceSnapshot | null>
@@ -94,4 +197,14 @@ export type DesktopApi = {
   stopTerminal: () => void
   onTerminalData: (callback: (data: string) => void) => () => void
   onTerminalExit: (callback: (event: TerminalExit) => void) => () => void
+  getAgentConfig: () => Promise<AgentConfig>
+  saveAgentConfig: (config: AgentConfigUpdate) => Promise<AgentConfig>
+  setAgentPassingScore: (score: number) => Promise<number>
+  getCodexAccount: () => Promise<CodexAccountStatus>
+  connectCodexAccount: () => Promise<CodexAccountStatus>
+  startLearning: (request: LearningRequest) => Promise<LearningSession>
+  submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
+  generateProposal: (sessionId: string) => Promise<CodeProposal>
+  applyProposal: (proposalId: string) => Promise<AppliedProposal>
+  cancelAgent: () => void
 }

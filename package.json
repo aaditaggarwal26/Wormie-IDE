@@ -11,7 +11,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "dist": "npm run build && electron-builder --publish never",
+    "dist": "npm test && npm run build && electron-builder --publish never",
     "postinstall": "install-electron && electron-builder install-app-deps"
   },
   "dependencies": {

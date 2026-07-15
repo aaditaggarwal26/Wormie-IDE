@@ -16,6 +16,8 @@ import {
   type QuizSubmission
 } from '../../shared/contracts'
 import { isPathInside, validateEntryName } from '../pathSafety'
+import { readAssignment } from '../assignments/storage'
+import { appendAiActivity, type AssignmentAiActivityInput } from '../assignments/activity'
 import type { AppPreferences } from '../preferences'
 import { createWorkspaceSnapshot } from '../workspace'
 import { buildWorkspaceContext } from './context'
@@ -29,6 +31,9 @@ type InternalSession = {
   answerKey: AnswerKey
   contextRequest: LearningRequest
   workspaceRoot: string
+  assignmentId: string | null
+  assignmentRevision: string | null
+  allowGeneration: boolean
   passed: boolean
   attempts: number
   createdAt: number
@@ -110,7 +115,8 @@ function validateRelativeChangePath(rootPath: string, relativePath: string): str
 
 export function registerAgentHandlers(
   store: Store<AppPreferences>,
-  getWorkspaceRoot: () => string | null
+  getWorkspaceRoot: () => string | null,
+  progressStorageRoot: string
 ): void {
   const sessions = new Map<string, InternalSession>()
   const proposals = new Map<string, InternalProposal>()
@@ -148,6 +154,46 @@ export function registerAgentHandlers(
       keyStorage: key.storage,
       passingScore: store.get('learningPassingScore') ?? 80
     }
+  }
+
+  async function currentAssignmentPolicy(rootPath: string): Promise<{
+    assignmentId: string | null
+    assignmentRevision: string | null
+    passingScore: number
+    allowGeneration: boolean
+  }> {
+    const state = await readAssignment(rootPath)
+    if (!state.manifest) {
+      return {
+        assignmentId: null,
+        assignmentRevision: null,
+        passingScore: store.get('learningPassingScore') ?? 80,
+        allowGeneration: true
+      }
+    }
+    if (state.manifest.aiPolicy.mode === 'disabled') throw new Error('The teacher disabled AI for this assignment.')
+    return {
+      assignmentId: state.manifest.id,
+      assignmentRevision: state.revision,
+      passingScore: state.manifest.aiPolicy.passingScore,
+      allowGeneration: state.manifest.aiPolicy.allowGeneration
+    }
+  }
+
+  async function assertSessionPolicy(session: InternalSession, rootPath: string, requireGeneration: boolean): Promise<void> {
+    const policy = await currentAssignmentPolicy(rootPath)
+    if (policy.assignmentId !== session.assignmentId || policy.assignmentRevision !== session.assignmentRevision) {
+      throw new Error('The assignment policy changed after this learning session started. Start a new request.')
+    }
+    if (requireGeneration && (!session.allowGeneration || !policy.allowGeneration)) {
+      throw new Error('This assignment allows AI tutoring but does not allow AI-generated code.')
+    }
+  }
+
+  async function recordAssignmentActivity(rootPath: string, input: AssignmentAiActivityInput): Promise<void> {
+    const assignment = await readAssignment(rootPath)
+    if (!assignment.manifest || !assignment.revision) return
+    await appendAiActivity(progressStorageRoot, rootPath, assignment.manifest, assignment.revision, input)
   }
 
   async function runModel<T>(operation: (gateway: ModelGateway, signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -221,7 +267,8 @@ export function registerAgentHandlers(
     if (!rootPath) throw new Error('Open a workspace before asking the tutor for a code change.')
     const intent = typeof request?.request === 'string' ? request.request.trim() : ''
     if (!intent || intent.length > maxRequestLength) throw new Error('Describe the change in 1 to 4,000 characters.')
-    const passingScore = store.get('learningPassingScore') ?? 80
+    const assignmentPolicy = await currentAssignmentPolicy(rootPath)
+    const passingScore = assignmentPolicy.passingScore
     const contextRequest: LearningRequest = {
       request: intent,
       activePath: typeof request.activePath === 'string' ? request.activePath : null,
@@ -254,7 +301,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
       quiz,
       passingScore
     }
-    sessions.set(sessionId, {
+    const internalSession: InternalSession = {
       publicSession,
       answerKey: draft.quiz.map((question, index) => ({
         questionId: quiz[index].id,
@@ -263,14 +310,24 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
       })),
       contextRequest,
       workspaceRoot: rootPath,
+      assignmentId: assignmentPolicy.assignmentId,
+      assignmentRevision: assignmentPolicy.assignmentRevision,
+      allowGeneration: assignmentPolicy.allowGeneration,
       passed: false,
       attempts: 0,
       createdAt: Date.now()
+    }
+    await recordAssignmentActivity(rootPath, {
+      type: 'learning',
+      request: intent,
+      concepts: draft.concepts.map((concept) => concept.name),
+      lessonSummary: draft.lessonSummary
     })
+    sessions.set(sessionId, internalSession)
     return publicSession
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentSubmitQuiz, (_event, submission: QuizSubmission): QuizResult => {
+  ipcMain.handle(IPC_CHANNELS.agentSubmitQuiz, async (_event, submission: QuizSubmission): Promise<QuizResult> => {
     pruneExpired()
     const session = sessions.get(submission?.sessionId)
     if (!session) throw new Error('This learning session expired. Start the request again.')
@@ -278,6 +335,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     session.attempts += 1
     const result = gradeQuiz(submission, session.answerKey, session.publicSession.passingScore)
     session.passed = result.passed
+    await recordAssignmentActivity(session.workspaceRoot, { type: 'quiz', sessionId: session.publicSession.id, score: result.score, passed: result.passed })
     return result
   })
 
@@ -289,6 +347,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace first.')
     if (rootPath !== session.workspaceRoot) throw new Error('Return to the workspace where this learning session started.')
+    await assertSessionPolicy(session, rootPath, true)
     const currentContext = await buildWorkspaceContext(rootPath, session.contextRequest)
 
     const draft = await runModel((gateway, signal) => gateway.generateStructured(
@@ -341,6 +400,13 @@ Prefer the smallest coherent change and include concrete verification steps.
       risks: draft.risks,
       verification: draft.verification
     }
+    await recordAssignmentActivity(rootPath, {
+      type: 'proposal',
+      sessionId,
+      proposalId,
+      summary: draft.summary,
+      paths: draft.changes.map((change) => change.relativePath)
+    })
     proposals.set(proposalId, { publicProposal, changes: internalChanges, workspaceRoot: rootPath, createdAt: Date.now() })
     return publicProposal
   })
@@ -354,6 +420,7 @@ Prefer the smallest coherent change and include concrete verification steps.
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace first.')
     if (rootPath !== proposal.workspaceRoot) throw new Error('Return to the workspace where this proposal was generated.')
+    await assertSessionPolicy(session, rootPath, true)
 
     for (const change of proposal.changes) {
       if (change.action === 'update') {
@@ -386,6 +453,7 @@ Prefer the smallest coherent change and include concrete verification steps.
       ? await dialog.showMessageBox(parentWindow, confirmationOptions)
       : await dialog.showMessageBox(confirmationOptions)
     if (confirmation.response !== 0) {
+      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: false, paths: proposal.changes.map((change) => change.relativePath) })
       return { applied: false, changedPaths: [], workspace: await createWorkspaceSnapshot(rootPath) }
     }
 
@@ -395,6 +463,7 @@ Prefer the smallest coherent change and include concrete verification steps.
         originals.set(change.absolutePath, change.action === 'update' ? await fs.readFile(change.absolutePath, 'utf8') : null)
         await fs.writeFile(change.absolutePath, change.content, change.action === 'create' ? { encoding: 'utf8', flag: 'wx' } : 'utf8')
       }
+      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: true, paths: proposal.changes.map((change) => change.relativePath) })
     } catch (error) {
       for (const [filePath, content] of [...originals.entries()].reverse()) {
         if (content === null) await fs.unlink(filePath).catch(() => undefined)

@@ -23,7 +23,16 @@ export const IPC_CHANNELS = {
   agentSubmitQuiz: 'agent:submit-quiz',
   agentGenerateProposal: 'agent:generate-proposal',
   agentApplyProposal: 'agent:apply-proposal',
-  agentCancel: 'agent:cancel'
+  agentCancel: 'agent:cancel',
+  assignmentGet: 'assignment:get',
+  assignmentSave: 'assignment:save',
+  assignmentReveal: 'assignment:reveal',
+  assignmentExport: 'assignment:export',
+  assignmentImport: 'assignment:import',
+  assignmentStart: 'assignment:start',
+  assignmentUpdateTask: 'assignment:update-task',
+  assignmentSubmit: 'assignment:submit',
+  assignmentOpenSubmission: 'assignment:open-submission'
 } as const
 
 export type FileTreeNode = {
@@ -180,6 +189,156 @@ export type AppliedProposal = {
   workspace: WorkspaceSnapshot
 }
 
+export type AssignmentTaskKind = 'implement' | 'fix' | 'create' | 'explain'
+
+export type AssignmentTask = {
+  id: string
+  title: string
+  description: string
+  filePath: string
+  kind: AssignmentTaskKind
+  acceptanceCriteria: string[]
+}
+
+export type AssignmentAiPolicy =
+  | { mode: 'learning-gated'; passingScore: number; allowGeneration: boolean }
+  | { mode: 'disabled'; passingScore: number; allowGeneration: false }
+
+export type AssignmentEvidencePolicy = {
+  includeAiActivity: boolean
+  includeFileSnapshots: boolean
+}
+
+export type AssignmentManifest = {
+  schemaVersion: 1
+  id: string
+  title: string
+  summary: string
+  instructions: string
+  createdAt: string
+  updatedAt: string
+  tasks: AssignmentTask[]
+  aiPolicy: AssignmentAiPolicy
+  evidencePolicy: AssignmentEvidencePolicy
+}
+
+export type AssignmentManifestDraft = Omit<
+  AssignmentManifest,
+  'schemaVersion' | 'id' | 'createdAt' | 'updatedAt'
+> & {
+  id?: string
+}
+
+export type AssignmentWorkspaceState = {
+  workspaceRoot: string
+  role: 'teacher' | 'student'
+  manifest: AssignmentManifest | null
+  manifestPath: string | null
+  revision: string | null
+  progress: AssignmentProgress | null
+  error?: string
+  progressError?: string
+}
+
+export type AssignmentTaskProgress = {
+  status: 'not-started' | 'in-progress' | 'completed'
+  notes: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export type AssignmentProgress = {
+  schemaVersion: 1
+  revision: string
+  assignmentId: string
+  assignmentRevision: string
+  student: { id: string; name: string }
+  startedAt: string
+  updatedAt: string
+  status: 'in-progress' | 'submitted'
+  evidenceConsent: AssignmentEvidencePolicy & { acceptedAt: string }
+  tasks: Record<string, AssignmentTaskProgress>
+}
+
+export type AssignmentTaskProgressUpdate = {
+  taskId: string
+  status: AssignmentTaskProgress['status']
+  notes: string
+}
+
+export type AssignmentStartRequest = {
+  workspaceRoot: string
+  assignmentId: string
+  assignmentRevision: string
+  studentName: string
+  evidenceConsent: AssignmentEvidencePolicy
+}
+
+export type AssignmentTaskProgressRequest = {
+  workspaceRoot: string
+  assignmentId: string
+  assignmentRevision: string
+  expectedProgressRevision: string
+  update: AssignmentTaskProgressUpdate
+}
+
+export type AssignmentSubmitRequest = {
+  workspaceRoot: string
+  assignmentId: string
+  assignmentRevision: string
+  expectedProgressRevision: string
+}
+
+export type AssignmentAiActivity =
+  | { id: string; occurredAt: string; type: 'learning'; request: string; concepts: string[]; lessonSummary: string }
+  | { id: string; occurredAt: string; type: 'quiz'; sessionId: string; score: number; passed: boolean }
+  | { id: string; occurredAt: string; type: 'proposal'; sessionId: string; proposalId: string; summary: string; paths: string[] }
+  | { id: string; occurredAt: string; type: 'apply'; proposalId: string; applied: boolean; paths: string[] }
+
+export type AssignmentSubmissionFile = {
+  path: string
+  contentBase64: string
+  sha256: string
+  bytes: number
+}
+
+export type AssignmentSubmission = {
+  schemaVersion: 1
+  id: string
+  assignmentId: string
+  assignmentRevision: string
+  assignmentTitle: string
+  submittedAt: string
+  student: AssignmentProgress['student']
+  progress: AssignmentProgress
+  aiActivity: AssignmentAiActivity[]
+  files: AssignmentSubmissionFile[]
+}
+
+export type AssignmentSubmissionExportResult = {
+  filePath: string
+  submission: AssignmentSubmission
+}
+
+export type AssignmentSaveRequest = {
+  workspaceRoot: string
+  draft: AssignmentManifestDraft
+  expectedRevision: string | null
+  replaceInvalid: boolean
+}
+
+export type AssignmentExportResult = {
+  filePath: string
+  fileCount: number
+  totalBytes: number
+}
+
+export type AssignmentImportResult = {
+  workspace: WorkspaceSnapshot
+  assignmentTitle: string
+  fileCount: number
+}
+
 export type DesktopApi = {
   platform: string
   openWorkspace: () => Promise<WorkspaceSnapshot | null>
@@ -207,4 +366,13 @@ export type DesktopApi = {
   generateProposal: (sessionId: string) => Promise<CodeProposal>
   applyProposal: (proposalId: string) => Promise<AppliedProposal>
   cancelAgent: () => void
+  getAssignment: (workspaceRoot: string) => Promise<AssignmentWorkspaceState>
+  saveAssignment: (request: AssignmentSaveRequest) => Promise<AssignmentWorkspaceState>
+  revealAssignment: () => Promise<void>
+  exportAssignment: () => Promise<AssignmentExportResult | null>
+  importAssignment: () => Promise<AssignmentImportResult | null>
+  startAssignment: (request: AssignmentStartRequest) => Promise<AssignmentProgress>
+  updateAssignmentTask: (request: AssignmentTaskProgressRequest) => Promise<AssignmentProgress>
+  submitAssignment: (request: AssignmentSubmitRequest) => Promise<AssignmentSubmissionExportResult | null>
+  openAssignmentSubmission: (workspaceRoot: string) => Promise<AssignmentSubmission | null>
 }

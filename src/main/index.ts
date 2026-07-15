@@ -1,13 +1,18 @@
 import path from 'node:path'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
+import { registerAssignmentHandlers } from './assignments'
 import { registerGitHandlers } from './git'
+import { createRendererUrlValidator } from './ipcTrust'
 import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
 import { registerWorkspaceHandlers } from './workspace'
 
 const store = new Store<AppPreferences>({ name: 'preferences' })
+const trustedWebContents = new Set<number>()
+const rendererFilePath = path.join(__dirname, '../renderer/index.html')
+const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds')
@@ -31,6 +36,9 @@ function createWindow(): void {
       sandbox: true
     }
   })
+  const webContentsId = mainWindow.webContents.id
+  trustedWebContents.add(webContentsId)
+  mainWindow.webContents.once('destroyed', () => trustedWebContents.delete(webContentsId))
 
   mainWindow.once('ready-to-show', () => {
     if (process.argv.includes('--smoke-test')) {
@@ -48,25 +56,49 @@ function createWindow(): void {
     if (url.startsWith('https://')) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedRendererUrl(url)) event.preventDefault()
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(rendererFilePath)
   }
 }
 
-const getWorkspaceRoot = registerWorkspaceHandlers(store)
-registerGitHandlers(getWorkspaceRoot)
-registerTerminalHandlers(getWorkspaceRoot)
-registerAgentHandlers(store, getWorkspaceRoot)
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  const workspace = registerWorkspaceHandlers(store)
+  registerAssignmentHandlers(
+    store,
+    path.join(app.getPath('userData'), 'assignment-progress'),
+    workspace.getWorkspaceRoot,
+    workspace.setWorkspace,
+    (event: IpcMainInvokeEvent) =>
+      trustedWebContents.has(event.sender.id) &&
+      event.senderFrame === event.sender.mainFrame &&
+      isTrustedRendererUrl(event.senderFrame.url)
+  )
+  registerGitHandlers(workspace.getWorkspaceRoot)
+  registerTerminalHandlers(workspace.getWorkspaceRoot)
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, path.join(app.getPath('userData'), 'assignment-progress'))
 
-void app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  app.on('second-instance', () => {
+    const mainWindow = BrowserWindow.getAllWindows()[0]
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
   })
-})
+
+  void app.whenReady().then(() => {
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

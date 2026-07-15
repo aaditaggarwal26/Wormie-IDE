@@ -35,7 +35,16 @@ const desktopApi: DesktopApi = {
   submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),
   generateProposal: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.agentGenerateProposal, sessionId),
   applyProposal: (proposalId) => ipcRenderer.invoke(IPC_CHANNELS.agentApplyProposal, proposalId),
-  cancelAgent: () => ipcRenderer.send(IPC_CHANNELS.agentCancel)
+  cancelAgent: () => ipcRenderer.send(IPC_CHANNELS.agentCancel),
+  getAssignment: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentGet, workspaceRoot),
+  saveAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentSave, request),
+  revealAssignment: () => ipcRenderer.invoke(IPC_CHANNELS.assignmentReveal),
+  exportAssignment: () => ipcRenderer.invoke(IPC_CHANNELS.assignmentExport),
+  importAssignment: () => ipcRenderer.invoke(IPC_CHANNELS.assignmentImport),
+  startAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentStart, request),
+  updateAssignmentTask: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentUpdateTask, request),
+  submitAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentSubmit, request),
+  openAssignmentSubmission: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentOpenSubmission, workspaceRoot)
 }
 
 contextBridge.exposeInMainWorld('desktop', desktopApi)

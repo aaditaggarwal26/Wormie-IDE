@@ -19,6 +19,7 @@ const ignoredDirectories = new Set([
   '.next',
   '.turbo',
   '.vscode',
+  '.wormie',
   'build',
   'coverage',
   'dist',
@@ -30,6 +31,13 @@ const ignoredDirectories = new Set([
 const maxFileBytes = 2 * 1024 * 1024
 const maxTreeEntries = 5000
 const maxSearchResults = 100
+
+function isProtectedMetadataPath(workspaceRoot: string, targetPath: string): boolean {
+  const relative = path.relative(workspaceRoot, targetPath)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false
+  const firstSegment = relative.split(path.sep)[0].toLowerCase()
+  return firstSegment === '.git' || firstSegment === '.wormie'
+}
 
 function languageFor(filePath: string): string {
   const extension = path.extname(filePath).toLowerCase()
@@ -155,22 +163,30 @@ async function searchDirectory(
   }
 }
 
-export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => string | null {
+export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
+  getWorkspaceRoot: () => string | null
+  setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>
+} {
   let activeWorkspaceRoot: string | null = null
+  let workspaceTransition: Promise<void> = Promise.resolve()
 
   function requireWorkspaceRoot(): string {
     if (!activeWorkspaceRoot) throw new Error('Open a workspace first.')
     return activeWorkspaceRoot
   }
 
-  async function setWorkspace(rootPath: string): Promise<WorkspaceSnapshot> {
-    const resolvedRoot = await fs.realpath(rootPath)
-    const stats = await fs.stat(resolvedRoot)
-    if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
-
-    activeWorkspaceRoot = resolvedRoot
-    store.set('recentWorkspace', resolvedRoot)
-    return createWorkspaceSnapshot(resolvedRoot)
+  function setWorkspace(rootPath: string): Promise<WorkspaceSnapshot> {
+    const operation = workspaceTransition.then(async () => {
+      const resolvedRoot = await fs.realpath(rootPath)
+      const stats = await fs.stat(resolvedRoot)
+      if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
+      const snapshot = await createWorkspaceSnapshot(resolvedRoot)
+      activeWorkspaceRoot = resolvedRoot
+      store.set('recentWorkspace', resolvedRoot)
+      return snapshot
+    })
+    workspaceTransition = operation.then(() => undefined, () => undefined)
+    return operation
   }
 
   async function resolveWorkspaceFile(filePath: string): Promise<string> {
@@ -206,6 +222,7 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
 
   ipcMain.handle(IPC_CHANNELS.readFile, async (_event, filePath: string): Promise<OpenFile> => {
     const resolvedPath = await resolveWorkspaceFile(filePath)
+    if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
     const stats = await fs.stat(resolvedPath)
     if (!stats.isFile()) throw new Error('The requested path is not a file.')
     if (stats.size > maxFileBytes) throw new Error('Files larger than 2 MB are not opened in the editor.')
@@ -223,6 +240,7 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
 
   ipcMain.handle(IPC_CHANNELS.writeFile, async (_event, filePath: string, content: string) => {
     const resolvedPath = await resolveWorkspaceFile(filePath)
+    if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
     const stats = await fs.stat(resolvedPath)
     if (!stats.isFile()) throw new Error('The requested path is not a file.')
     await fs.writeFile(resolvedPath, content, 'utf8')
@@ -238,9 +256,11 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
       if (!parentStats.isDirectory() || !isPathInside(workspaceRoot, resolvedParent)) {
         throw new Error('New entries must be created inside a workspace folder.')
       }
+      if (isProtectedMetadataPath(workspaceRoot, resolvedParent)) throw new Error('Workspace metadata is managed by Wormie.')
 
       const entryPath = path.resolve(resolvedParent, validateEntryName(name))
       if (!isPathInside(workspaceRoot, entryPath)) throw new Error('The requested path is outside the workspace.')
+      if (isProtectedMetadataPath(workspaceRoot, entryPath)) throw new Error('Workspace metadata is managed by Wormie.')
 
       if (type === 'directory') await fs.mkdir(entryPath)
       else await fs.writeFile(entryPath, '', { encoding: 'utf8', flag: 'wx' })
@@ -255,9 +275,11 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
       const workspaceRoot = requireWorkspaceRoot()
       const resolvedPath = await resolveWorkspaceFile(entryPath)
       if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be renamed here.')
+      if (isProtectedMetadataPath(workspaceRoot, resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
 
       const nextPath = path.join(path.dirname(resolvedPath), validateEntryName(name))
       if (!isPathInside(workspaceRoot, nextPath)) throw new Error('The requested path is outside the workspace.')
+      if (isProtectedMetadataPath(workspaceRoot, nextPath)) throw new Error('Workspace metadata is managed by Wormie.')
       if (nextPath !== resolvedPath) {
         try {
           await fs.access(nextPath)
@@ -282,6 +304,7 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
       const workspaceRoot = requireWorkspaceRoot()
       const resolvedPath = await resolveWorkspaceFile(entryPath)
       if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be deleted.')
+      if (isProtectedMetadataPath(workspaceRoot, resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
 
       const confirmation = await dialog.showMessageBox({
         type: 'warning',
@@ -315,5 +338,5 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): () => s
     return results
   })
 
-  return () => activeWorkspaceRoot
+  return { getWorkspaceRoot: () => activeWorkspaceRoot, setWorkspace }
 }

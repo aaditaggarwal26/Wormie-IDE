@@ -67,6 +67,12 @@ type TurnCompletedNotification = {
   }
 }
 
+type ItemCompletedNotification = {
+  threadId: string
+  turnId: string
+  item: { type: string; text?: string }
+}
+
 const require = createRequire(import.meta.url)
 const requestTimeoutMs = 30_000
 const loginTimeoutMs = 5 * 60_000
@@ -244,18 +250,42 @@ export class CodexAppServer {
           shell_snapshot: false,
           shell_tool: false,
           web_search: false
-        },
-        tools: { web_search: null }
+        }
       }
     })
 
-    const turn = await this.request<TurnStartResponse>('turn/start', {
-      threadId: thread.thread.id,
-      input: [{ type: 'text', text: prompt, text_elements: [] }],
-      approvalPolicy: 'never',
-      sandboxPolicy: { type: 'readOnly', networkAccess: false },
-      outputSchema: z.toJSONSchema(schema)
-    })
+    let turnId: string | null = null
+    let finalMessage: string | undefined
+    const itemListeners = this.listeners.get('item/completed') ?? new Set<NotificationListener>()
+    const captureAgentMessage: NotificationListener = (params) => {
+      const notification = params as ItemCompletedNotification
+      if (
+        notification.threadId === thread.thread.id &&
+        (turnId === null || notification.turnId === turnId) &&
+        notification.item.type === 'agentMessage'
+      ) finalMessage = notification.item.text
+    }
+    const stopCapturing = () => {
+      itemListeners.delete(captureAgentMessage)
+      if (itemListeners.size === 0) this.listeners.delete('item/completed')
+    }
+    itemListeners.add(captureAgentMessage)
+    this.listeners.set('item/completed', itemListeners)
+
+    let turn: TurnStartResponse
+    try {
+      turn = await this.request<TurnStartResponse>('turn/start', {
+        threadId: thread.thread.id,
+        input: [{ type: 'text', text: prompt, text_elements: [] }],
+        approvalPolicy: 'never',
+        sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        outputSchema: z.toJSONSchema(schema)
+      })
+      turnId = turn.turn.id
+    } catch (error) {
+      stopCapturing()
+      throw error
+    }
 
     const abort = () => {
       void this.request('turn/interrupt', { threadId: thread.thread.id, turnId: turn.turn.id }).catch(() => undefined)
@@ -271,11 +301,12 @@ export class CodexAppServer {
       if (completed.turn.status !== 'completed') {
         throw new Error(completed.turn.error?.message || `Codex turn ended with status ${completed.turn.status}.`)
       }
-      const finalMessage = [...completed.turn.items].reverse().find((item) => item.type === 'agentMessage')?.text
+      finalMessage ??= [...completed.turn.items].reverse().find((item) => item.type === 'agentMessage')?.text
       if (!finalMessage) throw new Error('Codex completed without a structured response.')
       return schema.parse(JSON.parse(finalMessage))
     } finally {
       signal.removeEventListener('abort', abort)
+      stopCapturing()
       void this.request('thread/unsubscribe', { threadId: thread.thread.id }).catch(() => undefined)
     }
   }

@@ -3,6 +3,8 @@ import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BookOpenText, Command, FolderOpen, Gauge, Search, Settings2 } from 'lucide-react'
 import { ActivityRail } from '@/components/ActivityRail'
+import { AssignmentPanel } from '@/components/AssignmentPanel'
+import { AssignmentStudio } from '@/components/AssignmentStudio'
 import { BottomPanel } from '@/components/BottomPanel'
 import { EditorPane } from '@/components/EditorPane'
 import { Explorer } from '@/components/Explorer'
@@ -10,7 +12,19 @@ import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
 import { useWorkbench } from '@/store/workbench'
-import type { AgentConfig, AgentProvider, CodexAccountStatus, FileTreeNode } from '@shared/contracts'
+import type {
+  AgentConfig,
+  AgentProvider,
+  AssignmentManifestDraft,
+  AssignmentEvidencePolicy,
+  AssignmentSaveRequest,
+  AssignmentSubmission,
+  AssignmentTask,
+  AssignmentTaskProgressUpdate,
+  AssignmentWorkspaceState,
+  CodexAccountStatus,
+  FileTreeNode
+} from '@shared/contracts'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected error occurred.'
@@ -34,7 +48,18 @@ function findSuggestedFile(entries: FileTreeNode[]): FileTreeNode | null {
 
 export default function App(): React.JSX.Element {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [assignmentStudioOpen, setAssignmentStudioOpen] = useState(false)
+  const [assignmentRecovering, setAssignmentRecovering] = useState(false)
+  const [assignmentState, setAssignmentState] = useState<AssignmentWorkspaceState | null>(null)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  const [assignmentProgressError, setAssignmentProgressError] = useState<string | null>(null)
+  const [reviewedSubmission, setReviewedSubmission] = useState<AssignmentSubmission | null>(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
   const restored = useRef(false)
+  const assignmentLoadSequence = useRef(0)
+  const assignmentEditorRevision = useRef<string | null>(null)
+  const assignmentReturnFocus = useRef<HTMLElement | null>(null)
+  const assignmentOpenLoad = useRef(false)
   const automaticallyOpenedWorkspace = useRef<string | null>(null)
   const workspace = useWorkbench((state) => state.workspace)
   const documents = useWorkbench((state) => state.documents)
@@ -51,6 +76,26 @@ export default function App(): React.JSX.Element {
   const setBottomView = useWorkbench((state) => state.setBottomView)
   const addOutput = useWorkbench((state) => state.addOutput)
 
+  const loadAssignment = useCallback(async (workspaceRoot: string) => {
+    const sequence = ++assignmentLoadSequence.current
+    setAssignmentLoading(true)
+    try {
+      const result = await window.desktop.getAssignment(workspaceRoot)
+      if (sequence !== assignmentLoadSequence.current || result.workspaceRoot !== workspaceRoot || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return null
+      setAssignmentState(result)
+      setAssignmentError(result.error ?? null)
+      setAssignmentProgressError(result.progressError ?? null)
+      return result
+    } catch (error) {
+      if (sequence !== assignmentLoadSequence.current || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return null
+      setAssignmentState(null)
+      setAssignmentError(errorMessage(error))
+      return null
+    } finally {
+      if (sequence === assignmentLoadSequence.current && useWorkbench.getState().workspace?.rootPath === workspaceRoot) setAssignmentLoading(false)
+    }
+  }, [])
+
   const workspaceMutation = useMutation({
     mutationFn: window.desktop.openWorkspace,
     onSuccess: (result) => {
@@ -66,8 +111,15 @@ export default function App(): React.JSX.Element {
   })
 
   const refreshMutation = useMutation({
-    mutationFn: window.desktop.refreshWorkspace,
-    onSuccess: setWorkspace,
+    mutationFn: async (workspaceRoot: string) => {
+      const result = await window.desktop.refreshWorkspace()
+      return { result, workspaceRoot }
+    },
+    onSuccess: ({ result, workspaceRoot }) => {
+      if (useWorkbench.getState().workspace?.rootPath !== workspaceRoot || result.rootPath !== workspaceRoot) return
+      setWorkspace(result)
+      void loadAssignment(result.rootPath)
+    },
     onError: (error) => addOutput(`Could not refresh workspace: ${errorMessage(error)}`)
   })
 
@@ -118,10 +170,118 @@ export default function App(): React.JSX.Element {
       return activeDocument.path
     },
     onSuccess: (filePath) => {
-      if (filePath) markSaved(filePath)
+      if (!filePath) return
+      markSaved(filePath)
+      if (filePath === assignmentState?.manifestPath && workspace) void loadAssignment(workspace.rootPath)
     },
     onError: (error) => addOutput(`Could not save file: ${errorMessage(error)}`)
   })
+
+  const saveAssignmentMutation = useMutation({
+    mutationFn: ({ request }: { request: AssignmentSaveRequest; workspaceRoot: string }) => window.desktop.saveAssignment(request),
+    onSuccess: (result, variables) => {
+      if (useWorkbench.getState().workspace?.rootPath !== variables.workspaceRoot) return
+      setAssignmentState(result)
+      setAssignmentError(null)
+      setAssignmentStudioOpen(false)
+      setAssignmentRecovering(false)
+      addOutput(`Saved assignment ${result.manifest?.title ?? ''}.`)
+      refreshMutation.mutate(variables.workspaceRoot)
+    },
+    onError: (error) => setAssignmentError(errorMessage(error))
+  })
+
+  const revealAssignmentMutation = useMutation({
+    mutationFn: window.desktop.revealAssignment,
+    onError: (error) => addOutput(`Could not reveal assignment manifest: ${errorMessage(error)}`)
+  })
+
+  const exportAssignmentMutation = useMutation({
+    mutationFn: window.desktop.exportAssignment,
+    onSuccess: (result) => {
+      if (result) addOutput(`Exported ${result.fileCount} starter files to ${result.filePath}.`)
+    },
+    onError: (error) => addOutput(`Could not export assignment package: ${errorMessage(error)}`)
+  })
+
+  const importAssignmentMutation = useMutation({
+    mutationFn: window.desktop.importAssignment,
+    onSuccess: (result) => {
+      if (!result) return
+      setWorkspace(result.workspace)
+      setActivity('assignments')
+      addOutput(`Imported ${result.assignmentTitle} with ${result.fileCount} starter files.`)
+    },
+    onError: (error) => addOutput(`Could not import assignment package: ${errorMessage(error)}`)
+  })
+
+  const startAssignmentMutation = useMutation({
+    mutationFn: window.desktop.startAssignment,
+    onSuccess: (progress, request) => {
+      setAssignmentState((current) => current?.workspaceRoot === request.workspaceRoot && current.revision === request.assignmentRevision ? { ...current, progress } : current)
+      setAssignmentProgressError(null)
+    },
+    onError: (error) => setAssignmentProgressError(errorMessage(error))
+  })
+
+  const updateTaskMutation = useMutation({
+    mutationFn: window.desktop.updateAssignmentTask,
+    onSuccess: (progress, request) => {
+      setAssignmentState((current) => current?.workspaceRoot === request.workspaceRoot && current.revision === request.assignmentRevision ? { ...current, progress } : current)
+      setAssignmentProgressError(null)
+    },
+    onError: (error) => setAssignmentProgressError(errorMessage(error))
+  })
+
+  const submitAssignmentMutation = useMutation({
+    mutationFn: window.desktop.submitAssignment,
+    onSuccess: (result, request) => {
+      if (!result) return
+      setAssignmentState((current) => current?.workspaceRoot === request.workspaceRoot ? { ...current, progress: result.submission.progress } : current)
+      setAssignmentProgressError(null)
+      addOutput(`Saved submission to ${result.filePath}.`)
+    },
+    onError: (error) => setAssignmentProgressError(errorMessage(error))
+  })
+
+  const openSubmissionMutation = useMutation({
+    mutationFn: window.desktop.openAssignmentSubmission,
+    onSuccess: (submission) => {
+      if (submission) setReviewedSubmission(submission)
+    },
+    onError: (error) => addOutput(`Could not open submission: ${errorMessage(error)}`)
+  })
+
+  const openAssignmentStudio = useCallback((recovering = false) => {
+    if (!workspace) return
+    assignmentReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (recovering) {
+      assignmentEditorRevision.current = assignmentState?.revision ?? null
+      setAssignmentRecovering(true)
+      setAssignmentStudioOpen(true)
+      return
+    }
+    const workspaceRoot = workspace.rootPath
+    if (activity !== 'assignments') assignmentOpenLoad.current = true
+    void loadAssignment(workspaceRoot).then((result) => {
+      if (!result || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return
+      assignmentEditorRevision.current = result.revision
+      setAssignmentRecovering(Boolean(result.error))
+      setAssignmentStudioOpen(true)
+    })
+  }, [activity, assignmentState?.revision, loadAssignment, workspace])
+
+  const reloadAssignmentStudio = useCallback(() => {
+    if (!workspace || !window.confirm('Reload the assignment from disk and discard this draft?')) return
+    const workspaceRoot = workspace.rootPath
+    setAssignmentStudioOpen(false)
+    void loadAssignment(workspaceRoot).then((result) => {
+      if (!result || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return
+      assignmentEditorRevision.current = result.revision
+      setAssignmentRecovering(Boolean(result.error))
+      setAssignmentStudioOpen(true)
+    })
+  }, [loadAssignment, workspace])
 
   useEffect(() => {
     if (restored.current) return
@@ -132,11 +292,38 @@ export default function App(): React.JSX.Element {
   }, [setWorkspace])
 
   useEffect(() => {
+    setAssignmentState(null)
+    setAssignmentError(null)
+    setAssignmentProgressError(null)
+    setReviewedSubmission(null)
+    setAssignmentStudioOpen(false)
+    if (!workspace) return
+
+    void loadAssignment(workspace.rootPath)
+  }, [loadAssignment, workspace?.rootPath])
+
+  useEffect(() => {
     if (activity === 'sourceControl' && workspace) gitMutation.mutate()
+    if (activity === 'assignments' && workspace) {
+      if (assignmentOpenLoad.current) assignmentOpenLoad.current = false
+      else void loadAssignment(workspace.rootPath)
+    }
   }, [activity, workspace?.rootPath])
 
   useEffect(() => {
+    const refreshOnFocus = () => {
+      const current = useWorkbench.getState().workspace
+      if (current && useWorkbench.getState().activity === 'assignments' && !assignmentStudioOpen) {
+        void loadAssignment(current.rootPath)
+      }
+    }
+    window.addEventListener('focus', refreshOnFocus)
+    return () => window.removeEventListener('focus', refreshOnFocus)
+  }, [assignmentStudioOpen, loadAssignment])
+
+  useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (assignmentStudioOpen) return
       const modifier = window.desktop.platform === 'darwin' ? event.metaKey : event.ctrlKey
       if (!modifier) return
 
@@ -164,7 +351,7 @@ export default function App(): React.JSX.Element {
 
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [saveMutation, setActivity, setBottomView, workspaceMutation])
+  }, [assignmentStudioOpen, saveMutation, setActivity, setBottomView, workspaceMutation])
 
   const explorerBusy =
     workspaceMutation.isPending ||
@@ -187,7 +374,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="app-shell" data-platform={window.desktop.platform}>
-      <header className="titlebar">
+      <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
         <div className="titlebar-brand"><span>Wormie</span></div>
         <button className="command-trigger" onClick={() => setCommandPaletteOpen(true)} type="button">
           <Search size={13} />
@@ -197,7 +384,7 @@ export default function App(): React.JSX.Element {
         <div className="titlebar-workspace">{workspace?.name ?? 'No workspace'}</div>
       </header>
 
-      <div className="workbench">
+      <div className="workbench" inert={assignmentStudioOpen ? true : undefined}>
         <ActivityRail />
         {activity === 'explorer' && (
           <Explorer
@@ -206,7 +393,7 @@ export default function App(): React.JSX.Element {
             onDelete={(entryPath) => deleteMutation.mutate(entryPath)}
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
             onOpenWorkspace={() => workspaceMutation.mutate()}
-            onRefresh={() => refreshMutation.mutate()}
+            onRefresh={() => workspace && refreshMutation.mutate(workspace.rootPath)}
             onRename={(entryPath, name) => renameMutation.mutate({ entryPath, name })}
             workspace={workspace}
           />
@@ -229,6 +416,77 @@ export default function App(): React.JSX.Element {
             workspace={workspace}
           />
         )}
+        {activity === 'assignments' && (
+          <AssignmentPanel
+            assignment={assignmentState}
+            busy={assignmentLoading}
+            error={assignmentError}
+            progressError={assignmentProgressError}
+            exporting={exportAssignmentMutation.isPending}
+            importing={importAssignmentMutation.isPending}
+            openingSubmission={openSubmissionMutation.isPending}
+            onEdit={() => openAssignmentStudio(false)}
+            onExport={() => exportAssignmentMutation.mutate()}
+            onImport={() => importAssignmentMutation.mutate()}
+            onOpenTask={(task) => {
+              if (!workspace) return
+              const separator = window.desktop.platform === 'win32' ? '\\' : '/'
+              const segments = task.filePath.split('/')
+              const filePath = `${workspace.rootPath}${separator}${segments.join(separator)}`
+              if (task.kind !== 'create') {
+                fileMutation.mutate({ filePath })
+                return
+              }
+              void window.desktop.readFile(filePath).then((file) => openDocument(file)).catch(async () => {
+                const parentPath = `${workspace.rootPath}${separator}${segments.slice(0, -1).join(separator)}`
+                try {
+                  const created = await window.desktop.createEntry(parentPath, segments.at(-1)!, 'file')
+                  if (useWorkbench.getState().workspace?.rootPath !== workspace.rootPath) return
+                  setWorkspace(created.workspace)
+                  fileMutation.mutate({ filePath: created.path })
+                } catch (error) {
+                  addOutput(`Could not create task file: ${errorMessage(error)}`)
+                }
+              })
+            }}
+            onOpenSubmission={() => workspace && openSubmissionMutation.mutate(workspace.rootPath)}
+            onRecover={() => openAssignmentStudio(true)}
+            onReveal={() => revealAssignmentMutation.mutate()}
+            onStart={(name: string, evidenceConsent: AssignmentEvidencePolicy) => {
+              if (!workspace || !assignmentState?.manifest || !assignmentState.revision) return
+              startAssignmentMutation.mutate({
+                workspaceRoot: workspace.rootPath,
+                assignmentId: assignmentState.manifest.id,
+                assignmentRevision: assignmentState.revision,
+                studentName: name,
+                evidenceConsent
+              })
+            }}
+            onUpdateTask={(update: AssignmentTaskProgressUpdate) => {
+              if (!workspace || !assignmentState?.manifest || !assignmentState.revision || !assignmentState.progress) return
+              updateTaskMutation.mutate({
+                workspaceRoot: workspace.rootPath,
+                assignmentId: assignmentState.manifest.id,
+                assignmentRevision: assignmentState.revision,
+                expectedProgressRevision: assignmentState.progress.revision,
+                update
+              })
+            }}
+            onSubmit={() => {
+              if (!workspace || !assignmentState?.manifest || !assignmentState.revision || !assignmentState.progress) return
+              submitAssignmentMutation.mutate({
+                workspaceRoot: workspace.rootPath,
+                assignmentId: assignmentState.manifest.id,
+                assignmentRevision: assignmentState.revision,
+                expectedProgressRevision: assignmentState.progress.revision
+              })
+            }}
+            progressBusy={startAssignmentMutation.isPending || updateTaskMutation.isPending || submitAssignmentMutation.isPending}
+            reviewedSubmission={reviewedSubmission}
+            submitting={submitAssignmentMutation.isPending}
+            workspace={workspace}
+          />
+        )}
         {activity === 'learning' && <LearningSidebar />}
         {activity === 'settings' && <SettingsSidebar />}
 
@@ -247,7 +505,7 @@ export default function App(): React.JSX.Element {
         <TutorPane />
       </div>
 
-      <footer className="statusbar">
+      <footer className="statusbar" inert={assignmentStudioOpen ? true : undefined}>
         <span className="status-mode"><BookOpenText size={12} /> Learning mode</span>
         <span>{documents.length} open {documents.length === 1 ? 'file' : 'files'}</span>
         <span className="status-spacer" />
@@ -284,8 +542,36 @@ export default function App(): React.JSX.Element {
               <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setBottomView('terminal') }} type="button">
                 <Command size={15} /><span>Focus terminal</span><kbd>Ctrl `</kbd>
               </button>
+              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('assignments'); openAssignmentStudio(false) }} type="button">
+                <BookOpenText size={15} /><span>{assignmentState?.manifest ? 'Edit assignment' : 'Create assignment'}</span>
+              </button>
+              <button onClick={() => { setCommandPaletteOpen(false); importAssignmentMutation.mutate() }} type="button">
+                <FolderOpen size={15} /><span>Import assignment package</span>
+              </button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {assignmentStudioOpen && workspace && (
+          <AssignmentStudio
+            error={assignmentError}
+            manifest={assignmentState?.manifest ?? null}
+            onClearError={() => {
+              if (!assignmentError?.includes('outside this editor')) setAssignmentError(null)
+            }}
+            onClose={() => { setAssignmentStudioOpen(false); setAssignmentRecovering(false); setAssignmentError(null) }}
+            onSave={(draft: AssignmentManifestDraft) => saveAssignmentMutation.mutate({
+              request: { workspaceRoot: workspace.rootPath, draft, expectedRevision: assignmentEditorRevision.current, replaceInvalid: assignmentRecovering },
+              workspaceRoot: workspace.rootPath
+            })}
+            onReload={reloadAssignmentStudio}
+            recovering={assignmentRecovering}
+            returnFocus={assignmentReturnFocus.current}
+            saving={saveAssignmentMutation.isPending}
+            workspace={workspace}
+          />
         )}
       </AnimatePresence>
     </div>

@@ -47,7 +47,62 @@ export function TerminalPane({ active, workspaceRoot }: TerminalPaneProps): Reac
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    const inputSubscription = terminal.onData((data) => window.desktop.writeTerminal(data))
+    let inputBuffer = ''
+    const commandHistory: string[] = []
+    let historyIndex = 0
+
+    const replaceInput = (nextInput: string) => {
+      for (let index = 0; index < inputBuffer.length; index += 1) terminal.write('\b \b')
+      inputBuffer = nextInput
+      terminal.write(inputBuffer)
+    }
+
+    const submitInput = () => {
+      terminal.write('\r\n')
+      window.desktop.writeTerminal(`${inputBuffer}\r`)
+      if (inputBuffer.trim() && commandHistory.at(-1) !== inputBuffer) commandHistory.push(inputBuffer)
+      historyIndex = commandHistory.length
+      inputBuffer = ''
+    }
+
+    const inputSubscription = terminal.onData((data) => {
+      if (data === '\u001b[A') {
+        if (historyIndex > 0) {
+          historyIndex -= 1
+          replaceInput(commandHistory[historyIndex] ?? '')
+        }
+        return
+      }
+      if (data === '\u001b[B') {
+        if (historyIndex < commandHistory.length) historyIndex += 1
+        replaceInput(commandHistory[historyIndex] ?? '')
+        return
+      }
+      if (data.startsWith('\u001b')) return
+
+      for (let index = 0; index < data.length; index += 1) {
+        const character = data[index]
+        if (character === '\r' || (character === '\n' && data[index - 1] !== '\r')) {
+          submitInput()
+        } else if (character === '\n') {
+          continue
+        } else if (character === '\u007f') {
+          if (inputBuffer.length > 0) {
+            inputBuffer = inputBuffer.slice(0, -1)
+            terminal.write('\b \b')
+          }
+        } else if (character === '\u0003') {
+          terminal.write('^C\r\n')
+          inputBuffer = ''
+          window.desktop.writeTerminal('\u0003')
+        } else if (character === '\u000c') {
+          terminal.clear()
+        } else if (character >= ' ') {
+          inputBuffer += character
+          terminal.write(character)
+        }
+      }
+    })
     const removeDataListener = window.desktop.onTerminalData((data) => terminal.write(data))
     const removeExitListener = window.desktop.onTerminalExit(({ code }) => {
       terminal.writeln(`\r\n[Shell exited${code === null ? '' : ` with code ${code}`}]`)
@@ -94,4 +149,3 @@ export function TerminalPane({ active, workspaceRoot }: TerminalPaneProps): Reac
 
   return <div className="terminal-surface" ref={containerRef} />
 }
-

@@ -192,6 +192,18 @@ ul { list-style: none; margin: 0; padding: 0; }
 .change-row:hover { color: #d0d7d3; background: #161c1e; }
 .change-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .change-row code { color: var(--warm); font: 9px "Cascadia Code", monospace; }
+.repositories-heading { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 12px; border-bottom: 1px solid #1a2023; color: #758087; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.repositories-heading b { display: grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; color: #9ba59f; background: #20272b; font: 8px "Cascadia Code", monospace; }
+.repository-list { max-height: 122px; overflow: auto; border-bottom: 1px solid #1a2023; }
+.repository-list button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; width: 100%; height: 29px; padding: 0 10px 0 12px; border: 0; color: #7c888e; background: transparent; font-size: 10px; text-align: left; }
+.repository-list button:hover { color: #c8d0cb; background: #161c1e; }
+.repository-list button[data-active="true"] { color: var(--acid); background: #1c2420; }
+.repository-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repository-list code { color: #78836a; font: 8px "Cascadia Code", monospace; }
+.repository-empty { display: flex; flex-direction: column; align-items: center; padding: 48px 19px 0; color: #5f6b70; text-align: center; }
+.repository-empty svg { margin-bottom: 12px; color: #7e8d67; }
+.repository-empty strong { color: #aeb8b2; font-size: 11px; font-weight: 550; }
+.repository-empty span { margin-top: 7px; font-family: "Avenir Next", sans-serif; font-size: 9px; line-height: 1.5; }
 .spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

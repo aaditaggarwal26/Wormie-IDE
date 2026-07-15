@@ -58,12 +58,19 @@ export type GitFileChange = {
   workingTree: string
 }
 
-export type GitStatusSnapshot = {
-  isRepository: boolean
+export type GitRepositorySnapshot = {
+  rootPath: string
+  name: string
+  relativePath: string
   branch: string | null
   ahead: number
   behind: number
   files: GitFileChange[]
+}
+
+export type GitStatusSnapshot = {
+  workspaceRoot: string
+  repositories: GitRepositorySnapshot[]
 }
 
 export type TerminalExit = {

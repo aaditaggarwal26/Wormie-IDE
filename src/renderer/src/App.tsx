@@ -225,7 +225,7 @@ export default function App(): React.JSX.Element {
             busy={gitMutation.isPending}
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
             onRefresh={() => gitMutation.mutate()}
-            status={gitMutation.data ?? null}
+            status={workspace && gitMutation.data?.workspaceRoot === workspace.rootPath ? gitMutation.data : null}
             workspace={workspace}
           />
         )}

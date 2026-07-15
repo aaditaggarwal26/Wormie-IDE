@@ -186,9 +186,9 @@ export default function App(): React.JSX.Element {
   }, [workspace?.rootPath])
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar">
-        <div className="titlebar-brand"><span>Wormie</span><i>/</i><b>Learn Before You Code</b></div>
+        <div className="titlebar-brand"><span>Wormie</span></div>
         <button className="command-trigger" onClick={() => setCommandPaletteOpen(true)} type="button">
           <Search size={13} />
           <span>Search commands</span>

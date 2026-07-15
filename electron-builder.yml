@@ -1,5 +1,5 @@
 appId: com.wormie.learnbeforeyoucode
-productName: Learn Before You Code
+productName: Wormie
 directories:
   output: release
 files:

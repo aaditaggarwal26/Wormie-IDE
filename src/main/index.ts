@@ -16,6 +16,7 @@ function createWindow(): void {
     height: savedBounds?.height ?? 900,
     minWidth: 1040,
     minHeight: 680,
+    title: 'Wormie',
     backgroundColor: '#090b0d',
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',

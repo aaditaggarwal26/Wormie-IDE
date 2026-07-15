@@ -31,7 +31,7 @@ describe('Codex app-server integration', () => {
       expect(config).toContain('shell_tool = false')
       expect(config).toContain('remote_plugin = false')
     } finally {
-      runtime.stop()
+      await runtime.stop()
     }
   }, 30_000)
 })

@@ -280,12 +280,16 @@ export class CodexAppServer {
     }
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     const child = this.process
     this.process = null
     this.startPromise = null
-    if (child && !child.killed) child.kill()
     this.rejectPending(new Error('The Codex runtime stopped.'))
+    if (!child || child.exitCode !== null) return Promise.resolve()
+
+    const stopped = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+    child.kill()
+    return stopped
   }
 
   private async ensureStarted(): Promise<void> {

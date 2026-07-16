@@ -182,11 +182,13 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 .agent-composer { margin: 0 16px; overflow: hidden; border: 1px solid #303a3f; border-radius: 9px; background: #111619; }
 .agent-composer:focus-within { border-color: #687548; box-shadow: 0 0 0 1px #68754833; }
-.agent-composer textarea { display: block; width: 100%; height: 104px; padding: 11px; resize: none; border: 0; outline: 0; color: #d1d7d3; background: transparent; font: 11px/1.55 "Avenir Next", sans-serif; }
+.agent-composer textarea { display: block; field-sizing: content; width: 100%; min-height: 66px; max-height: 180px; padding: 11px; overflow: auto; resize: none; border: 0; outline: 0; color: #d1d7d3; background: transparent; font: 11px/1.55 "Avenir Next", sans-serif; }
 .agent-composer textarea::placeholder { color: #59646a; }
 .composer-meta { display: flex; gap: 8px; align-items: center; min-height: 35px; padding: 6px 7px 6px 11px; border-top: 1px solid #252d31; color: #657178; font-size: 8px; }
 .composer-meta span { flex: 1; }
 .composer-meta button { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid #61703f; border-radius: 6px; color: #e4edc5; background: #303a24; }
+.composer-meta button:active:not(:disabled) { transform: scale(.96); }
+.composer-meta button:focus-visible { outline: 2px solid #96a95d; outline-offset: 2px; }
 .composer-meta button:disabled { opacity: .35; }
 .agent-warning { display: flex; gap: 5px; align-items: center; margin: 0; padding: 0 9px 8px; color: #b08b67; font-size: 8px; }
 .learning-session, .proposal-view { padding: 0 14px 14px; }

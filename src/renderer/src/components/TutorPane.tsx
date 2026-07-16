@@ -67,10 +67,10 @@ export function TutorPane(): React.JSX.Element {
     setActivityOpen(true)
   }
 
-  const learningMutation = useMutation<LearningSession, Error, string>({
-    mutationFn: (runId) => window.desktop.startLearning({
+  const learningMutation = useMutation<LearningSession, Error, { runId: string; intent: string }>({
+    mutationFn: ({ runId, intent }) => window.desktop.startLearning({
       runId,
-      request,
+      request: intent,
       activePath,
       openPaths: documents.map((document) => document.path)
     }),
@@ -82,7 +82,10 @@ export function TutorPane(): React.JSX.Element {
       setQuizAttempts(0)
       setProposal(null)
     },
-    onError: reportError
+    onError: (cause, variables) => {
+      setRequest((current) => current || variables.intent)
+      reportError(cause)
+    }
   })
 
   const quizMutation = useMutation({
@@ -136,11 +139,14 @@ export function TutorPane(): React.JSX.Element {
         : 'Idle'
 
   const startLearning = () => {
+    const intent = request.trim()
+    if (!workspace || !intent || dirtyDocuments.length > 0 || busy) return
     const runId = crypto.randomUUID()
     activeRunId.current = runId
     setActivityState(initialAgentActivityState(runId))
     setActivityOpen(true)
-    learningMutation.mutate(runId)
+    setRequest('')
+    learningMutation.mutate({ runId, intent })
   }
 
   const openProposedFile = (relativePath: string) => {
@@ -229,7 +235,13 @@ export function TutorPane(): React.JSX.Element {
                 disabled={busy}
                 maxLength={4000}
                 onChange={(event) => setRequest(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  startLearning()
+                }}
                 placeholder="Add protected routes with session-based authentication..."
+                rows={1}
                 value={request}
               />
               <div className="composer-meta">

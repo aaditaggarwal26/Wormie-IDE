@@ -5,7 +5,7 @@ export type EditorDocument = OpenFile & {
   savedContent: string
 }
 
-type Activity = 'explorer' | 'search' | 'sourceControl' | 'assignments' | 'learning' | 'settings'
+type Activity = 'explorer' | 'search' | 'sourceControl' | 'classrooms' | 'assignments' | 'learning' | 'settings'
 type BottomView = 'problems' | 'output' | 'terminal' | 'quiz'
 
 type WorkbenchState = {

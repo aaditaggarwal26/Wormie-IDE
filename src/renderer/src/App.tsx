@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpenText, Command, FolderOpen, Gauge, Search, Settings2 } from 'lucide-react'
+import { BookOpenText, Command, FolderOpen, Gauge, GraduationCap, Search, Settings2 } from 'lucide-react'
 import { ActivityRail } from '@/components/ActivityRail'
+import { AuthScreen } from '@/components/AuthScreen'
 import { AssignmentPanel } from '@/components/AssignmentPanel'
 import { AssignmentStudio } from '@/components/AssignmentStudio'
 import { BottomPanel } from '@/components/BottomPanel'
+import { ClassroomPanel } from '@/components/ClassroomPanel'
 import { EditorPane } from '@/components/EditorPane'
 import { Explorer } from '@/components/Explorer'
 import { SearchPanel } from '@/components/SearchPanel'
@@ -24,12 +26,18 @@ import type {
   AssignmentTask,
   AssignmentTaskProgressUpdate,
   AssignmentWorkspaceState,
+  Classroom,
+  CloudAuthCredentials,
+  CloudAuthState,
   CodexAccountStatus,
   FileTreeNode
 } from '@shared/contracts'
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'An unexpected error occurred.'
+  const message = error instanceof Error ? error.message : 'An unexpected error occurred.'
+  return message
+    .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/i, '')
+    .replace(/^Error:\s*/i, '')
 }
 
 function findSuggestedFile(entries: FileTreeNode[]): FileTreeNode | null {
@@ -57,6 +65,12 @@ export default function App(): React.JSX.Element {
   const [assignmentProgressError, setAssignmentProgressError] = useState<string | null>(null)
   const [reviewedSubmission, setReviewedSubmission] = useState<AssignmentSubmission | null>(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [cloudAuth, setCloudAuth] = useState<CloudAuthState | null>(null)
+  const [cloudAuthLoaded, setCloudAuthLoaded] = useState(false)
+  const [cloudError, setCloudError] = useState<string | null>(null)
+  const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [classroomActionVersion, setClassroomActionVersion] = useState(0)
+  const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const restored = useRef(false)
   const assignmentLoadSequence = useRef(0)
   const assignmentEditorRevision = useRef<string | null>(null)
@@ -254,6 +268,85 @@ export default function App(): React.JSX.Element {
     onError: (error) => addOutput(`Could not open submission: ${errorMessage(error)}`)
   })
 
+  const authMutation = useMutation({
+    mutationFn: ({ mode, credentials }: { mode: 'sign-in' | 'sign-up'; credentials: CloudAuthCredentials }) =>
+      mode === 'sign-in' ? window.desktop.signIn(credentials) : window.desktop.signUp(credentials),
+    onSuccess: (result) => {
+      setCloudAuth(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const classroomListMutation = useMutation({
+    mutationFn: window.desktop.listClassrooms,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const createClassroomMutation = useMutation({
+    mutationFn: window.desktop.createClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const joinClassroomMutation = useMutation({
+    mutationFn: window.desktop.joinClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const rotateInviteMutation = useMutation({
+    mutationFn: window.desktop.rotateClassroomInvite,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const publishAssignmentMutation = useMutation({
+    mutationFn: window.desktop.publishAssignment,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setCloudError(null)
+      addOutput('Published the assignment to the classroom.')
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const openClassroomAssignmentMutation = useMutation({
+    mutationFn: window.desktop.openClassroomAssignment,
+    onSuccess: (result) => {
+      if (!result) return
+      setWorkspace(result.workspace)
+      setActivity('assignments')
+      addOutput(`Opened classroom assignment ${result.assignmentTitle}.`)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const signOutMutation = useMutation({
+    mutationFn: window.desktop.signOut,
+    onSuccess: () => {
+      setCloudAuth({ user: null })
+      setClassrooms([])
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const openAssignmentStudio = useCallback((recovering = false) => {
     if (!workspace) return
     assignmentReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -286,6 +379,47 @@ export default function App(): React.JSX.Element {
   }, [loadAssignment, workspace])
 
   useEffect(() => {
+    let active = true
+    void window.desktop.getCloudAuth()
+      .then((result) => {
+        if (!active) return
+        setCloudAuth(result)
+        setCloudError(null)
+      })
+      .catch((error) => {
+        if (!active) return
+        setCloudAuth({ user: null })
+        setCloudError(errorMessage(error))
+      })
+      .finally(() => {
+        if (active) setCloudAuthLoaded(true)
+      })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    const removeListener = window.desktop.onClassroomInvite(setPendingClassroomInvite)
+    void window.desktop.getPendingClassroomInvite()
+      .then((inviteLink) => {
+        if (inviteLink) setPendingClassroomInvite(inviteLink)
+      })
+      .catch((error) => setCloudError(errorMessage(error)))
+    return removeListener
+  }, [])
+
+  useEffect(() => {
+    if (!cloudAuth?.user || !pendingClassroomInvite || joinClassroomMutation.isPending) return
+    const inviteLink = pendingClassroomInvite
+    setPendingClassroomInvite(null)
+    setActivity('classrooms')
+    joinClassroomMutation.mutate(inviteLink)
+  }, [cloudAuth?.user?.id, pendingClassroomInvite, joinClassroomMutation.isPending, setActivity])
+
+  useEffect(() => {
+    if (cloudAuth?.user) classroomListMutation.mutate()
+  }, [cloudAuth?.user?.id])
+
+  useEffect(() => {
     if (restored.current) return
     restored.current = true
     void window.desktop.restoreWorkspace().then((result) => {
@@ -306,6 +440,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     if (activity === 'sourceControl' && workspace) gitMutation.mutate()
+    if (activity === 'classrooms' && cloudAuth?.user) classroomListMutation.mutate()
     if (activity === 'assignments' && workspace) {
       if (assignmentOpenLoad.current) assignmentOpenLoad.current = false
       else void loadAssignment(workspace.rootPath)
@@ -374,6 +509,25 @@ export default function App(): React.JSX.Element {
     if (initialFile) fileMutation.mutate({ filePath: initialFile.path })
   }, [workspace?.rootPath])
 
+  const classroomBusy =
+    classroomListMutation.isPending ||
+    createClassroomMutation.isPending ||
+    joinClassroomMutation.isPending ||
+    rotateInviteMutation.isPending ||
+    publishAssignmentMutation.isPending ||
+    openClassroomAssignmentMutation.isPending ||
+    signOutMutation.isPending
+
+  if (!cloudAuthLoaded || !cloudAuth?.user) {
+    return <AuthScreen
+      busy={authMutation.isPending}
+      confirmationRequired={Boolean(cloudAuth?.emailConfirmationRequired)}
+      error={cloudError}
+      loading={!cloudAuthLoaded}
+      onSubmit={(mode, credentials) => authMutation.mutate({ mode, credentials })}
+    />
+  }
+
   return (
     <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
@@ -415,6 +569,32 @@ export default function App(): React.JSX.Element {
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
             onRefresh={() => gitMutation.mutate()}
             status={workspace && gitMutation.data?.workspaceRoot === workspace.rootPath ? gitMutation.data : null}
+            workspace={workspace}
+          />
+        )}
+        {activity === 'classrooms' && (
+          <ClassroomPanel
+            actionVersion={classroomActionVersion}
+            assignment={assignmentState}
+            busy={classroomBusy}
+            classrooms={classrooms}
+            error={cloudError}
+            onCopyInvite={(inviteLink) => {
+              void window.desktop.copyClassroomInvite(inviteLink)
+                .then(() => addOutput('Copied the classroom invitation.'))
+                .catch((error) => setCloudError(errorMessage(error)))
+            }}
+            onCreate={(request) => createClassroomMutation.mutate(request)}
+            onJoin={(invite) => joinClassroomMutation.mutate(invite)}
+            onOpenAssignment={(assignmentId) => openClassroomAssignmentMutation.mutate(assignmentId)}
+            onPublish={(classroomId) => {
+              if (!workspace) return
+              publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
+            }}
+            onRefresh={() => classroomListMutation.mutate()}
+            onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
+            onSignOut={() => signOutMutation.mutate()}
+            user={cloudAuth.user}
             workspace={workspace}
           />
         )}
@@ -546,6 +726,9 @@ export default function App(): React.JSX.Element {
               </button>
               <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('assignments'); openAssignmentStudio(false) }} type="button">
                 <BookOpenText size={15} /><span>{assignmentState?.manifest ? 'Edit assignment' : 'Create assignment'}</span>
+              </button>
+              <button onClick={() => { setCommandPaletteOpen(false); setActivity('classrooms') }} type="button">
+                <GraduationCap size={15} /><span>Open classrooms</span>
               </button>
               <button onClick={() => { setCommandPaletteOpen(false); importAssignmentMutation.mutate() }} type="button">
                 <FolderOpen size={15} /><span>Import assignment package</span>

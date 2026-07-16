@@ -156,9 +156,10 @@ export async function createAssignmentPackage(workspaceRoot: string): Promise<{
   value: AssignmentPackage
   payload: string
   totalBytes: number
+  assignmentRevision: string
 }> {
   const assignment = await readAssignment(workspaceRoot)
-  if (!assignment.manifest) throw new Error('Create an assignment before exporting a package.')
+  if (!assignment.manifest || !assignment.revision) throw new Error('Create an assignment before exporting a package.')
   const files: PackagedFile[] = []
   const total = { bytes: 0 }
   await collectFiles(workspaceRoot, workspaceRoot, files, total)
@@ -175,7 +176,7 @@ export async function createAssignmentPackage(workspaceRoot: string): Promise<{
     assignment: assignment.manifest,
     files
   }
-  return { value, payload: `${JSON.stringify(value, null, 2)}\n`, totalBytes: total.bytes }
+  return { value, payload: `${JSON.stringify(value, null, 2)}\n`, totalBytes: total.bytes, assignmentRevision: assignment.revision }
 }
 
 export async function importAssignmentPackage(

@@ -168,7 +168,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .gate-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 17px; border: 1px solid #435043; border-radius: 10px; color: var(--acid); background: #222a20; }
 .gate-label { margin: 0 0 6px; color: #748077; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .gate-card h3 { margin: 0 0 9px; color: #d3d9d5; font-family: Georgia, serif; font-size: 18px; font-weight: 400; line-height: 1.18; }
-.gate-copy { margin: 0; color: #7d8983; font-family: "Avenir Next", sans-serif; font-size: 10px; line-height: 1.6; }
+.gate-copy { margin: 0; color: #7d8983; font-family: "Avenir Next", sans-serif; font-size: 11px; line-height: 1.65; }
 .learning-path { padding: 7px 21px; }
 .path-step { display: flex; gap: 10px; align-items: center; color: #59636a; }
 .step-marker { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid #303a3f; border-radius: 50%; font: 9px "Cascadia Code", monospace; }
@@ -193,44 +193,44 @@ ul { list-style: none; margin: 0; padding: 0; }
 .session-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 38px; color: #6d787e; font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
 .session-toolbar button { display: flex; gap: 4px; align-items: center; padding: 4px 6px; border: 0; border-radius: 4px; color: #7c888e; background: transparent; font-size: 8px; }
 .session-toolbar button:hover { color: #b9c2bd; background: #171d20; }
-.lesson-summary { padding: 11px; border: 1px solid #2c3733; border-radius: 8px; color: #9da8a2; background: #141a19; font: 10px/1.55 "Avenir Next", sans-serif; }
+.lesson-summary { padding: 11px; border: 1px solid #2c3733; border-radius: 8px; color: #9da8a2; background: #141a19; font: 11px/1.6 "Avenir Next", sans-serif; }
 .concept-list { display: grid; gap: 6px; margin-top: 9px; }
 .concept-list details { overflow: hidden; border: 1px solid #272f33; border-radius: 7px; background: #101416; }
-.concept-list summary { display: grid; grid-template-columns: 19px 1fr auto; gap: 7px; align-items: center; min-height: 34px; padding: 0 9px; color: #b0b9b4; font-size: 10px; cursor: default; list-style: none; }
+.concept-list summary { display: grid; grid-template-columns: 19px 1fr auto; gap: 7px; align-items: center; min-height: 36px; padding: 0 9px; color: #b0b9b4; font-size: 11px; cursor: default; list-style: none; }
 .concept-list summary span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--acid); background: #242c20; font: 8px monospace; }
 .concept-list summary svg { transition: transform .15s; }
 .concept-list details[open] summary svg { transform: rotate(180deg); }
 .concept-body { padding: 1px 10px 8px 36px; border-top: 1px solid #20272b; }
 .concept-body b { display: block; margin-top: 9px; color: #77865c; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
-.concept-body p { margin: 3px 0 0; color: #86918b; font: 9px/1.55 "Avenir Next", sans-serif; }
+.concept-body p { margin: 3px 0 0; color: #86918b; font: 10px/1.6 "Avenir Next", sans-serif; }
 .quiz-heading { display: flex; gap: 6px; align-items: center; margin: 17px 0 9px; color: var(--warm); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .quiz-question { display: grid; gap: 5px; margin: 0 0 11px; padding: 10px; border: 1px solid #293136; border-radius: 8px; }
-.quiz-question legend { padding: 0 4px; color: #bdc5c0; font: 10px/1.45 "Avenir Next", sans-serif; }
-.quiz-question label { display: grid; grid-template-columns: 17px 1fr; gap: 7px; align-items: center; min-height: 28px; padding: 5px 7px; border: 1px solid transparent; border-radius: 5px; color: #828d88; font: 9px/1.35 "Avenir Next", sans-serif; }
+.quiz-question legend { padding: 0 4px; color: #bdc5c0; font: 11px/1.5 "Avenir Next", sans-serif; }
+.quiz-question label { display: grid; grid-template-columns: 18px 1fr; gap: 7px; align-items: center; min-height: 31px; padding: 6px 7px; border: 1px solid transparent; border-radius: 5px; color: #828d88; font: 10px/1.45 "Avenir Next", sans-serif; }
 .quiz-question label[data-selected="true"] { border-color: #56623d; color: #c9d2c4; background: #20271d; }
 .quiz-question input { display: none; }
 .quiz-question label span { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid #3b464b; border-radius: 4px; font: 8px monospace; }
-.quiz-feedback { margin: 4px 0 0; padding: 7px; border-radius: 5px; color: #c49772; background: #211a16; font: 8px/1.5 "Avenir Next", sans-serif; }
+.quiz-feedback { margin: 4px 0 0; padding: 7px; border-radius: 5px; color: #c49772; background: #211a16; font: 10px/1.55 "Avenir Next", sans-serif; }
 .quiz-feedback[data-correct="true"] { color: #9fc58c; background: #172017; }
 .agent-primary { display: flex; gap: 7px; align-items: center; justify-content: center; width: 100%; min-height: 34px; padding: 7px; border: 1px solid #64733f; border-radius: 7px; color: #e4edc9; background: linear-gradient(#364127, #29321f); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .agent-primary:disabled { opacity: .4; }
 .quiz-passed { padding: 11px; border: 1px solid #52613a; border-radius: 8px; background: #182017; }
 .quiz-passed > div { display: flex; gap: 8px; align-items: center; margin-bottom: 9px; color: var(--acid); }
-.quiz-passed span { color: #b8c1b3; font-size: 9px; }
+.quiz-passed span { color: #b8c1b3; font-size: 10px; }
 .quiz-passed span b { margin-right: 5px; color: var(--acid); font: 12px Georgia, serif; }
 .quiz-passed button { display: flex; gap: 6px; align-items: center; justify-content: center; width: 100%; height: 30px; border: 1px solid #687548; border-radius: 6px; color: #e6edcf; background: #303a24; font-size: 9px; }
 .proposal-summary { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid #506039; border-radius: 8px; color: var(--acid); background: #182017; }
-.proposal-summary p { margin: 0; color: #acb7aa; font: 9px/1.5 "Avenir Next", sans-serif; }
+.proposal-summary p { margin: 0; color: #acb7aa; font: 10px/1.55 "Avenir Next", sans-serif; }
 .proposal-files { display: grid; gap: 6px; margin-top: 9px; }
 .proposal-files details { overflow: hidden; border: 1px solid #293136; border-radius: 7px; background: #101416; }
-.proposal-files summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 32px; padding: 0 8px; color: #aab4af; font-size: 9px; list-style: none; }
+.proposal-files summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 34px; padding: 0 8px; color: #aab4af; font-size: 10px; list-style: none; }
 .proposal-files summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proposal-files summary em { color: var(--warm); font-size: 7px; font-style: normal; text-transform: uppercase; }
-.proposal-files details > p { margin: 0; padding: 8px; border-top: 1px solid #232a2e; color: #7f8a85; font: 8px/1.5 "Avenir Next", sans-serif; }
-.proposal-files pre { max-height: 230px; margin: 0; overflow: auto; padding: 9px; border-top: 1px solid #232a2e; color: #9da8a2; background: #090c0d; font: 8px/1.45 "Cascadia Code", monospace; white-space: pre; }
+.proposal-files details > p { margin: 0; padding: 8px; border-top: 1px solid #232a2e; color: #7f8a85; font: 10px/1.55 "Avenir Next", sans-serif; }
+.proposal-files pre { max-height: 230px; margin: 0; overflow: auto; padding: 9px; border-top: 1px solid #232a2e; color: #9da8a2; background: #090c0d; font: 9px/1.5 "Cascadia Code", monospace; white-space: pre; }
 .proposal-notes { margin-top: 9px; padding: 9px; border: 1px solid #293136; border-radius: 7px; }
 .proposal-notes b { color: #8b9866; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
-.proposal-notes p { margin: 5px 0 0; color: #7f8a85; font: 8px/1.45 "Avenir Next", sans-serif; }
+.proposal-notes p { margin: 5px 0 0; color: #7f8a85; font: 10px/1.55 "Avenir Next", sans-serif; }
 .apply-button { margin-top: 10px; }
 .agent-error { display: flex; gap: 7px; align-items: flex-start; margin: 10px 14px; padding: 9px; border: 1px solid #5d4035; border-radius: 7px; color: #d19b7d; background: #211714; font: 9px/1.45 "Avenir Next", sans-serif; }
 .agent-error svg { flex: 0 0 auto; }
@@ -503,47 +503,47 @@ ul { list-style: none; margin: 0; padding: 0; }
 .significance-badge { padding: 3px 5px; border: 1px solid #536044; border-radius: 4px; color: #b9ca7c; background: #252d20; font: 7px "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
 .significance-badge[data-level="critical"] { border-color: #704c3c; color: #dfa47f; background: #2b1b16; }
 .significance-badge[data-level="major"] { border-color: #6a5b3d; color: #d4bb79; background: #282217; }
-.change-dossier > p { margin: 9px 0; color: #919d97; font: 9px/1.5 "Avenir Next", sans-serif; }
+.change-dossier > p { margin: 9px 0; color: #919d97; font: 10px/1.55 "Avenir Next", sans-serif; }
 .change-dossier dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border: 1px solid #2a3431; border-radius: 5px; }
 .change-dossier dl div { padding: 5px; border-right: 1px solid #2a3431; }
 .change-dossier dl div:last-child { border: 0; }
 .change-dossier dt { color: #5f6c67; font-size: 7px; letter-spacing: .08em; text-transform: uppercase; }
 .change-dossier dd { margin: 2px 0 0; color: #c0cac4; font: 9px "Cascadia Code", monospace; }
-.change-dossier details { margin-top: 8px; color: #7f8b85; font-size: 8px; }
+.change-dossier details { margin-top: 8px; color: #7f8b85; font-size: 9px; }
 .change-dossier summary { color: #98a39d; cursor: pointer; }
 .change-dossier ul { margin: 6px 0 0; padding-left: 16px; line-height: 1.55; }
 .change-flow { margin-top: 8px; padding-top: 7px; border-top: 1px solid #29322f; }
-.change-flow b, .question-concept { color: #8f9e68; font-size: 7px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.change-flow p { margin: 4px 0 0; color: #818c87; font: 8px/1.5 "Avenir Next", sans-serif; }
+.change-flow b, .question-concept { color: #8f9e68; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.change-flow p { margin: 4px 0 0; color: #818c87; font: 10px/1.55 "Avenir Next", sans-serif; }
 .understanding-clear { display: flex; gap: 6px; align-items: center; margin-top: 9px; padding: 7px 8px; border: 1px solid #33402f; border-radius: 6px; color: #95a76c; background: #151c14; font-size: 8px; }
 .understanding-clear span { flex: 1; }
 .understanding-clear b { font: 7px "Cascadia Code", monospace; text-transform: uppercase; }
 .question-stage { padding: 10px; border: 1px solid #30393d; border-radius: 8px; outline: 0; background: #101416; }
-.quiz-progress-row { display: flex; justify-content: space-between; color: #6e797f; font-size: 7px; letter-spacing: .07em; text-transform: uppercase; }
+.quiz-progress-row { display: flex; justify-content: space-between; color: #6e797f; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
 .quiz-progress-row b { color: #9bab6c; }
 .quiz-progress { height: 2px; margin: 6px 0 10px; overflow: hidden; border-radius: 2px; background: #263035; }
 .quiz-progress span { display: block; height: 100%; background: #9aac61; transition: width .18s ease; }
-.question-stage h4 { margin: 5px 0 9px; color: #c7cfca; font: 11px/1.45 Georgia, serif; }
-.question-stage pre { max-height: 160px; overflow: auto; margin: 0 0 8px; padding: 8px; border: 1px solid #242d31; border-radius: 5px; color: #aeb8b2; background: #090c0e; font: 8px/1.45 "Cascadia Code", monospace; white-space: pre-wrap; }
+.question-stage h4 { margin: 5px 0 10px; color: #c7cfca; font: 13px/1.5 Georgia, serif; }
+.question-stage pre { max-height: 160px; overflow: auto; margin: 0 0 8px; padding: 8px; border: 1px solid #242d31; border-radius: 5px; color: #aeb8b2; background: #090c0e; font: 9px/1.5 "Cascadia Code", monospace; white-space: pre-wrap; }
 .answer-options { display: grid; gap: 5px; }
-.answer-options button { display: grid; grid-template-columns: 18px 1fr; gap: 6px; align-items: center; min-height: 30px; padding: 5px 7px; border: 1px solid #293338; border-radius: 5px; color: #8b9691; background: #13181a; font: 8px/1.4 "Avenir Next", sans-serif; text-align: left; }
+.answer-options button { display: grid; grid-template-columns: 19px 1fr; gap: 7px; align-items: center; min-height: 34px; padding: 6px 8px; border: 1px solid #293338; border-radius: 5px; color: #8b9691; background: #13181a; font: 10px/1.45 "Avenir Next", sans-serif; text-align: left; }
 .answer-options button span { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid #3a454a; border-radius: 4px; color: #778288; font: 7px "Cascadia Code", monospace; }
 .answer-options button[data-selected="true"] { border-color: #647244; color: #c8d1bc; background: #20271c; }
 .answer-options button[data-selected="true"] span { border-color: #829253; color: #d9e4ad; }
-.written-answer { width: 100%; min-height: 86px; resize: vertical; padding: 8px; border: 1px solid #303a3f; border-radius: 5px; outline: 0; color: #c3cbc6; background: #0c1012; font: 9px/1.5 "Avenir Next", sans-serif; }
+.written-answer { width: 100%; min-height: 86px; resize: vertical; padding: 8px; border: 1px solid #303a3f; border-radius: 5px; outline: 0; color: #c3cbc6; background: #0c1012; font: 10px/1.55 "Avenir Next", sans-serif; }
 .written-answer:focus { border-color: #6b7948; }
 .source-references { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .source-references button { display: flex; gap: 3px; align-items: center; max-width: 100%; padding: 3px 5px; overflow: hidden; border: 0; border-radius: 4px; color: #849460; background: #1c231b; font: 7px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .question-navigation { display: flex; gap: 6px; margin-top: 10px; }
-.question-navigation button { display: flex; flex: 1; gap: 5px; align-items: center; justify-content: center; min-height: 28px; border: 1px solid #39443b; border-radius: 5px; color: #a8b4ad; background: #1b2220; font-size: 8px; }
+.question-navigation button { display: flex; flex: 1; gap: 5px; align-items: center; justify-content: center; min-height: 30px; border: 1px solid #39443b; border-radius: 5px; color: #a8b4ad; background: #1b2220; font-size: 9px; }
 .question-navigation button:last-child { border-color: #5b683e; color: #d9e3bf; background: #293220; }
 .question-navigation button:disabled { opacity: .3; }
 .understanding-result { display: grid; grid-template-columns: auto 1fr; gap: 7px; padding: 9px; border: 1px solid #644737; border-radius: 7px; color: #ce9170; background: #211714; }
 .understanding-result[data-passed="true"] { border-color: #53623b; color: #aabd6f; background: #182016; }
-.understanding-result b { color: #d7ded9; font-size: 9px; }
-.understanding-result p { grid-column: 2; margin: 3px 0 0; color: #8c9791; font: 8px/1.45 "Avenir Next", sans-serif; }
+.understanding-result b { color: #d7ded9; font-size: 10px; }
+.understanding-result p { grid-column: 2; margin: 3px 0 0; color: #8c9791; font: 10px/1.5 "Avenir Next", sans-serif; }
 .understanding-result button { grid-column: 2; margin-top: 5px; padding: 5px; border: 1px solid #5f4e39; border-radius: 4px; color: #cfaa7f; background: #241d16; font-size: 8px; }
-.understanding-error { display: flex; gap: 5px; align-items: flex-start; margin: 0; padding: 7px; border-radius: 5px; color: #ce9272; background: #211714; font: 8px/1.45 "Avenir Next", sans-serif; }
+.understanding-error { display: flex; gap: 5px; align-items: flex-start; margin: 0; padding: 7px; border-radius: 5px; color: #ce9272; background: #211714; font: 10px/1.5 "Avenir Next", sans-serif; }
 .bypass-panel { padding: 7px; border: 1px dashed #4a4136; border-radius: 5px; color: #9e896f; font-size: 8px; }
 .bypass-panel textarea { width: 100%; height: 55px; margin-top: 6px; padding: 6px; border: 1px solid #413a32; border-radius: 4px; color: #c5b5a4; background: #15120f; font: 8px/1.4 "Avenir Next", sans-serif; }
 .bypass-panel button { width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #544938; border-radius: 4px; color: #bca382; background: #201b15; font-size: 8px; }
@@ -588,12 +588,94 @@ ul { list-style: none; margin: 0; padding: 0; }
 .terminal-surface .xterm { height: 100%; }
 .terminal-surface .xterm-viewport { scrollbar-color: #34403b transparent; scrollbar-width: thin; }
 
+.auth-screen { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr); width: 100%; height: 100%; color: #cdd5cf; background: #090c0d; }
+.auth-story { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 52px 64px 45px; border-right: 1px solid #28302c; background: radial-gradient(circle at 72% 34%, #293221 0, #172018 18%, transparent 42%), linear-gradient(135deg, #101512, #090c0d 72%); }
+.auth-story::before { position: absolute; inset: 0; opacity: .28; content: ""; background-image: linear-gradient(#a7b95d12 1px, transparent 1px), linear-gradient(90deg, #a7b95d12 1px, transparent 1px); background-size: 46px 46px; mask-image: linear-gradient(135deg, #000, transparent 72%); }
+.auth-story::after { position: absolute; right: -105px; bottom: 75px; width: 380px; height: 380px; border: 1px solid #9aac5944; border-radius: 50%; box-shadow: 0 0 0 34px #9aac5908, 0 0 0 72px #9aac5906; content: ""; }
+.auth-brand, .auth-story-copy, .auth-principles { position: relative; z-index: 1; }
+.auth-brand { display: flex; gap: 12px; align-items: center; color: var(--acid); font-size: 14px; letter-spacing: .08em; }
+.auth-worm { display: flex; gap: 3px; align-items: flex-end; height: 24px; }
+.auth-worm i { display: block; width: 7px; border-radius: 7px 7px 2px 2px; background: var(--acid); }
+.auth-worm i:nth-child(1) { height: 10px; opacity: .45; }.auth-worm i:nth-child(2) { height: 17px; opacity: .72; }.auth-worm i:nth-child(3) { height: 24px; }
+.auth-story-copy { max-width: 650px; margin: auto 0; }
+.auth-kicker { display: flex; gap: 7px; align-items: center; margin-bottom: 26px; color: #aabb69; font-size: 10px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
+.auth-story h1 { max-width: 610px; margin: 0; color: #eef2ee; font: 400 clamp(42px, 5vw, 76px)/.97 Georgia, serif; letter-spacing: -.045em; }
+.auth-story-copy > p { max-width: 530px; margin: 29px 0 0; color: #8f9a93; font: 15px/1.7 "Avenir Next", sans-serif; }
+.auth-principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; max-width: 650px; border: 1px solid #2b342f; background: #2b342f; }
+.auth-principles span { padding: 14px 16px; color: #8c9890; background: #0e1310dd; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.auth-principles b { margin-right: 8px; color: var(--warm); font: 8px "Cascadia Code", monospace; }
+.auth-entry { display: grid; place-items: center; padding: 50px; background: linear-gradient(180deg, #0d1112, #090b0d); }
+.auth-card { width: min(390px, 100%); }
+.auth-card-index { color: #66716a; font: 8px "Cascadia Code", monospace; letter-spacing: .14em; }
+.auth-card h2 { margin: 18px 0 8px; color: #e0e6e1; font: 400 31px Georgia, serif; }
+.auth-card > p { margin: 0 0 28px; color: #77827c; font: 12px/1.6 "Avenir Next", sans-serif; }
+.auth-card form { display: grid; gap: 17px; }
+.auth-card label { display: grid; gap: 7px; color: #929d96; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.auth-card label > div { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; height: 43px; padding: 0 12px; border: 1px solid #303936; border-radius: 6px; color: #66726c; background: #111615; }
+.auth-card label > div:focus-within { border-color: #7e8e4c; box-shadow: 0 0 0 3px #aabc5d0d; color: #b2c26b; }
+.auth-card input { min-width: 0; height: 100%; border: 0; outline: 0; color: #d4dbd6; background: transparent; font-size: 12px; }
+.auth-card form > button { display: flex; align-items: center; justify-content: space-between; height: 43px; margin-top: 5px; padding: 0 15px; border: 1px solid #758347; border-radius: 6px; color: #eff4dc; background: linear-gradient(110deg, #394429, #29321f); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.auth-card form > button:hover { background: linear-gradient(110deg, #465331, #313d25); }
+.auth-card button:disabled { opacity: .48; cursor: default; }
+.auth-mode-switch { width: 100%; margin-top: 18px; border: 0; color: #9aa66c; background: transparent; font-size: 10px; }
+.auth-security { display: flex; gap: 7px; align-items: flex-start; margin-top: 28px; padding-top: 18px; border-top: 1px solid #222926; color: #626d67; font: 9px/1.5 "Avenir Next", sans-serif; }
+.auth-security svg { flex: 0 0 auto; color: #819151; }
+.auth-notice, .auth-error { margin: 0 0 18px; padding: 10px 11px; border-radius: 5px; font: 10px/1.5 "Avenir Next", sans-serif; }
+.auth-notice { display: flex; gap: 8px; align-items: center; border: 1px solid #4b5937; color: #b8c58d; background: #192016; }
+.auth-error { border: 1px solid #654335; color: #d19a7a; background: #211613; }
+
+.classroom-panel { background: linear-gradient(180deg, #0d1211, #0a0d0f); }
+.classroom-scroll { height: calc(100% - 42px); overflow-y: auto; scrollbar-color: #34403b transparent; scrollbar-width: thin; }
+.classroom-account { display: grid; grid-template-columns: 28px minmax(0, 1fr) 24px; gap: 8px; align-items: center; padding: 10px 11px; border-bottom: 1px solid #202824; }
+.classroom-account > div { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #59643e; border-radius: 8px; color: #dbe6b6; background: #252d20; font: 11px Georgia, serif; }
+.classroom-account b, .classroom-account small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classroom-account b { color: #aeb8b2; font-size: 11px; font-weight: 600; }.classroom-account small { margin-top: 2px; color: #69756f; font-size: 9px; text-transform: uppercase; }
+.classroom-account button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 5px; color: #65716b; background: transparent; }.classroom-account button:hover { color: #cf9575; background: #211715; }
+.classroom-error { margin: 9px 10px 0; padding: 8px; border: 1px solid #664536; border-radius: 5px; color: #cf9677; background: #211714; font: 11px/1.5 "Avenir Next", sans-serif; }
+.classroom-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 10px; }
+.classroom-actions button, .classroom-primary { display: flex; gap: 5px; align-items: center; justify-content: center; min-height: 32px; border: 1px solid #39443e; border-radius: 5px; color: #a9b5ae; background: #171d1a; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.classroom-actions button:first-child { border-color: #56633d; color: #c8d5a2; background: #222a1d; }
+.classroom-loading { padding: 45px 18px; color: #69756f; font-size: 11px; text-align: center; animation: pulse 1.2s ease-in-out infinite; }
+.classroom-empty { padding: 44px 20px; text-align: center; }
+.classroom-empty > div { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 15px; border: 1px solid #3c4736; border-radius: 13px; color: var(--acid); background: #192018; transform: rotate(-4deg); }
+.classroom-overline { color: #93a16c; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.classroom-empty h3, .classroom-form h3, .classroom-hero h3 { margin: 7px 0; color: #cdd5cf; font: 400 18px/1.15 Georgia, serif; }
+.classroom-empty p { margin: 0; color: #7d8983; font: 11px/1.55 "Avenir Next", sans-serif; }
+.classroom-list { display: grid; gap: 4px; padding: 1px 8px 10px; border-bottom: 1px solid #202824; }
+.classroom-list > button { display: grid; grid-template-columns: 31px minmax(0, 1fr); gap: 8px; align-items: center; width: 100%; min-height: 43px; padding: 6px 7px; border: 1px solid transparent; border-radius: 6px; color: #87928c; background: transparent; text-align: left; }
+.classroom-list > button:hover { background: #141a17; }.classroom-list > button[data-active="true"] { border-color: #394437; background: #192019; }
+.classroom-list > button > span { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 7px; color: #afbe78; background: #252d20; font: 10px "Cascadia Code", monospace; }
+.classroom-list b, .classroom-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.classroom-list b { color: #b5beb8; font-size: 11px; }.classroom-list small { margin-top: 3px; color: #748079; font-size: 9px; }
+.classroom-detail { padding-bottom: 24px; }
+.classroom-hero { padding: 15px 13px 13px; }
+.classroom-hero p { margin: 0; color: #87938d; font: 11px/1.55 "Avenir Next", sans-serif; }
+.classroom-hero > div { display: flex; gap: 11px; margin-top: 11px; }.classroom-hero > div span { display: flex; gap: 4px; align-items: center; color: #8f9b95; font-size: 10px; }
+.classroom-invite { margin: 0 10px 10px; padding: 10px; border: 1px solid #48543b; border-radius: 7px; background: linear-gradient(145deg, #1c2419, #131815); }
+.classroom-invite > div:first-child { display: flex; gap: 7px; align-items: center; }.classroom-invite > div:first-child svg { color: #aab968; }.classroom-invite b { color: #bac5b4; font-size: 11px; }
+.classroom-invite code { display: block; margin: 9px 0 7px; overflow: hidden; color: #b8c780; font: 9px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.classroom-invite > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }.classroom-invite button { display: flex; gap: 4px; align-items: center; justify-content: center; min-height: 27px; border: 1px solid #3b4638; border-radius: 4px; color: #a8b69d; background: #1a2019; font-size: 9px; text-transform: uppercase; }
+.classroom-publish { display: flex; gap: 6px; align-items: center; justify-content: center; width: calc(100% - 20px); min-height: 33px; margin: 0 10px 14px; padding: 5px 8px; border: 1px solid #687647; border-radius: 5px; color: #dbe6bc; background: #293321; font-size: 10px; font-weight: 700; }.classroom-publish:disabled { opacity: .38; }
+.classroom-section { border-top: 1px solid #202824; padding: 11px 10px 0; }
+.classroom-section-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; color: #8f9b94; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }.classroom-section-title b { color: #b8c67f; font: 10px "Cascadia Code", monospace; }
+.classroom-section-empty { margin: 0 0 11px; color: #707c76; font: 10px/1.5 "Avenir Next", sans-serif; }
+.classroom-assignment-list { display: grid; gap: 5px; margin-bottom: 11px; }
+.classroom-assignment-list article { display: grid; grid-template-columns: minmax(0, 1fr) 29px; gap: 7px; padding: 8px; border: 1px solid #2c3531; border-radius: 5px; background: #121714; }.classroom-assignment-list b, .classroom-assignment-list small { display: block; }.classroom-assignment-list b { color: #b7c1ba; font-size: 11px; }.classroom-assignment-list small { display: -webkit-box; margin-top: 3px; overflow: hidden; color: #808c85; font: 10px/1.4 "Avenir Next", sans-serif; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }.classroom-assignment-list time { display: block; margin-top: 5px; color: #68756e; font: 9px "Cascadia Code", monospace; }.classroom-assignment-list button { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid #424d3a; border-radius: 5px; color: #a9b970; background: #20271c; }
+.classroom-member-list { display: grid; margin-bottom: 11px; }.classroom-member-list > div { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 2px; border-bottom: 1px solid #1d2421; }.classroom-member-list > div > span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #9ba96b; background: #20271d; font-size: 10px; }.classroom-member-list b, .classroom-member-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.classroom-member-list b { color: #aeb8b2; font-size: 10px; }.classroom-member-list small { color: #748079; font-size: 9px; }.classroom-member-list em { color: #8b996b; font-size: 8px; font-style: normal; text-transform: uppercase; }
+.classroom-form { display: grid; gap: 12px; padding: 14px 11px; }
+.classroom-back { display: flex; gap: 4px; align-items: center; width: max-content; padding: 0; border: 0; color: #8c9891; background: transparent; font-size: 10px; }.classroom-form h3 { margin-top: -4px; }
+.classroom-form label { display: grid; gap: 5px; color: #8d9993; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.classroom-form input, .classroom-form textarea { width: 100%; padding: 7px; border: 1px solid #303a35; border-radius: 5px; outline: 0; color: #c4cdc7; background: #111614; font: 11px/1.5 "Avenir Next", sans-serif; text-transform: none; }.classroom-form input { height: 34px; }.classroom-form textarea { min-height: 80px; resize: vertical; }.classroom-form input:focus, .classroom-form textarea:focus { border-color: #657445; }
+.classroom-primary { border-color: #5f6e42; color: #d8e3ba; background: #283120; }
+
 @media (max-width: 1180px) {
   .workbench { grid-template-columns: 48px 220px minmax(380px, 1fr) 285px; }
   .titlebar-brand b { display: none; }
 }
 
 @media (max-width: 900px) {
+  .auth-screen { grid-template-columns: 1fr; overflow-y: auto; }
+  .auth-story { min-height: 340px; padding: 32px; border-right: 0; border-bottom: 1px solid #28302c; }
+  .auth-principles { display: none; }
+  .auth-entry { padding: 38px 24px; }
   .assignment-studio-backdrop { padding: 12px; }
   .assignment-studio { width: calc(100vw - 24px); }
   .guardrail-grid { grid-template-columns: 1fr; }

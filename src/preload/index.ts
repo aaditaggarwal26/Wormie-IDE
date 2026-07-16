@@ -16,6 +16,7 @@ const desktopApi: DesktopApi = {
   startTerminal: () => ipcRenderer.invoke(IPC_CHANNELS.terminalStart),
   writeTerminal: (data) => ipcRenderer.send(IPC_CHANNELS.terminalWrite, data),
   stopTerminal: () => ipcRenderer.send(IPC_CHANNELS.terminalStop),
+  copyTerminalText: (text) => ipcRenderer.invoke(IPC_CHANNELS.terminalCopy, text),
   onTerminalData: (callback) => {
     const listener = (_event: IpcRendererEvent, data: string) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
@@ -60,7 +61,27 @@ const desktopApi: DesktopApi = {
   startAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentStart, request),
   updateAssignmentTask: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentUpdateTask, request),
   submitAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentSubmit, request),
-  openAssignmentSubmission: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentOpenSubmission, workspaceRoot)
+  openAssignmentSubmission: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentOpenSubmission, workspaceRoot),
+  getCloudAuth: () => ipcRenderer.invoke(IPC_CHANNELS.cloudGetAuth),
+  getPendingClassroomInvite: () => ipcRenderer.invoke(IPC_CHANNELS.cloudGetPendingInvite),
+  onClassroomInvite: (callback) => {
+    const listener = (_event: IpcRendererEvent, inviteLink: string) => {
+      callback(inviteLink)
+      void ipcRenderer.invoke(IPC_CHANNELS.cloudGetPendingInvite).catch(() => undefined)
+    }
+    ipcRenderer.on(IPC_CHANNELS.cloudInviteReceived, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.cloudInviteReceived, listener)
+  },
+  signUp: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignUp, credentials),
+  signIn: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignIn, credentials),
+  signOut: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignOut),
+  listClassrooms: () => ipcRenderer.invoke(IPC_CHANNELS.cloudListClassrooms),
+  createClassroom: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudCreateClassroom, request),
+  joinClassroom: (invite) => ipcRenderer.invoke(IPC_CHANNELS.cloudJoinClassroom, invite),
+  rotateClassroomInvite: (classroomId) => ipcRenderer.invoke(IPC_CHANNELS.cloudRotateInvite, classroomId),
+  copyClassroomInvite: (inviteLink) => ipcRenderer.invoke(IPC_CHANNELS.cloudCopyInvite, inviteLink),
+  publishAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudPublishAssignment, request),
+  openClassroomAssignment: (assignmentId) => ipcRenderer.invoke(IPC_CHANNELS.cloudOpenAssignment, assignmentId)
 }
 
 contextBridge.exposeInMainWorld('desktop', desktopApi)

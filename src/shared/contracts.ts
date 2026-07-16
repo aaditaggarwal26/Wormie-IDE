@@ -382,6 +382,7 @@ export type CommitStagedResult = {
 export type ProposedFileChange = {
   relativePath: string
   action: 'create' | 'update'
+  originalContent: string | null
   content: string
   explanation: string
 }
@@ -394,6 +395,18 @@ export type CodeProposal = {
   risks: string[]
   verification: string[]
   understanding?: ChangeUnderstandingPreparation
+}
+
+export type ReviewedProposalFile = {
+  relativePath: string
+  content: string
+  keptBlocks: number
+  undoneBlocks: number
+}
+
+export type ApplyProposalRequest = {
+  proposalId: string
+  files: ReviewedProposalFile[]
 }
 
 export type AppliedProposal = {
@@ -593,7 +606,7 @@ export type DesktopApi = {
   startLearning: (request: LearningRequest) => Promise<LearningSession>
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
   generateProposal: (sessionId: string) => Promise<CodeProposal>
-  applyProposal: (proposalId: string) => Promise<AppliedProposal>
+  applyProposal: (request: ApplyProposalRequest) => Promise<AppliedProposal>
   prepareProposalQuiz: (proposalId: string) => Promise<ChangeUnderstandingPreparation>
   rejectProposal: (proposalId: string) => Promise<void>
   getUnderstandingSettings: () => Promise<UnderstandingSettings>

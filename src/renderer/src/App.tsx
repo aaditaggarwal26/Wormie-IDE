@@ -166,8 +166,12 @@ export default function App(): React.JSX.Element {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const activeDocument = documents.find((document) => document.path === activePath)
+      const state = useWorkbench.getState()
+      const activeDocument = state.documents.find((document) => document.path === state.activePath)
       if (!activeDocument) return null
+      if (state.proposalReview?.files.some((file) => file.absolutePath === activeDocument.path)) {
+        throw new Error('Keep or undo every AI change block before saving this file.')
+      }
       await window.desktop.writeFile(activeDocument.path, activeDocument.content)
       return activeDocument.path
     },

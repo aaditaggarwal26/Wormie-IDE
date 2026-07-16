@@ -10,6 +10,7 @@ import {
   type AgentActivityFile,
   type AgentActivityPhase,
   type AgentConfigUpdate,
+  type ApplyProposalRequest,
   type AppliedProposal,
   type CodeProposal,
   type ChangeInput,
@@ -29,6 +30,7 @@ import { CodexAppServer } from './codexAppServer'
 import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
 import { ModelGateway, validateBaseUrl } from './provider'
+import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
 import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
 import type { UnderstandingController } from '../understanding'
 
@@ -493,7 +495,7 @@ Prefer the smallest coherent change and include concrete verification steps.
       const canonicalProposalPath = process.platform === 'win32' ? absolutePath.toLowerCase() : absolutePath
       if (proposedPaths.has(canonicalProposalPath)) throw new Error(`The model proposed ${change.relativePath} more than once.`)
       proposedPaths.add(canonicalProposalPath)
-      internalChanges.push({ ...change, absolutePath, expectedHash, beforeContent })
+      internalChanges.push({ ...change, originalContent: beforeContent, absolutePath, expectedHash, beforeContent })
     }
 
     const proposalId = randomUUID()
@@ -524,7 +526,13 @@ Prefer the smallest coherent change and include concrete verification steps.
       id: proposalId,
       sessionId,
       summary: draft.summary,
-      changes: draft.changes,
+      changes: internalChanges.map(({ relativePath, action, originalContent, content, explanation }) => ({
+        relativePath,
+        action,
+        originalContent,
+        content,
+        explanation
+      })),
       risks: draft.risks,
       verification: draft.verification
     }
@@ -572,10 +580,17 @@ Prefer the smallest coherent change and include concrete verification steps.
     proposals.delete(proposalId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentApplyProposal, async (event, proposalId: string): Promise<AppliedProposal> => {
+  ipcMain.handle(IPC_CHANNELS.agentApplyProposal, async (event, request: ApplyProposalRequest): Promise<AppliedProposal> => {
     pruneExpired()
+    const proposalId = request?.proposalId
+    if (typeof proposalId !== 'string' || proposalId.length > 200 || !Array.isArray(request.files)) {
+      throw new Error('Invalid proposal review request.')
+    }
     const proposal = proposals.get(proposalId)
     if (!proposal) throw new Error('This proposal expired or was already applied.')
+    const reviewedChanges = resolveReviewedChanges(proposal.changes, request.files)
+    const selectedChanges = reviewedChanges.filter(hasReviewedChange)
+    if (selectedChanges.length === 0) throw new Error('Keep at least one change block, or discard the proposal.')
     const session = sessions.get(proposal.publicProposal.sessionId)
     if (!session?.passed) throw new Error('The learning gate is no longer unlocked.')
     const runId = session.publicSession.runId
@@ -588,7 +603,7 @@ Prefer the smallest coherent change and include concrete verification steps.
       understanding.gates.assertUnlocked(proposal.changeInput.id, proposal.changeInput.source, analysis.fingerprint)
     }
 
-    for (const change of proposal.changes) {
+    for (const change of selectedChanges) {
       if (change.action === 'update') {
         const current = await fs.readFile(change.absolutePath, 'utf8')
         if (hash(current) !== change.expectedHash) {
@@ -608,9 +623,12 @@ Prefer the smallest coherent change and include concrete verification steps.
     const confirmationOptions: MessageBoxOptions = {
       type: 'warning',
       title: 'Apply AI proposal',
-      message: `Apply ${proposal.changes.length} AI-generated file change${proposal.changes.length === 1 ? '' : 's'}?`,
-      detail: proposal.changes.map((change) => `${change.action === 'create' ? 'Create' : 'Update'} ${change.relativePath}`).join('\n'),
-      buttons: ['Apply changes', 'Cancel'],
+      message: `Apply ${selectedChanges.length} reviewed file change${selectedChanges.length === 1 ? '' : 's'}?`,
+      detail: reviewedChanges.map((change) => {
+        const action = hasReviewedChange(change) ? (change.action === 'create' ? 'Create' : 'Update') : 'Skip'
+        return `${action} ${change.relativePath} · ${change.keptBlocks} kept, ${change.undoneBlocks} undone`
+      }).join('\n'),
+      buttons: ['Apply reviewed changes', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       noLink: true
@@ -619,7 +637,7 @@ Prefer the smallest coherent change and include concrete verification steps.
       ? await dialog.showMessageBox(parentWindow, confirmationOptions)
       : await dialog.showMessageBox(confirmationOptions)
     if (confirmation.response !== 0) {
-      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: false, paths: proposal.changes.map((change) => change.relativePath) })
+      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: false, paths: selectedChanges.map((change) => change.relativePath) })
       emitPhase(event.sender, runId, 'approval', 'Apply cancelled', 'stopped')
       return { applied: false, changedPaths: [], workspace: await createWorkspaceSnapshot(rootPath) }
     }
@@ -628,11 +646,11 @@ Prefer the smallest coherent change and include concrete verification steps.
     emitPhase(event.sender, runId, 'apply', 'Applying approved file changes', 'active')
     const originals = new Map<string, string | null>()
     try {
-      for (const change of proposal.changes) {
+      for (const change of selectedChanges) {
         originals.set(change.absolutePath, change.action === 'update' ? await fs.readFile(change.absolutePath, 'utf8') : null)
-        await fs.writeFile(change.absolutePath, change.content, change.action === 'create' ? { encoding: 'utf8', flag: 'wx' } : 'utf8')
+        await fs.writeFile(change.absolutePath, change.reviewedContent, change.action === 'create' ? { encoding: 'utf8', flag: 'wx' } : 'utf8')
       }
-      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: true, paths: proposal.changes.map((change) => change.relativePath) })
+      await recordAssignmentActivity(rootPath, { type: 'apply', proposalId, applied: true, paths: selectedChanges.map((change) => change.relativePath) })
     } catch (error) {
       for (const [filePath, content] of [...originals.entries()].reverse()) {
         if (content === null) await fs.unlink(filePath).catch(() => undefined)
@@ -643,7 +661,7 @@ Prefer the smallest coherent change and include concrete verification steps.
     }
 
     proposals.delete(proposalId)
-    const changedPaths = proposal.changes.map((change) => change.absolutePath)
+    const changedPaths = selectedChanges.map((change) => change.absolutePath)
     emitFiles(event.sender, runId, 'apply', 'Changed files', changedPaths.map((filePath) => ({ path: filePath, action: 'applied' })))
     emitPhase(event.sender, runId, 'apply', 'Approved file changes applied', 'completed', `${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'} changed`)
     emitPhase(event.sender, runId, 'complete', 'Agent workflow completed', 'completed')

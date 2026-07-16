@@ -22,7 +22,9 @@ function assignmentPaths(workspaceRoot: string): { directoryPath: string; manife
 
 async function assertSafeAssignmentDirectory(workspaceRoot: string, directoryPath: string): Promise<void> {
   const root = await fs.realpath(workspaceRoot)
-  if (!isPathInside(root, directoryPath)) throw new Error('The assignment directory is outside the workspace.')
+  const directoryParent = await fs.realpath(path.dirname(directoryPath))
+  const resolvedDirectory = path.join(directoryParent, path.basename(directoryPath))
+  if (!isPathInside(root, resolvedDirectory)) throw new Error('The assignment directory is outside the workspace.')
 
   const stats = await fs.lstat(directoryPath).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null

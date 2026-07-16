@@ -1,10 +1,11 @@
-import { BookOpenText, ClipboardCheck, FolderTree, GitBranch, Search, Settings2 } from 'lucide-react'
+import { BookOpenText, ClipboardCheck, FolderTree, GitBranch, GraduationCap, Search, Settings2 } from 'lucide-react'
 import { useWorkbench } from '@/store/workbench'
 
 const activities = [
   { id: 'explorer' as const, label: 'Explorer', icon: FolderTree },
   { id: 'search' as const, label: 'Search', icon: Search },
   { id: 'sourceControl' as const, label: 'Source Control', icon: GitBranch },
+  { id: 'classrooms' as const, label: 'Classrooms', icon: GraduationCap },
   { id: 'assignments' as const, label: 'Assignments', icon: ClipboardCheck },
   { id: 'learning' as const, label: 'Knowledge', icon: BookOpenText }
 ]

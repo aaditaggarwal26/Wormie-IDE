@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
 import { registerAssignmentHandlers } from './assignments'
+import { registerCloudHandlers } from './cloud'
 import { registerGitHandlers } from './git'
 import { createRendererUrlValidator } from './ipcTrust'
 import type { AppPreferences } from './preferences'
@@ -10,6 +11,8 @@ import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerWorkspaceHandlers } from './workspace'
+import { IPC_CHANNELS } from '../shared/contracts'
+import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
 
 const store = new Store<AppPreferences>({ name: 'preferences' })
 const trustedWebContents = new Set<number>()
@@ -17,6 +20,33 @@ const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
 const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
+let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
+
+if (process.defaultApp) {
+  if (process.argv[1]) app.setAsDefaultProtocolClient('wormie', process.execPath, [path.resolve(process.argv[1])])
+} else {
+  app.setAsDefaultProtocolClient('wormie')
+}
+
+function queueClassroomInvite(value: string): void {
+  const inviteLink = classroomInviteLink(value)
+  if (!inviteLink) return
+  pendingClassroomInvite = inviteLink
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.cloudInviteReceived, inviteLink)
+  }
+}
+
+function takePendingClassroomInvite(): string | null {
+  const inviteLink = pendingClassroomInvite
+  pendingClassroomInvite = null
+  return inviteLink
+}
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  queueClassroomInvite(url)
+})
 
 function createWindow(): void {
   const savedBounds = store.get('windowBounds')
@@ -76,22 +106,25 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   const workspace = registerWorkspaceHandlers(store)
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
+  const isTrustedSender = (event: IpcMainInvokeEvent) =>
+    trustedWebContents.has(event.sender.id) &&
+    event.senderFrame === event.sender.mainFrame &&
+    isTrustedRendererUrl(event.senderFrame.url)
   registerAssignmentHandlers(
     store,
     progressStorageRoot,
     workspace.getWorkspaceRoot,
     workspace.setWorkspace,
-    (event: IpcMainInvokeEvent) =>
-      trustedWebContents.has(event.sender.id) &&
-      event.senderFrame === event.sender.mainFrame &&
-      isTrustedRendererUrl(event.senderFrame.url)
+    isTrustedSender
   )
   understanding.registerIpc()
   registerGitHandlers(workspace.getWorkspaceRoot, understanding)
   registerTerminalHandlers(workspace.getWorkspaceRoot)
   registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
 
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
+    const inviteLink = classroomInviteFromArguments(commandLine)
+    if (inviteLink) queueClassroomInvite(inviteLink)
     const mainWindow = BrowserWindow.getAllWindows()[0]
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -99,6 +132,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
+    registerCloudHandlers(workspace.getWorkspaceRoot, workspace.setWorkspace, isTrustedSender, takePendingClassroomInvite)
     createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

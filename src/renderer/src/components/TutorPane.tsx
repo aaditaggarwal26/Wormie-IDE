@@ -27,6 +27,7 @@ import {
   type AgentActivityViewState
 } from '@/components/agentActivityModel'
 import type { CodeProposal, LearningSession, QuizResult } from '@shared/contracts'
+import { proposalReviewProgress } from '@/components/proposalReviewModel'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected AI error occurred.'
@@ -47,10 +48,13 @@ export function TutorPane(): React.JSX.Element {
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
   const setWorkspace = useWorkbench((state) => state.setWorkspace)
-  const updateDocument = useWorkbench((state) => state.updateDocument)
-  const markSaved = useWorkbench((state) => state.markSaved)
   const openDocument = useWorkbench((state) => state.openDocument)
   const addOutput = useWorkbench((state) => state.addOutput)
+  const proposalReview = useWorkbench((state) => state.proposalReview)
+  const beginProposalReview = useWorkbench((state) => state.beginProposalReview)
+  const openProposalFile = useWorkbench((state) => state.openProposalFile)
+  const discardProposalReview = useWorkbench((state) => state.discardProposalReview)
+  const completeProposalReview = useWorkbench((state) => state.completeProposalReview)
   const dirtyDocuments = useMemo(
     () => documents.filter((document) => document.content !== document.savedContent),
     [documents]
@@ -67,10 +71,10 @@ export function TutorPane(): React.JSX.Element {
     setActivityOpen(true)
   }
 
-  const learningMutation = useMutation<LearningSession, Error, string>({
-    mutationFn: (runId) => window.desktop.startLearning({
+  const learningMutation = useMutation<LearningSession, Error, { runId: string; intent: string }>({
+    mutationFn: ({ runId, intent }) => window.desktop.startLearning({
       runId,
-      request,
+      request: intent,
       activePath,
       openPaths: documents.map((document) => document.path)
     }),
@@ -82,7 +86,10 @@ export function TutorPane(): React.JSX.Element {
       setQuizAttempts(0)
       setProposal(null)
     },
-    onError: reportError
+    onError: (cause, variables) => {
+      setRequest((current) => current || variables.intent)
+      reportError(cause)
+    }
   })
 
   const quizMutation = useMutation({
@@ -98,24 +105,29 @@ export function TutorPane(): React.JSX.Element {
   const proposalMutation = useMutation({
     mutationFn: () => window.desktop.generateProposal(session!.id),
     onMutate: () => setError(null),
-    onSuccess: setProposal,
+    onSuccess: (nextProposal) => {
+      setProposal(nextProposal)
+      const currentWorkspace = useWorkbench.getState().workspace
+      if (currentWorkspace) beginProposalReview(nextProposal, currentWorkspace.rootPath, window.desktop.platform)
+    },
     onError: reportError
   })
 
   const applyMutation = useMutation({
-    mutationFn: () => window.desktop.applyProposal(proposal!.id),
+    mutationFn: () => window.desktop.applyProposal({
+      proposalId: proposal!.id,
+      files: proposalReview!.files.map((file) => ({
+        relativePath: file.relativePath,
+        content: file.modifiedContent,
+        keptBlocks: file.keptBlocks,
+        undoneBlocks: file.undoneBlocks
+      }))
+    }),
     onMutate: () => setError(null),
     onSuccess: (result) => {
       if (!result.applied) return
       setWorkspace(result.workspace)
-      result.changedPaths.forEach((filePath, index) => {
-        const document = documents.find((candidate) => candidate.path === filePath)
-        const change = proposal?.changes[index]
-        if (document && change) {
-          updateDocument(filePath, change.content)
-          markSaved(filePath)
-        }
-      })
+      completeProposalReview(result.changedPaths)
       addOutput(`Applied AI proposal to ${result.changedPaths.length} file${result.changedPaths.length === 1 ? '' : 's'}.`)
       setProposal(null)
       setSession(null)
@@ -127,6 +139,11 @@ export function TutorPane(): React.JSX.Element {
 
   const busy = learningMutation.isPending || quizMutation.isPending || proposalMutation.isPending || applyMutation.isPending
   const proposalUnlocked = !proposal?.understanding?.significance.quizRequired || proposal.understanding.gate?.unlocked === true
+  const reviewProgress = proposalReview ? proposalReviewProgress(proposalReview.files) : null
+  const reviewHasDirtyConflict = proposalReview?.files.some((file) => {
+    const document = documents.find((candidate) => candidate.path === file.absolutePath)
+    return document ? document.content !== document.savedContent : false
+  }) ?? false
   const stage = proposal
     ? 'Review'
     : quizResult?.passed
@@ -136,21 +153,18 @@ export function TutorPane(): React.JSX.Element {
         : 'Idle'
 
   const startLearning = () => {
+    const intent = request.trim()
+    if (!workspace || !intent || dirtyDocuments.length > 0 || busy) return
     const runId = crypto.randomUUID()
     activeRunId.current = runId
     setActivityState(initialAgentActivityState(runId))
     setActivityOpen(true)
-    learningMutation.mutate(runId)
+    setRequest('')
+    learningMutation.mutate({ runId, intent })
   }
 
   const openProposedFile = (relativePath: string) => {
-    const index = proposal?.changes.findIndex((change) => change.relativePath === relativePath) ?? -1
-    if (index < 0) return
-    const details = document.getElementById(`proposal-file-${index}`) as HTMLDetailsElement | null
-    if (!details) return
-    details.open = true
-    details.scrollIntoView({ behavior: 'auto', block: 'nearest' })
-    details.focus({ preventScroll: true })
+    openProposalFile(relativePath)
   }
 
   const openAppliedFile = (absolutePath: string) => {
@@ -162,6 +176,7 @@ export function TutorPane(): React.JSX.Element {
   const reset = () => {
     if (busy) window.desktop.cancelAgent()
     if (proposal) void window.desktop.rejectProposal(proposal.id).catch((cause) => addOutput(`Could not record proposal rejection: ${errorMessage(cause)}`))
+    discardProposalReview()
     setSession(null)
     setAnswers({})
     setQuizResult(null)
@@ -229,7 +244,13 @@ export function TutorPane(): React.JSX.Element {
                 disabled={busy}
                 maxLength={4000}
                 onChange={(event) => setRequest(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  startLearning()
+                }}
                 placeholder="Add protected routes with session-based authentication..."
+                rows={1}
                 value={request}
               />
               <div className="composer-meta">
@@ -326,14 +347,34 @@ export function TutorPane(): React.JSX.Element {
             </div>
             <div className="proposal-summary"><Check size={16} /> <p>{proposal.summary}</p></div>
             <div className="proposal-files">
-              {proposal.changes.map((change, index) => (
-                <details id={`proposal-file-${index}`} key={change.relativePath} tabIndex={-1}>
-                  <summary><FileCode2 size={13} /><span>{change.relativePath}</span><em>{change.action}</em></summary>
-                  <p>{change.explanation}</p>
-                  <pre>{change.content}</pre>
-                </details>
-              ))}
+              {proposal.changes.map((change) => {
+                const review = proposalReview?.files.find((file) => file.relativePath === change.relativePath)
+                const status = review?.pendingBlocks === 0
+                  ? `${review.keptBlocks} kept · ${review.undoneBlocks} undone`
+                  : review?.pendingBlocks == null
+                    ? 'Open to review'
+                    : `${review.pendingBlocks} block${review.pendingBlocks === 1 ? '' : 's'} left`
+                return (
+                  <button
+                    data-state={review?.pendingBlocks === 0 ? 'reviewed' : 'pending'}
+                    key={change.relativePath}
+                    onClick={() => openProposedFile(change.relativePath)}
+                    type="button"
+                  >
+                    <FileCode2 size={13} />
+                    <span><b>{change.relativePath}</b><small>{change.explanation}</small></span>
+                    <em>{status}</em>
+                  </button>
+                )
+              })}
             </div>
+            {reviewProgress && (
+              <div className="proposal-review-progress" data-complete={reviewProgress.complete}>
+                <span><b>{reviewProgress.reviewedFiles}/{reviewProgress.totalFiles}</b> files reviewed</span>
+                <span>{reviewProgress.keptBlocks} kept · {reviewProgress.undoneBlocks} undone</span>
+              </div>
+            )}
+            {reviewHasDirtyConflict && <p className="agent-warning proposal-warning"><AlertTriangle size={11} /> This proposal conflicts with unsaved edits. Discard it, save your work, then generate a fresh proposal.</p>}
             {proposal.understanding && <UnderstandingQuiz
               preparation={proposal.understanding}
               onGateChange={(gate) => setProposal((current) => current?.understanding ? { ...current, understanding: { ...current.understanding, gate, generationError: undefined } } : current)}
@@ -350,9 +391,20 @@ export function TutorPane(): React.JSX.Element {
             />}
             {proposal.risks.length > 0 && <div className="proposal-notes"><b>Risks</b>{proposal.risks.map((risk) => <p key={risk}>{risk}</p>)}</div>}
             <div className="proposal-notes"><b>Verify</b>{proposal.verification.map((step) => <p key={step}>{step}</p>)}</div>
-            <button className="agent-primary apply-button" disabled={applyMutation.isPending || !proposalUnlocked} onClick={() => applyMutation.mutate()} type="button">
+            <button
+              className="agent-primary apply-button"
+              disabled={applyMutation.isPending || !proposalUnlocked || !reviewProgress?.complete || !reviewProgress.hasKeptChanges || reviewHasDirtyConflict}
+              onClick={() => applyMutation.mutate()}
+              type="button"
+            >
               {applyMutation.isPending ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}
-              {proposalUnlocked ? 'Apply with native confirmation' : 'Pass understanding check to apply'}
+              {!reviewProgress?.complete
+                ? 'Review every change block in the editor'
+                : !reviewProgress.hasKeptChanges
+                  ? 'No changes kept · discard proposal'
+                  : proposalUnlocked
+                    ? 'Apply reviewed changes'
+                    : 'Pass understanding check to apply'}
             </button>
           </motion.div>
         )}

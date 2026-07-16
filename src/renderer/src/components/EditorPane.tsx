@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Editor, { loader, type BeforeMount } from '@monaco-editor/react'
 import { motion } from 'framer-motion'
-import { BookOpenCheck, FileText, FolderOpen, Save, X } from 'lucide-react'
+import { BookOpenCheck, FileText, FolderOpen, Save, Sparkles, X } from 'lucide-react'
 import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
@@ -9,6 +9,7 @@ import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker'
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { useWorkbench } from '@/store/workbench'
+import { AgentDiffReview } from '@/components/AgentDiffReview'
 
 const monacoScope = self as typeof self & { MonacoEnvironment: monaco.Environment }
 
@@ -54,7 +55,14 @@ const configureEditor: BeforeMount = (monaco) => {
       'editorLineNumber.foreground': '#465057',
       'editorLineNumber.activeForeground': '#9ba59f',
       'editorIndentGuide.background1': '#1e2528',
-      'editorIndentGuide.activeBackground1': '#364044'
+      'editorIndentGuide.activeBackground1': '#364044',
+      'diffEditor.insertedLineBackground': '#24351f88',
+      'diffEditor.insertedTextBackground': '#3f632b88',
+      'diffEditor.removedLineBackground': '#3a211c88',
+      'diffEditor.removedTextBackground': '#6a342888',
+      'diffEditor.diagonalFill': '#171c1e',
+      'diffEditorGutter.insertedLineBackground': '#2f4b25',
+      'diffEditorGutter.removedLineBackground': '#593027'
     }
   })
 }
@@ -76,8 +84,12 @@ export function EditorPane({
   const revealLine = useWorkbench((state) => state.revealLine)
   const consumeRevealLine = useWorkbench((state) => state.consumeRevealLine)
   const setCursorPosition = useWorkbench((state) => state.setCursorPosition)
+  const proposalReview = useWorkbench((state) => state.proposalReview)
+  const openProposalFile = useWorkbench((state) => state.openProposalFile)
+  const updateProposalReviewFile = useWorkbench((state) => state.updateProposalReviewFile)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const activeDocument = documents.find((document) => document.path === activePath)
+  const activeReviewFile = proposalReview?.files.find((file) => file.absolutePath === activePath)
 
   useEffect(() => {
     if (!revealLine || !editorRef.current) return
@@ -138,17 +150,21 @@ export function EditorPane({
         <div className="tabs-scroll">
           {documents.map((document) => {
             const dirty = document.content !== document.savedContent
+            const reviewFile = proposalReview?.files.find((file) => file.absolutePath === document.path)
             return (
               <button
                 className="editor-tab"
                 data-active={document.path === activePath}
+                data-review={Boolean(reviewFile)}
                 key={document.path}
                 onClick={() => setActivePath(document.path)}
                 type="button"
               >
                 <FileCode2Icon />
                 <span>{document.name}</span>
-                {dirty ? (
+                {reviewFile ? (
+                  <span className="review-dot" title={reviewFile.pendingBlocks === 0 ? 'AI changes reviewed' : 'AI changes pending review'}><Sparkles size={10} /></span>
+                ) : dirty ? (
                   <span className="dirty-dot" title="Unsaved changes" />
                 ) : (
                   <span
@@ -165,7 +181,7 @@ export function EditorPane({
             )
           })}
         </div>
-        <button className="save-button" disabled={saving} onClick={onSave} title="Save file" type="button">
+        <button className="save-button" disabled={saving || Boolean(activeReviewFile)} onClick={onSave} title={activeReviewFile ? 'Resolve AI changes before saving' : 'Save file'} type="button">
           <Save size={14} />
         </button>
       </div>
@@ -175,35 +191,53 @@ export function EditorPane({
         ))}
       </div>
       <div className="monaco-wrap">
-        <Editor
-          beforeMount={configureEditor}
-          language={activeDocument.language}
-          onChange={(value) => updateDocument(activeDocument.path, value ?? '')}
-          onMount={(mountedEditor) => {
-            editorRef.current = mountedEditor
-            mountedEditor.onDidChangeCursorPosition(({ position }) => {
-              setCursorPosition(position.lineNumber, position.column)
-            })
-          }}
-          options={{
-            automaticLayout: true,
-            bracketPairColorization: { enabled: true },
-            cursorBlinking: 'smooth',
-            cursorSmoothCaretAnimation: 'on',
-            fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
-            fontLigatures: true,
-            fontSize: 13,
-            lineHeight: 21,
-            minimap: { enabled: true, scale: 0.8 },
-            padding: { top: 14 },
-            renderLineHighlight: 'all',
-            scrollBeyondLastLine: false,
-            smoothScrolling: true
-          }}
-          path={activeDocument.path}
-          theme="wormie-dark"
-          value={activeDocument.content}
-        />
+        {activeReviewFile && proposalReview ? (
+          <AgentDiffReview
+            beforeMount={configureEditor}
+            file={activeReviewFile}
+            key={`${proposalReview.proposalId}:${activeReviewFile.relativePath}`}
+            onPendingBlocksChange={(pendingBlocks) => {
+              updateProposalReviewFile(activeReviewFile.relativePath, { pendingBlocks })
+              if (pendingBlocks !== 0) return
+              const next = useWorkbench.getState().proposalReview?.files.find((file) =>
+                file.relativePath !== activeReviewFile.relativePath && file.pendingBlocks !== 0
+              )
+              if (next) queueMicrotask(() => openProposalFile(next.relativePath))
+            }}
+            onResolveBlock={(update) => updateProposalReviewFile(activeReviewFile.relativePath, update)}
+            proposalId={proposalReview.proposalId}
+          />
+        ) : (
+          <Editor
+            beforeMount={configureEditor}
+            language={activeDocument.language}
+            onChange={(value) => updateDocument(activeDocument.path, value ?? '')}
+            onMount={(mountedEditor) => {
+              editorRef.current = mountedEditor
+              mountedEditor.onDidChangeCursorPosition(({ position }) => {
+                setCursorPosition(position.lineNumber, position.column)
+              })
+            }}
+            options={{
+              automaticLayout: true,
+              bracketPairColorization: { enabled: true },
+              cursorBlinking: 'smooth',
+              cursorSmoothCaretAnimation: 'on',
+              fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
+              fontLigatures: true,
+              fontSize: 13,
+              lineHeight: 21,
+              minimap: { enabled: true, scale: 0.8 },
+              padding: { top: 14 },
+              renderLineHighlight: 'all',
+              scrollBeyondLastLine: false,
+              smoothScrolling: true
+            }}
+            path={activeDocument.path}
+            theme="wormie-dark"
+            value={activeDocument.content}
+          />
+        )}
       </div>
     </main>
   )

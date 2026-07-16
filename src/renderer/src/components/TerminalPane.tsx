@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { shouldHandleTerminalCopy } from '@/components/terminalShortcuts'
 import '@xterm/xterm/css/xterm.css'
 
 type TerminalPaneProps = {
@@ -44,6 +45,15 @@ export function TerminalPane({ active, workspaceRoot }: TerminalPaneProps): Reac
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(containerRef.current)
+    terminal.attachCustomKeyEventHandler((event) => {
+      const selection = terminal.getSelection()
+      if (!shouldHandleTerminalCopy(event, window.desktop.platform, selection.length > 0)) return true
+
+      event.preventDefault()
+      event.stopPropagation()
+      if (selection) void window.desktop.copyTerminalText(selection).catch(() => undefined)
+      return false
+    })
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 

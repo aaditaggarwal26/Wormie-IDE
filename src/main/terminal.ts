@@ -1,8 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { ipcMain, type WebContents } from 'electron'
+import { clipboard, ipcMain, type WebContents } from 'electron'
 import { IPC_CHANNELS } from '../shared/contracts'
 
 const sessions = new Map<number, ChildProcessWithoutNullStreams>()
+const maxClipboardLength = 1_000_000
 
 function stopSession(senderId: number): void {
   const session = sessions.get(senderId)
@@ -61,4 +62,11 @@ export function registerTerminalHandlers(getWorkspaceRoot: () => string | null):
   })
 
   ipcMain.on(IPC_CHANNELS.terminalStop, (event) => stopSession(event.sender.id))
+
+  ipcMain.handle(IPC_CHANNELS.terminalCopy, (_event, text: string) => {
+    if (typeof text !== 'string' || text.length === 0 || text.length > maxClipboardLength) {
+      throw new Error('Select between 1 and 1,000,000 characters to copy.')
+    }
+    clipboard.writeText(text)
+  })
 }

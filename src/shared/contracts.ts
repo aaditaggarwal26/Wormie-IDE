@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   terminalStart: 'terminal:start',
   terminalWrite: 'terminal:write',
   terminalStop: 'terminal:stop',
+  terminalCopy: 'terminal:copy',
   terminalData: 'terminal:data',
   terminalExit: 'terminal:exit',
   agentGetConfig: 'agent:get-config',
@@ -44,7 +45,20 @@ export const IPC_CHANNELS = {
   assignmentStart: 'assignment:start',
   assignmentUpdateTask: 'assignment:update-task',
   assignmentSubmit: 'assignment:submit',
-  assignmentOpenSubmission: 'assignment:open-submission'
+  assignmentOpenSubmission: 'assignment:open-submission',
+  cloudGetAuth: 'cloud:get-auth',
+  cloudGetPendingInvite: 'cloud:get-pending-invite',
+  cloudInviteReceived: 'cloud:invite-received',
+  cloudSignUp: 'cloud:sign-up',
+  cloudSignIn: 'cloud:sign-in',
+  cloudSignOut: 'cloud:sign-out',
+  cloudListClassrooms: 'cloud:list-classrooms',
+  cloudCreateClassroom: 'cloud:create-classroom',
+  cloudJoinClassroom: 'cloud:join-classroom',
+  cloudRotateInvite: 'cloud:rotate-invite',
+  cloudCopyInvite: 'cloud:copy-invite',
+  cloudPublishAssignment: 'cloud:publish-assignment',
+  cloudOpenAssignment: 'cloud:open-assignment'
 } as const
 
 export type FileTreeNode = {
@@ -382,6 +396,7 @@ export type CommitStagedResult = {
 export type ProposedFileChange = {
   relativePath: string
   action: 'create' | 'update'
+  originalContent: string | null
   content: string
   explanation: string
 }
@@ -394,6 +409,18 @@ export type CodeProposal = {
   risks: string[]
   verification: string[]
   understanding?: ChangeUnderstandingPreparation
+}
+
+export type ReviewedProposalFile = {
+  relativePath: string
+  content: string
+  keptBlocks: number
+  undoneBlocks: number
+}
+
+export type ApplyProposalRequest = {
+  proposalId: string
+  files: ReviewedProposalFile[]
 }
 
 export type AppliedProposal = {
@@ -552,6 +579,63 @@ export type AssignmentImportResult = {
   fileCount: number
 }
 
+export type CloudUser = {
+  id: string
+  email: string
+}
+
+export type CloudAuthState = {
+  user: CloudUser | null
+  emailConfirmationRequired?: boolean
+}
+
+export type CloudAuthCredentials = {
+  email: string
+  password: string
+}
+
+export type ClassroomMember = {
+  userId: string
+  email: string | null
+  displayName: string
+  role: 'teacher' | 'student'
+  joinedAt: string
+}
+
+export type ClassroomAssignment = {
+  id: string
+  localAssignmentId: string
+  title: string
+  summary: string
+  publishedAt: string
+  publishedBy: string
+}
+
+export type Classroom = {
+  id: string
+  name: string
+  description: string
+  ownerId: string
+  role: 'teacher' | 'student'
+  inviteCode: string | null
+  inviteLink: string | null
+  createdAt: string
+  members: ClassroomMember[]
+  assignments: ClassroomAssignment[]
+}
+
+export type ClassroomCreateRequest = {
+  name: string
+  description: string
+}
+
+export type ClassroomPublishRequest = {
+  classroomId: string
+  workspaceRoot: string
+}
+
+export type ClassroomOpenAssignmentResult = AssignmentImportResult
+
 export type AgentActivityState = 'pending' | 'active' | 'completed' | 'failed' | 'stopped'
 export type AgentActivityPhase = 'context' | 'learning' | 'model' | 'validation' | 'quiz' | 'proposal' | 'approval' | 'apply' | 'complete'
 export type AgentActivityFile = { path: string; action: 'create' | 'update' | 'applied' }
@@ -583,6 +667,7 @@ export type DesktopApi = {
   startTerminal: () => Promise<void>
   writeTerminal: (data: string) => void
   stopTerminal: () => void
+  copyTerminalText: (text: string) => Promise<void>
   onTerminalData: (callback: (data: string) => void) => () => void
   onTerminalExit: (callback: (event: TerminalExit) => void) => () => void
   getAgentConfig: () => Promise<AgentConfig>
@@ -593,7 +678,7 @@ export type DesktopApi = {
   startLearning: (request: LearningRequest) => Promise<LearningSession>
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
   generateProposal: (sessionId: string) => Promise<CodeProposal>
-  applyProposal: (proposalId: string) => Promise<AppliedProposal>
+  applyProposal: (request: ApplyProposalRequest) => Promise<AppliedProposal>
   prepareProposalQuiz: (proposalId: string) => Promise<ChangeUnderstandingPreparation>
   rejectProposal: (proposalId: string) => Promise<void>
   getUnderstandingSettings: () => Promise<UnderstandingSettings>
@@ -616,4 +701,17 @@ export type DesktopApi = {
   updateAssignmentTask: (request: AssignmentTaskProgressRequest) => Promise<AssignmentProgress>
   submitAssignment: (request: AssignmentSubmitRequest) => Promise<AssignmentSubmissionExportResult | null>
   openAssignmentSubmission: (workspaceRoot: string) => Promise<AssignmentSubmission | null>
+  getCloudAuth: () => Promise<CloudAuthState>
+  getPendingClassroomInvite: () => Promise<string | null>
+  onClassroomInvite: (callback: (inviteLink: string) => void) => () => void
+  signUp: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
+  signIn: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
+  signOut: () => Promise<void>
+  listClassrooms: () => Promise<Classroom[]>
+  createClassroom: (request: ClassroomCreateRequest) => Promise<Classroom[]>
+  joinClassroom: (invite: string) => Promise<Classroom[]>
+  rotateClassroomInvite: (classroomId: string) => Promise<Classroom[]>
+  copyClassroomInvite: (inviteLink: string) => Promise<void>
+  publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
+  openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>
 }

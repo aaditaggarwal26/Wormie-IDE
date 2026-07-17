@@ -19,7 +19,7 @@ function extractJson(text: string): unknown {
   return JSON.parse(trimmed.slice(start, end + 1))
 }
 
-function schemaSummary(kind: ModelOperation): string {
+export function schemaSummary(kind: ModelOperation): string {
   if (kind === 'learning') {
     return `{
   "concepts": [{ "name": string, "whyItMatters": string, "mentalModel": string, "commonMistake": string }],
@@ -30,10 +30,18 @@ function schemaSummary(kind: ModelOperation): string {
 
   if (kind === 'proposal') return `{
   "summary": string,
-  "changes": [{ "relativePath": string, "action": "create" | "update", "content": string, "explanation": string }],
+  "changes": [{
+    "relativePath": string,
+    "action": "create" | "update",
+    "content"?: string,
+    "edits"?: [{ "oldText": string, "newText": string }],
+    "explanation": string
+  }],
   "risks": [string],
   "verification": [string]
-}`
+}
+For action "create", content is required and edits must be omitted.
+For action "update", edits are required and content must be omitted.`
   if (kind === 'change-concepts') return `{
   "concepts": [{ "id": string, "name": string, "summary": string, "prerequisite": boolean }],
   "beforeBehavior": string, "afterBehavior": string, "importantSymbols": [string]

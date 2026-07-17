@@ -1,20 +1,28 @@
 import { describe, expect, it } from 'vitest'
+import { materializeProposalEdits } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
 
+const update = materializeProposalEdits('before a', [{ oldText: 'before a', newText: 'after a' }], 'src/a.ts')
 const changes = [
-  { relativePath: 'src/a.ts', action: 'update' as const, content: 'after a', beforeContent: 'before a' },
-  { relativePath: 'src/b.ts', action: 'create' as const, content: 'new b', beforeContent: null }
+  {
+    relativePath: 'src/a.ts', action: 'update' as const, content: update.content,
+    beforeContent: 'before a', surgicalEdits: update.edits
+  },
+  {
+    relativePath: 'src/b.ts', action: 'create' as const, content: 'new b',
+    beforeContent: null, surgicalEdits: null
+  }
 ]
 
 describe('proposal review validation', () => {
   it('preserves reviewed contents and block decisions by path', () => {
     const reviewed = resolveReviewedChanges(changes, [
       { relativePath: 'src/b.ts', content: '', keptBlocks: 0, undoneBlocks: 1 },
-      { relativePath: 'src/a.ts', content: 'partial a', keptBlocks: 1, undoneBlocks: 2 }
+      { relativePath: 'src/a.ts', content: 'after a', keptBlocks: 1, undoneBlocks: 0 }
     ])
 
     expect(reviewed.map((change) => change.relativePath)).toEqual(['src/b.ts', 'src/a.ts'])
-    expect(reviewed[1].reviewedContent).toBe('partial a')
+    expect(reviewed[1].reviewedContent).toBe('after a')
     expect(hasReviewedChange(reviewed[0])).toBe(false)
     expect(hasReviewedChange(reviewed[1])).toBe(true)
   })
@@ -45,5 +53,17 @@ describe('proposal review validation', () => {
       { relativePath: 'src/a.ts', content: 'bad\0content', keptBlocks: 1, undoneBlocks: 0 },
       { relativePath: 'src/b.ts', content: 'new b', keptBlocks: 1, undoneBlocks: 0 }
     ])).toThrow(/invalid/i)
+  })
+
+  it('rejects content that was not proposed by the agent', () => {
+    expect(() => resolveReviewedChanges(changes, [
+      { relativePath: 'src/a.ts', content: 'arbitrary replacement', keptBlocks: 1, undoneBlocks: 0 },
+      { relativePath: 'src/b.ts', content: 'new b', keptBlocks: 1, undoneBlocks: 0 }
+    ])).toThrow(/not part of this proposal/i)
+
+    expect(() => resolveReviewedChanges(changes, [
+      { relativePath: 'src/a.ts', content: 'after a', keptBlocks: 1, undoneBlocks: 0 },
+      { relativePath: 'src/b.ts', content: 'partial new file', keptBlocks: 1, undoneBlocks: 0 }
+    ])).toThrow(/not part of this proposal/i)
   })
 })

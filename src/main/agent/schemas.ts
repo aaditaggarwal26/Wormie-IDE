@@ -26,14 +26,28 @@ export const learningDraftSchema = z.object({
   })
 })
 
+const proposalChangeBase = {
+  relativePath: z.string().min(1).max(500),
+  explanation: z.string().min(1).max(1000)
+}
+
 export const proposalDraftSchema = z.object({
   summary: z.string().min(1).max(1600),
-  changes: z.array(z.object({
-    relativePath: z.string().min(1).max(500),
-    action: z.enum(['create', 'update']),
-    content: z.string().max(500_000),
-    explanation: z.string().min(1).max(1000)
-  })).min(1).max(12),
+  changes: z.array(z.discriminatedUnion('action', [
+    z.object({
+      ...proposalChangeBase,
+      action: z.literal('create'),
+      content: z.string().min(1).max(500_000)
+    }),
+    z.object({
+      ...proposalChangeBase,
+      action: z.literal('update'),
+      edits: z.array(z.object({
+        oldText: z.string().max(100_000),
+        newText: z.string().max(100_000)
+      })).min(1).max(100)
+    })
+  ])).min(1).max(12),
   risks: z.array(z.string().min(1).max(500)).max(10),
   verification: z.array(z.string().min(1).max(500)).min(1).max(10)
 })

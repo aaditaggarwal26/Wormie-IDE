@@ -1,10 +1,12 @@
 import type { ReviewedProposalFile } from '../../shared/contracts'
+import { isReviewedEditSelection, type ResolvedProposalTextEdit } from './proposalEdits'
 
 export type ReviewableProposalChange = {
   relativePath: string
   action: 'create' | 'update'
   content: string
   beforeContent: string | null
+  surgicalEdits: ResolvedProposalTextEdit[] | null
 }
 
 export type ReviewedProposalChange<T extends ReviewableProposalChange> = T & {
@@ -45,6 +47,11 @@ export function resolveReviewedChanges<T extends ReviewableProposalChange>(
     if (typeof review.content !== 'string' || review.content.length > maxFileCharacters || review.content.includes('\0')) {
       throw new Error(`The reviewed content for ${review.relativePath} is invalid.`)
     }
+    const validSelection = change.action === 'create'
+      ? review.content === '' || review.content === change.content
+      : change.beforeContent !== null && change.surgicalEdits !== null &&
+        isReviewedEditSelection(change.beforeContent, review.content, change.surgicalEdits)
+    if (!validSelection) throw new Error(`The reviewed content for ${review.relativePath} is not part of this proposal.`)
 
     return {
       ...change,

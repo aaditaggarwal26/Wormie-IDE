@@ -638,7 +638,30 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .bottom-content[data-terminal="true"] { padding: 0; overflow: hidden; }
 .terminal-host { display: none; width: 100%; height: 100%; }
 .terminal-host[data-active="true"] { display: block; }
-.terminal-surface { width: 100%; height: 100%; padding: 6px 8px; background: #0b0e10; }
+.terminal-workbench { display: grid; grid-template-rows: 31px minmax(0, 1fr); width: 100%; height: 100%; overflow: hidden; background: #0b0e10; }
+.terminal-toolbar { display: flex; align-items: stretch; min-width: 0; border-bottom: 1px solid #20282b; background: linear-gradient(180deg, #111619, #0d1113); }
+.terminal-group-tabs { display: flex; flex: 1; min-width: 0; overflow: auto hidden; scrollbar-width: none; }
+.terminal-group-tabs::-webkit-scrollbar { display: none; }
+.terminal-group-tabs button { display: flex; flex: 0 1 auto; gap: 6px; align-items: center; min-width: 92px; max-width: 180px; height: 30px; padding: 0 10px; overflow: hidden; border: 0; border-right: 1px solid #20272a; color: #667178; background: transparent; font: 10px "Cascadia Code", Consolas, monospace; cursor: default; }
+.terminal-group-tabs button:hover { color: #a7b0ab; background: #151b1e; }
+.terminal-group-tabs button[data-active="true"] { box-shadow: inset 0 -1px var(--acid); color: #c5cdc8; background: #151a1d; }
+.terminal-group-tabs button svg { flex: 0 0 auto; color: #8e9d67; }
+.terminal-group-tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-group-tabs button b { display: grid; flex: 0 0 auto; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border: 1px solid #3a4538; border-radius: 8px; color: #adba72; font-size: 8px; font-weight: 700; }
+.terminal-actions { display: flex; flex: 0 0 auto; align-items: center; padding: 0 5px; border-left: 1px solid #20272a; }
+.terminal-actions button { display: grid; place-items: center; width: 26px; height: 25px; border: 0; border-radius: 4px; color: #788389; background: transparent; cursor: pointer; }
+.terminal-actions button:hover:not(:disabled) { color: var(--acid); background: #1a2120; }
+.terminal-actions button:disabled { opacity: .3; cursor: default; }
+.terminal-groups { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.terminal-group { display: none; width: 100%; height: 100%; min-width: 0; min-height: 0; gap: 1px; overflow: hidden; background: #263034; }
+.terminal-group[data-active="true"] { display: grid; }
+.terminal-session { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #0b0e10; }
+.terminal-session[data-selected="true"]::after { position: absolute; z-index: 4; top: 0; right: 0; left: 0; height: 1px; background: #dce87388; content: ""; pointer-events: none; }
+.terminal-session[data-status="exited"]::after { background: #b3735f; }
+.terminal-empty { display: flex; gap: 9px; align-items: center; justify-content: center; width: 100%; height: 100%; color: #68747a; font: 10px "Cascadia Code", Consolas, monospace; }
+.terminal-empty svg { color: #8e9d67; }
+.terminal-empty button { display: flex; gap: 5px; align-items: center; height: 26px; padding: 0 9px; border: 1px solid #3d4937; border-radius: 5px; color: #bdc99e; background: #1a2119; font: 9px "Avenir Next", sans-serif; cursor: pointer; }
+.terminal-surface { width: 100%; height: 100%; padding: 6px 8px; overflow: hidden; background: #0b0e10; }
 .terminal-surface .xterm { height: 100%; }
 .terminal-surface .xterm-viewport { scrollbar-color: #34403b transparent; scrollbar-width: thin; }
 

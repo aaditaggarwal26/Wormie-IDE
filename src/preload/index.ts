@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi } from '../shared/contracts'
+import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi, type TerminalData, type TerminalExit } from '../shared/contracts'
 
 const desktopApi: DesktopApi = {
   platform: process.platform,
@@ -14,17 +14,19 @@ const desktopApi: DesktopApi = {
   searchWorkspace: (query) => ipcRenderer.invoke(IPC_CHANNELS.searchWorkspace, query),
   getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.gitStatus),
   trustGitRepository: (repositoryRoot) => ipcRenderer.invoke(IPC_CHANNELS.gitTrustRepository, repositoryRoot),
-  startTerminal: () => ipcRenderer.invoke(IPC_CHANNELS.terminalStart),
-  writeTerminal: (data) => ipcRenderer.send(IPC_CHANNELS.terminalWrite, data),
-  stopTerminal: () => ipcRenderer.send(IPC_CHANNELS.terminalStop),
+  startTerminal: (request) => ipcRenderer.invoke(IPC_CHANNELS.terminalStart, request),
+  writeTerminal: (sessionId, data) => ipcRenderer.send(IPC_CHANNELS.terminalWrite, { sessionId, data }),
+  resizeTerminal: (sessionId, columns, rows) => ipcRenderer.send(IPC_CHANNELS.terminalResize, { sessionId, columns, rows }),
+  stopTerminal: (sessionId) => ipcRenderer.send(IPC_CHANNELS.terminalStop, sessionId),
   copyTerminalText: (text) => ipcRenderer.invoke(IPC_CHANNELS.terminalCopy, text),
+  readTerminalClipboard: () => ipcRenderer.invoke(IPC_CHANNELS.terminalReadClipboard),
   onTerminalData: (callback) => {
-    const listener = (_event: IpcRendererEvent, data: string) => callback(data)
+    const listener = (_event: IpcRendererEvent, data: TerminalData) => callback(data)
     ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalData, listener)
   },
   onTerminalExit: (callback) => {
-    const listener = (_event: IpcRendererEvent, exit: { code: number | null }) => callback(exit)
+    const listener = (_event: IpcRendererEvent, exit: TerminalExit) => callback(exit)
     ipcRenderer.on(IPC_CHANNELS.terminalExit, listener)
     return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalExit, listener)
   },

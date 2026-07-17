@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldHandleTerminalCopy } from './terminalShortcuts'
+import { shouldHandleTerminalCopy, shouldHandleTerminalPaste } from './terminalShortcuts'
 
 const event = (input: Partial<KeyboardEvent> = {}): KeyboardEvent => ({
   type: 'keydown',
@@ -24,5 +24,17 @@ describe('terminal copy shortcuts', () => {
   it('uses Command+C on macOS and ignores keyup events', () => {
     expect(shouldHandleTerminalCopy(event({ metaKey: true }), 'darwin', true)).toBe(true)
     expect(shouldHandleTerminalCopy(event({ type: 'keyup', metaKey: true }), 'darwin', true)).toBe(false)
+  })
+})
+
+describe('terminal paste shortcuts', () => {
+  it('handles Ctrl+V and Ctrl+Shift+V on Windows', () => {
+    expect(shouldHandleTerminalPaste(event({ key: 'v', ctrlKey: true }), 'win32')).toBe(true)
+    expect(shouldHandleTerminalPaste(event({ key: 'v', ctrlKey: true, shiftKey: true }), 'win32')).toBe(true)
+  })
+
+  it('uses Command+V on macOS and ignores keyup events', () => {
+    expect(shouldHandleTerminalPaste(event({ key: 'v', metaKey: true }), 'darwin')).toBe(true)
+    expect(shouldHandleTerminalPaste(event({ type: 'keyup', key: 'v', metaKey: true }), 'darwin')).toBe(false)
   })
 })

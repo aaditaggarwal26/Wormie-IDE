@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
 import { registerAssignmentHandlers } from './assignments'
@@ -106,7 +106,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   const workspace = registerWorkspaceHandlers(store)
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
-  const isTrustedSender = (event: IpcMainInvokeEvent) =>
+  const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
     trustedWebContents.has(event.sender.id) &&
     event.senderFrame === event.sender.mainFrame &&
     isTrustedRendererUrl(event.senderFrame.url)
@@ -119,7 +119,7 @@ if (!app.requestSingleInstanceLock()) {
   )
   understanding.registerIpc()
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
-  registerTerminalHandlers(workspace.getWorkspaceRoot)
+  registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
   registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
 
   app.on('second-instance', (_event, commandLine) => {

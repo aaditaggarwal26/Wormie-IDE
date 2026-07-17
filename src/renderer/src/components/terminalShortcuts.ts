@@ -5,3 +5,9 @@ export function shouldHandleTerminalCopy(event: TerminalKeyEvent, platform: stri
   if (platform === 'darwin') return event.metaKey
   return event.ctrlKey && !event.metaKey && (event.shiftKey || hasSelection)
 }
+
+export function shouldHandleTerminalPaste(event: TerminalKeyEvent, platform: string): boolean {
+  if (event.type !== 'keydown' || event.key.toLowerCase() !== 'v' || event.altKey) return false
+  if (platform === 'darwin') return event.metaKey && !event.ctrlKey
+  return event.ctrlKey && !event.metaKey
+}

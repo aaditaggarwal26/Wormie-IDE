@@ -12,8 +12,10 @@ export const IPC_CHANNELS = {
   gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
   terminalWrite: 'terminal:write',
+  terminalResize: 'terminal:resize',
   terminalStop: 'terminal:stop',
   terminalCopy: 'terminal:copy',
+  terminalReadClipboard: 'terminal:read-clipboard',
   terminalData: 'terminal:data',
   terminalExit: 'terminal:exit',
   agentGetConfig: 'agent:get-config',
@@ -128,8 +130,33 @@ export type GitStatusSnapshot = {
   problems: GitRepositoryProblem[]
 }
 
+export type TerminalSessionRequest = {
+  sessionId: string
+  columns: number
+  rows: number
+}
+
+export type TerminalSessionInfo = {
+  sessionId: string
+  shellName: string
+}
+
+export type TerminalWriteRequest = {
+  sessionId: string
+  data: string
+}
+
+export type TerminalResizeRequest = TerminalSessionRequest
+
+export type TerminalData = {
+  sessionId: string
+  data: string
+}
+
 export type TerminalExit = {
+  sessionId: string
   code: number | null
+  signal: number | null
 }
 
 export type AgentProvider = 'openai-compatible' | 'codex-account'
@@ -675,11 +702,13 @@ export type DesktopApi = {
   searchWorkspace: (query: string) => Promise<SearchResult[]>
   getGitStatus: () => Promise<GitStatusSnapshot>
   trustGitRepository: (repositoryRoot: string) => Promise<void>
-  startTerminal: () => Promise<void>
-  writeTerminal: (data: string) => void
-  stopTerminal: () => void
+  startTerminal: (request: TerminalSessionRequest) => Promise<TerminalSessionInfo>
+  writeTerminal: (sessionId: string, data: string) => void
+  resizeTerminal: (sessionId: string, columns: number, rows: number) => void
+  stopTerminal: (sessionId: string) => void
   copyTerminalText: (text: string) => Promise<void>
-  onTerminalData: (callback: (data: string) => void) => () => void
+  readTerminalClipboard: () => Promise<string>
+  onTerminalData: (callback: (event: TerminalData) => void) => () => void
   onTerminalExit: (callback: (event: TerminalExit) => void) => () => void
   getAgentConfig: () => Promise<AgentConfig>
   saveAgentConfig: (config: AgentConfigUpdate) => Promise<AgentConfig>

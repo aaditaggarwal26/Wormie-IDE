@@ -87,9 +87,22 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
 
           {selected.role === 'teacher' && <button className="classroom-publish" disabled={props.busy || !props.workspace || !props.assignment?.manifest || props.assignment.role === 'student'} onClick={() => props.onPublish(selected.id)} type="button"><Send size={13} /> {props.assignment?.manifest ? `Publish ${props.assignment.manifest.title}` : 'Open a teacher assignment to publish'}</button>}
 
-          <section className="classroom-section"><div className="classroom-section-title"><span>Assignments</span><b>{selected.assignments.length}</b></div>{selected.assignments.length === 0 ? <p className="classroom-section-empty">Published work will appear here automatically.</p> : <div className="classroom-assignment-list">{selected.assignments.map((assignment) => <article key={assignment.id}><span><b>{assignment.title}</b><small>{assignment.summary}</small><time>{new Date(assignment.publishedAt).toLocaleDateString()}</time></span><button disabled={props.busy} onClick={() => props.onOpenAssignment(assignment.id)} title="Download and open assignment" type="button">{selected.role === 'student' ? <Download size={13} /> : <DoorOpen size={13} />}</button></article>)}</div>}</section>
+          <section className="classroom-section"><div className="classroom-section-title"><span>Assignments</span><b>{selected.assignments.length}</b></div>{selected.assignments.length === 0 ? <p className="classroom-section-empty">Published work will appear here automatically.</p> : <div className="classroom-assignment-list">{selected.assignments.map((assignment) => <article key={assignment.id}><span><b>{assignment.title}</b><time>{new Date(assignment.publishedAt).toLocaleDateString()}</time></span><button disabled={props.busy} onClick={() => props.onOpenAssignment(assignment.id)} title="Download and open assignment" type="button">{selected.role === 'student' ? <Download size={13} /> : <DoorOpen size={13} />}</button></article>)}</div>}</section>
 
-          <section className="classroom-section"><div className="classroom-section-title"><span>People</span><b>{selected.members.length}</b></div><div className="classroom-member-list">{selected.members.map((member) => <div key={member.userId}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><b>{member.displayName}</b>{member.email && <small>{member.email}</small>}</div><em>{member.role}</em></div>)}</div></section>
+          <section className="classroom-section">
+            <div className="classroom-section-title"><span>People</span><b>{selected.members.length}</b></div>
+            <div className="classroom-member-groups">
+              {(['teacher', 'student'] as const).map((role) => {
+                const members = selected.members.filter((member) => member.role === role)
+                return <section className="classroom-member-group" key={role}>
+                  <div className="classroom-member-heading"><span>{role === 'teacher' ? 'Teachers' : 'Students'}</span><b>{members.length}</b></div>
+                  {members.length === 0
+                    ? <p>No {role === 'teacher' ? 'teachers' : 'students'} yet.</p>
+                    : <div className="classroom-member-list">{members.map((member) => <div key={member.userId}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><b>{member.displayName}</b>{member.email && <small>{member.email}</small>}</div></div>)}</div>}
+                </section>
+              })}
+            </div>
+          </section>
         </div>}
       </>}
     </div>

@@ -881,7 +881,7 @@ export default function App(): React.JSX.Element {
 
       <footer className="statusbar" inert={assignmentStudioOpen ? true : undefined}>
         <span className="status-mode"><BookOpenText size={12} /> Learning mode</span>
-        <span>{documents.length} open {documents.length === 1 ? 'file' : 'files'}</span>
+        <span className="status-open-files">{documents.length} open {documents.length === 1 ? 'file' : 'files'}</span>
         <span className="status-spacer" />
         <span>UTF-8</span>
         <span>Ln {cursorLine}, Col {cursorColumn}</span>

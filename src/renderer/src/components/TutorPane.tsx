@@ -234,9 +234,7 @@ export function TutorPane(): React.JSX.Element {
           <motion.div animate={{ opacity: 1 }} initial={{ opacity: 0 }}>
             <div className="gate-card">
               <div className="gate-icon"><BrainCircuit size={20} /></div>
-              <p className="gate-label">Request a change</p>
-              <h3>Understand it before the agent builds it.</h3>
-              <p className="gate-copy">Wormie reads a bounded set of saved project files, teaches the required concepts, then unlocks a reviewable proposal after you pass.</p>
+              <h3>Ask Wormie Agent for help</h3>
             </div>
             <div className="agent-composer">
               <textarea

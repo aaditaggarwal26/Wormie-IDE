@@ -30,13 +30,18 @@ function schemaSummary(kind: ModelOperation): string {
 
   if (kind === 'proposal') return `{
   "summary": string,
-  "changes": [
-    { "relativePath": string, "action": "create", "content": string, "explanation": string }
-    | { "relativePath": string, "action": "update", "edits": [{ "oldText": string, "newText": string }], "explanation": string }
-  ],
+  "changes": [{
+    "relativePath": string,
+    "action": "create" | "update",
+    "content"?: string,
+    "edits"?: [{ "oldText": string, "newText": string }],
+    "explanation": string
+  }],
   "risks": [string],
   "verification": [string]
-}`
+}
+For action "create", content is required and edits must be omitted.
+For action "update", edits are required and content must be omitted.`
   if (kind === 'change-concepts') return `{
   "concepts": [{ "id": string, "name": string, "summary": string, "prerequisite": boolean }],
   "beforeBehavior": string, "afterBehavior": string, "importantSymbols": [string]

@@ -30,7 +30,10 @@ function schemaSummary(kind: ModelOperation): string {
 
   if (kind === 'proposal') return `{
   "summary": string,
-  "changes": [{ "relativePath": string, "action": "create" | "update", "content": string, "explanation": string }],
+  "changes": [
+    { "relativePath": string, "action": "create", "content": string, "explanation": string }
+    | { "relativePath": string, "action": "update", "edits": [{ "oldText": string, "newText": string }], "explanation": string }
+  ],
   "risks": [string],
   "verification": [string]
 }`

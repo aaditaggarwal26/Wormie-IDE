@@ -30,6 +30,7 @@ import { CodexAppServer } from './codexAppServer'
 import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
 import { ModelGateway, validateBaseUrl } from './provider'
+import { materializeProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
 import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
 import type { UnderstandingController } from '../understanding'
@@ -51,6 +52,10 @@ type InternalChange = ProposedFileChange & {
   absolutePath: string
   expectedHash: string | null
   beforeContent: string | null
+  surgicalEdits: ResolvedProposalTextEdit[] | null
+  additions: number
+  deletions: number
+  patch: string
 }
 
 type InternalProposal = {
@@ -71,6 +76,11 @@ const maxRequestLength = 4_000
 
 function hash(content: string): string {
   return createHash('sha256').update(content).digest('hex')
+}
+
+function createdFilePatch(relativePath: string, content: string): string {
+  const added = content.split(/\r?\n/).map((line) => `+${line}`).join('\n')
+  return `--- /dev/null\n+++ after/${relativePath}\n${added}`.slice(0, 18_000)
 }
 
 function cleanError(error: unknown, secret?: string | null): Error {
@@ -456,7 +466,11 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'proposal',
       `Create a minimal, production-quality implementation for the request below.
-Return complete UTF-8 file contents for every changed file. Use only relative workspace paths.
+Use only relative workspace paths. For an update, return exact oldText/newText edits instead of the complete file.
+Copy oldText verbatim from the supplied workspace file and include only enough surrounding text to make it unique.
+Keep each edit to one contiguous changed region; unchanged context may appear only at its start or end.
+Never overlap edits, and preserve every byte outside them. For an empty existing file, use one edit with empty oldText.
+Only create actions may return complete UTF-8 file contents. Only update files whose contents were supplied.
 You may create or update files, but never delete files. Do not modify secrets, .git, or node_modules.
 Prefer the smallest coherent change and include concrete verification steps.
 
@@ -474,6 +488,11 @@ Prefer the smallest coherent change and include concrete verification steps.
       let absolutePath = candidatePath
       let expectedHash: string | null = null
       let beforeContent: string | null = null
+      let content: string
+      let surgicalEdits: ResolvedProposalTextEdit[] | null = null
+      let additions: number
+      let deletions: number
+      let patch: string
       if (change.action === 'update') {
         const resolvedPath = await fs.realpath(candidatePath).catch(() => null)
         if (!resolvedPath || !isPathInside(rootPath, resolvedPath)) throw new Error(`Cannot update missing file: ${change.relativePath}`)
@@ -481,6 +500,12 @@ Prefer the smallest coherent change and include concrete verification steps.
         const existing = await fs.readFile(resolvedPath, 'utf8')
         beforeContent = existing
         expectedHash = hash(existing)
+        const materialized = materializeProposalEdits(existing, change.edits, change.relativePath)
+        content = materialized.content
+        surgicalEdits = materialized.edits
+        additions = materialized.additions
+        deletions = materialized.deletions
+        patch = materialized.patch
       } else {
         const parent = await fs.realpath(path.dirname(candidatePath)).catch(() => null)
         if (!parent || !isPathInside(rootPath, parent)) throw new Error(`Create files only in existing workspace folders: ${change.relativePath}`)
@@ -491,11 +516,29 @@ Prefer the smallest coherent change and include concrete verification steps.
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         }
+        if (change.content.includes('\0')) throw new Error(`The proposed content for ${change.relativePath} is invalid.`)
+        content = change.content
+        additions = content.split(/\r?\n/).length
+        deletions = 0
+        patch = createdFilePatch(change.relativePath, content)
       }
       const canonicalProposalPath = process.platform === 'win32' ? absolutePath.toLowerCase() : absolutePath
       if (proposedPaths.has(canonicalProposalPath)) throw new Error(`The model proposed ${change.relativePath} more than once.`)
       proposedPaths.add(canonicalProposalPath)
-      internalChanges.push({ ...change, originalContent: beforeContent, absolutePath, expectedHash, beforeContent })
+      internalChanges.push({
+        relativePath: change.relativePath,
+        action: change.action,
+        originalContent: beforeContent,
+        content,
+        explanation: change.explanation,
+        absolutePath,
+        expectedHash,
+        beforeContent,
+        surgicalEdits,
+        additions,
+        deletions,
+        patch
+      })
     }
 
     const proposalId = randomUUID()
@@ -504,23 +547,15 @@ Prefer the smallest coherent change and include concrete verification steps.
       source: 'ai_proposal',
       title: draft.summary.slice(0, 160),
       description: draft.summary,
-      files: internalChanges.map((change) => {
-        const beforeLines = change.beforeContent?.split(/\r?\n/) ?? []
-        const afterLines = change.content.split(/\r?\n/)
-        let prefix = 0
-        while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix += 1
-        let suffix = 0
-        while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]) suffix += 1
-        return {
-          path: change.relativePath,
-          status: change.action === 'create' ? 'added' as const : 'modified' as const,
-          additions: Math.max(0, afterLines.length - prefix - suffix),
-          deletions: change.action === 'create' ? 0 : Math.max(0, beforeLines.length - prefix - suffix),
-          beforeContent: change.beforeContent ?? undefined,
-          afterContent: change.content,
-          patch: `--- before/${change.relativePath}\n${(change.beforeContent ?? '').slice(0, 18_000)}\n+++ after/${change.relativePath}\n${change.content.slice(0, 18_000)}`
-        }
-      })
+      files: internalChanges.map((change) => ({
+        path: change.relativePath,
+        status: change.action === 'create' ? 'added' as const : 'modified' as const,
+        additions: change.additions,
+        deletions: change.deletions,
+        beforeContent: change.beforeContent ?? undefined,
+        afterContent: change.content,
+        patch: change.patch
+      }))
     }
     const publicProposal: CodeProposal = {
       id: proposalId,

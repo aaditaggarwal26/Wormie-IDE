@@ -118,7 +118,7 @@ if (!app.requestSingleInstanceLock()) {
     isTrustedSender
   )
   understanding.registerIpc()
-  registerGitHandlers(workspace.getWorkspaceRoot, understanding)
+  registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot)
   registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
 

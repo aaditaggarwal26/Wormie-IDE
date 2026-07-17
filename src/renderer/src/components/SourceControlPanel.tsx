@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { FolderGit2, GitBranch, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
+import { FolderGit2, GitBranch, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { UnderstandingQuiz } from '@/components/UnderstandingQuiz'
 import { resolveSourcePath } from '@/components/understandingQuizModel'
 import { useWorkbench } from '@/store/workbench'
@@ -10,16 +10,29 @@ type SourceControlPanelProps = {
   workspace: WorkspaceSnapshot | null
   status: GitStatusSnapshot | null
   busy: boolean
+  error: string | null
   onRefresh: () => void
   onOpenFile: (filePath: string) => void
+  onTrustRepository: (repositoryRoot: string) => void
+  trustingRoot: string | null
 }
 
-export function SourceControlPanel({ workspace, status, busy, onRefresh, onOpenFile }: SourceControlPanelProps): React.JSX.Element {
+export function SourceControlPanel({
+  workspace,
+  status,
+  busy,
+  error,
+  onRefresh,
+  onOpenFile,
+  onTrustRepository,
+  trustingRoot
+}: SourceControlPanelProps): React.JSX.Element {
   const [selectedRoot, setSelectedRoot] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [analysis, setAnalysis] = useState<StagedChangeAnalysis | null>(null)
   const addOutput = useWorkbench((state) => state.addOutput)
   const repositories = status?.repositories ?? []
+  const problems = status?.problems ?? []
   const selectedRepository = repositories.find((repository) => repository.rootPath === selectedRoot) ?? repositories[0]
 
   useEffect(() => {
@@ -58,8 +71,31 @@ export function SourceControlPanel({ workspace, status, busy, onRefresh, onOpenF
       </div>
 
       {!workspace && <div className="panel-message">Open a workspace to detect Git repositories.</div>}
-      {workspace && !status && <div className="panel-message">Detecting repositories...</div>}
-      {status && repositories.length === 0 && (
+      {workspace && busy && !status && !error && <div className="panel-message">Detecting repositories...</div>}
+      {workspace && error && (
+        <div className="git-problem-card" role="alert">
+          <ShieldAlert size={18} />
+          <div><strong>Git status unavailable</strong><p>{error}</p></div>
+          <button disabled={busy} onClick={onRefresh} type="button"><RefreshCw className={busy ? 'spin' : ''} size={12} /> Try again</button>
+        </div>
+      )}
+      {problems.map((problem) => {
+        const trusting = trustingRoot === problem.rootPath
+        return (
+          <div className="git-problem-card" data-kind={problem.kind} key={problem.rootPath} role="alert">
+            <ShieldAlert size={18} />
+            <div>
+              <strong>{problem.kind === 'unsafe-ownership' ? 'Repository trust required' : 'Repository unavailable'}</strong>
+              <p>{problem.message}</p>
+              <code>{problem.relativePath === '.' ? problem.name : problem.relativePath}</code>
+            </div>
+            {problem.kind === 'unsafe-ownership'
+              ? <button disabled={busy} onClick={() => onTrustRepository(problem.rootPath)} type="button">{trusting ? <LoaderCircle className="spin" size={12} /> : <ShieldCheck size={12} />} {trusting ? 'Trusting...' : 'Trust and retry'}</button>
+              : <button disabled={busy} onClick={onRefresh} type="button"><RefreshCw className={busy ? 'spin' : ''} size={12} /> Try again</button>}
+          </div>
+        )
+      })}
+      {status && repositories.length === 0 && problems.length === 0 && (
         <div className="repository-empty">
           <FolderGit2 size={22} />
           <strong>No Git repositories found</strong>

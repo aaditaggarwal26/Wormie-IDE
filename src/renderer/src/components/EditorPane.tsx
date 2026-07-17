@@ -88,8 +88,33 @@ export function EditorPane({
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const updateProposalReviewFile = useWorkbench((state) => state.updateProposalReviewFile)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const editorContainerRef = useRef<HTMLDivElement | null>(null)
   const activeDocument = documents.find((document) => document.path === activePath)
   const activeReviewFile = proposalReview?.files.find((file) => file.absolutePath === activePath)
+
+  useEffect(() => {
+    const container = editorContainerRef.current
+    if (!container || activeReviewFile) return
+    let layoutFrame: number | null = null
+
+    const scheduleLayout = () => {
+      if (layoutFrame !== null) return
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = null
+        const width = container.clientWidth
+        const height = container.clientHeight
+        if (width > 0 && height > 0) editorRef.current?.layout({ width, height })
+      })
+    }
+
+    const observer = new ResizeObserver(scheduleLayout)
+    observer.observe(container)
+    scheduleLayout()
+    return () => {
+      observer.disconnect()
+      if (layoutFrame !== null) cancelAnimationFrame(layoutFrame)
+    }
+  }, [activePath, activeReviewFile])
 
   useEffect(() => {
     if (!revealLine || !editorRef.current) return
@@ -190,7 +215,7 @@ export function EditorPane({
           <span key={`${part}-${index}`}>{part}</span>
         ))}
       </div>
-      <div className="monaco-wrap">
+      <div className="monaco-wrap" ref={editorContainerRef}>
         {activeReviewFile && proposalReview ? (
           <AgentDiffReview
             beforeMount={configureEditor}
@@ -214,12 +239,19 @@ export function EditorPane({
             onChange={(value) => updateDocument(activeDocument.path, value ?? '')}
             onMount={(mountedEditor) => {
               editorRef.current = mountedEditor
+              const container = editorContainerRef.current
+              if (container?.clientWidth && container.clientHeight) {
+                mountedEditor.layout({ width: container.clientWidth, height: container.clientHeight })
+              }
+              mountedEditor.onDidDispose(() => {
+                if (editorRef.current === mountedEditor) editorRef.current = null
+              })
               mountedEditor.onDidChangeCursorPosition(({ position }) => {
                 setCursorPosition(position.lineNumber, position.column)
               })
             }}
             options={{
-              automaticLayout: true,
+              automaticLayout: false,
               bracketPairColorization: { enabled: true },
               cursorBlinking: 'smooth',
               cursorSmoothCaretAnimation: 'on',

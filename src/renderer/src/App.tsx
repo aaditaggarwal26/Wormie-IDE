@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { BookOpenText, Command, FolderOpen, Gauge, GraduationCap, Search, Settings2 } from 'lucide-react'
@@ -10,6 +10,7 @@ import { BottomPanel } from '@/components/BottomPanel'
 import { ClassroomPanel } from '@/components/ClassroomPanel'
 import { EditorPane } from '@/components/EditorPane'
 import { Explorer } from '@/components/Explorer'
+import { PanelResizeHandle } from '@/components/PanelResizeHandle'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
@@ -56,6 +57,50 @@ function findSuggestedFile(entries: FileTreeNode[]): FileTreeNode | null {
     .find((file) => file !== undefined) ?? textFiles[0] ?? null
 }
 
+type PanelLayout = {
+  left: number
+  right: number
+  bottom: number
+}
+
+const PANEL_LAYOUT_STORAGE_KEY = 'wormie.panel-layout.v1'
+const PANEL_HANDLE_SIZE = 5
+const ACTIVITY_RAIL_WIDTH = 50
+const CENTER_MIN_WIDTH = 360
+const EDITOR_MIN_HEIGHT = 140
+const PANEL_LIMITS = {
+  left: { min: 180, max: 480, initial: 238 },
+  right: { min: 260, max: 600, initial: 330 },
+  bottom: { min: 110, max: 520, initial: 210 }
+} as const
+
+function clampPanelSize(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+function loadPanelLayout(): PanelLayout {
+  const fallback = {
+    left: PANEL_LIMITS.left.initial,
+    right: PANEL_LIMITS.right.initial,
+    bottom: PANEL_LIMITS.bottom.initial
+  }
+  try {
+    const raw = window.localStorage.getItem(PANEL_LAYOUT_STORAGE_KEY)
+    if (!raw) return fallback
+    const stored = JSON.parse(raw) as Partial<Record<keyof PanelLayout, unknown>>
+    const readSize = (key: keyof PanelLayout) => {
+      const value = stored[key]
+      const limit = PANEL_LIMITS[key]
+      return typeof value === 'number' && Number.isFinite(value)
+        ? clampPanelSize(value, limit.min, limit.max)
+        : fallback[key]
+    }
+    return { left: readSize('left'), right: readSize('right'), bottom: readSize('bottom') }
+  } catch {
+    return fallback
+  }
+}
+
 export default function App(): React.JSX.Element {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [assignmentStudioOpen, setAssignmentStudioOpen] = useState(false)
@@ -68,15 +113,19 @@ export default function App(): React.JSX.Element {
   const [cloudAuth, setCloudAuth] = useState<CloudAuthState | null>(null)
   const [cloudAuthLoaded, setCloudAuthLoaded] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
+  const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
+  const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
   const restored = useRef(false)
   const assignmentLoadSequence = useRef(0)
   const assignmentEditorRevision = useRef<string | null>(null)
   const assignmentReturnFocus = useRef<HTMLElement | null>(null)
   const assignmentOpenLoad = useRef(false)
   const automaticallyOpenedWorkspace = useRef<string | null>(null)
+  const workbenchRef = useRef<HTMLDivElement | null>(null)
+  const centerStackRef = useRef<HTMLDivElement | null>(null)
   const workspace = useWorkbench((state) => state.workspace)
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
@@ -91,6 +140,83 @@ export default function App(): React.JSX.Element {
   const setActivity = useWorkbench((state) => state.setActivity)
   const setBottomView = useWorkbench((state) => state.setBottomView)
   const addOutput = useWorkbench((state) => state.addOutput)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PANEL_LAYOUT_STORAGE_KEY, JSON.stringify(panelLayout))
+    } catch {
+      // The layout remains usable for this session when storage is unavailable.
+    }
+  }, [panelLayout])
+
+  useEffect(() => {
+    if (!cloudAuthLoaded || !cloudAuth?.user) return
+    const workbench = workbenchRef.current
+    const centerStack = centerStackRef.current
+    if (!workbench || !centerStack) return
+
+    const constrainLayout = () => {
+      setPanelLayout((current) => {
+        const availableSideWidth = Math.max(
+          PANEL_LIMITS.left.min + PANEL_LIMITS.right.min,
+          workbench.clientWidth - ACTIVITY_RAIL_WIDTH - (PANEL_HANDLE_SIZE * 2) - CENTER_MIN_WIDTH
+        )
+        let left = clampPanelSize(current.left, PANEL_LIMITS.left.min, PANEL_LIMITS.left.max)
+        let right = clampPanelSize(current.right, PANEL_LIMITS.right.min, PANEL_LIMITS.right.max)
+        let overflow = left + right - availableSideWidth
+        if (overflow > 0) {
+          const rightReduction = Math.min(overflow, right - PANEL_LIMITS.right.min)
+          right -= rightReduction
+          overflow -= rightReduction
+          left -= Math.min(overflow, left - PANEL_LIMITS.left.min)
+        }
+        const bottomMax = Math.max(
+          PANEL_LIMITS.bottom.min,
+          Math.min(PANEL_LIMITS.bottom.max, centerStack.clientHeight - PANEL_HANDLE_SIZE - EDITOR_MIN_HEIGHT)
+        )
+        const bottom = clampPanelSize(current.bottom, PANEL_LIMITS.bottom.min, bottomMax)
+        return left === current.left && right === current.right && bottom === current.bottom
+          ? current
+          : { left, right, bottom }
+      })
+    }
+
+    constrainLayout()
+    const observer = new ResizeObserver(constrainLayout)
+    observer.observe(workbench)
+    observer.observe(centerStack)
+    return () => observer.disconnect()
+  }, [cloudAuth?.user?.id, cloudAuthLoaded])
+
+  const resizeLeftPanel = useCallback((delta: number) => {
+    setPanelLayout((current) => {
+      const available = (workbenchRef.current?.clientWidth ?? window.innerWidth)
+        - ACTIVITY_RAIL_WIDTH - (PANEL_HANDLE_SIZE * 2) - current.right - CENTER_MIN_WIDTH
+      const max = Math.max(PANEL_LIMITS.left.min, Math.min(PANEL_LIMITS.left.max, available))
+      const left = clampPanelSize(current.left + delta, PANEL_LIMITS.left.min, max)
+      return left === current.left ? current : { ...current, left }
+    })
+  }, [])
+
+  const resizeRightPanel = useCallback((delta: number) => {
+    setPanelLayout((current) => {
+      const available = (workbenchRef.current?.clientWidth ?? window.innerWidth)
+        - ACTIVITY_RAIL_WIDTH - (PANEL_HANDLE_SIZE * 2) - current.left - CENTER_MIN_WIDTH
+      const max = Math.max(PANEL_LIMITS.right.min, Math.min(PANEL_LIMITS.right.max, available))
+      const right = clampPanelSize(current.right - delta, PANEL_LIMITS.right.min, max)
+      return right === current.right ? current : { ...current, right }
+    })
+  }, [])
+
+  const resizeBottomPanel = useCallback((delta: number) => {
+    setPanelLayout((current) => {
+      const available = (centerStackRef.current?.clientHeight ?? window.innerHeight)
+        - PANEL_HANDLE_SIZE - EDITOR_MIN_HEIGHT
+      const max = Math.max(PANEL_LIMITS.bottom.min, Math.min(PANEL_LIMITS.bottom.max, available))
+      const bottom = clampPanelSize(current.bottom - delta, PANEL_LIMITS.bottom.min, max)
+      return bottom === current.bottom ? current : { ...current, bottom }
+    })
+  }, [])
 
   const loadAssignment = useCallback(async (workspaceRoot: string) => {
     const sequence = ++assignmentLoadSequence.current
@@ -175,7 +301,26 @@ export default function App(): React.JSX.Element {
 
   const gitMutation = useMutation({
     mutationFn: window.desktop.getGitStatus,
-    onError: (error) => addOutput(`Could not read Git status: ${errorMessage(error)}`)
+    onMutate: () => setGitError(null),
+    onSuccess: () => setGitError(null),
+    onError: (error) => {
+      const message = errorMessage(error)
+      setGitError(message)
+      addOutput(`Could not read Git status: ${message}`)
+    }
+  })
+
+  const gitTrustMutation = useMutation({
+    mutationFn: window.desktop.trustGitRepository,
+    onSuccess: () => {
+      setGitError(null)
+      gitMutation.mutate()
+    },
+    onError: (error) => {
+      const message = errorMessage(error)
+      setGitError(message)
+      addOutput(`Could not trust Git repository: ${message}`)
+    }
   })
 
   const saveMutation = useMutation({
@@ -544,7 +689,15 @@ export default function App(): React.JSX.Element {
         <div className="titlebar-workspace">{workspace?.name ?? 'No workspace'}</div>
       </header>
 
-      <div className="workbench" inert={assignmentStudioOpen ? true : undefined}>
+      <div
+        className="workbench"
+        inert={assignmentStudioOpen ? true : undefined}
+        ref={workbenchRef}
+        style={{
+          '--left-panel-width': `${panelLayout.left}px`,
+          '--right-panel-width': `${panelLayout.right}px`
+        } as CSSProperties}
+      >
         <ActivityRail />
         {activity === 'explorer' && (
           <Explorer
@@ -569,10 +722,13 @@ export default function App(): React.JSX.Element {
         )}
         {activity === 'sourceControl' && (
           <SourceControlPanel
-            busy={gitMutation.isPending}
+            busy={gitMutation.isPending || gitTrustMutation.isPending}
+            error={gitError}
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
             onRefresh={() => gitMutation.mutate()}
+            onTrustRepository={(repositoryRoot) => gitTrustMutation.mutate(repositoryRoot)}
             status={workspace && gitMutation.data?.workspaceRoot === workspace.rootPath ? gitMutation.data : null}
+            trustingRoot={gitTrustMutation.isPending ? gitTrustMutation.variables : null}
             workspace={workspace}
           />
         )}
@@ -676,7 +832,21 @@ export default function App(): React.JSX.Element {
         {activity === 'learning' && <LearningSidebar />}
         {activity === 'settings' && <SettingsSidebar />}
 
-        <div className="center-stack">
+        <PanelResizeHandle
+          ariaLabel="Resize primary sidebar"
+          max={PANEL_LIMITS.left.max}
+          min={PANEL_LIMITS.left.min}
+          onReset={() => setPanelLayout((current) => ({ ...current, left: PANEL_LIMITS.left.initial }))}
+          onResize={resizeLeftPanel}
+          orientation="vertical"
+          value={panelLayout.left}
+        />
+
+        <div
+          className="center-stack"
+          ref={centerStackRef}
+          style={{ '--bottom-panel-height': `${panelLayout.bottom}px` } as CSSProperties}
+        >
           <EditorPane
             hasWorkspace={Boolean(workspace)}
             onOpenSuggestedFile={() => suggestedFile && fileMutation.mutate({ filePath: suggestedFile.path })}
@@ -686,8 +856,26 @@ export default function App(): React.JSX.Element {
             saving={saveMutation.isPending}
             suggestedFileName={suggestedFile?.name ?? null}
           />
+          <PanelResizeHandle
+            ariaLabel="Resize bottom panel"
+            max={PANEL_LIMITS.bottom.max}
+            min={PANEL_LIMITS.bottom.min}
+            onReset={() => setPanelLayout((current) => ({ ...current, bottom: PANEL_LIMITS.bottom.initial }))}
+            onResize={resizeBottomPanel}
+            orientation="horizontal"
+            value={panelLayout.bottom}
+          />
           <BottomPanel />
         </div>
+        <PanelResizeHandle
+          ariaLabel="Resize AI tutor sidebar"
+          max={PANEL_LIMITS.right.max}
+          min={PANEL_LIMITS.right.min}
+          onReset={() => setPanelLayout((current) => ({ ...current, right: PANEL_LIMITS.right.initial }))}
+          onResize={resizeRightPanel}
+          orientation="vertical"
+          value={panelLayout.right}
+        />
         <TutorPane />
       </div>
 

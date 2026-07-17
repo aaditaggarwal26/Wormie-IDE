@@ -37,7 +37,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .command-trigger:hover { border-color: #3b464b; background: #151a1d; }
 .command-trigger kbd, .command-palette kbd { padding: 2px 5px; border: 1px solid #2b3438; border-radius: 4px; color: #778188; background: #0c0f11; font: 9px "Cascadia Code", monospace; }
 
-.workbench { display: grid; grid-template-columns: 50px 238px minmax(420px, 1fr) 330px; min-height: 0; }
+.workbench { display: grid; grid-template-columns: 50px var(--left-panel-width) 5px minmax(360px, 1fr) 5px var(--right-panel-width); min-height: 0; overflow: hidden; }
 .activity-rail { display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--line); background: #0a0d0f; }
 .worm-mark { display: flex; gap: 2px; align-items: flex-end; justify-content: center; width: 50px; height: 49px; border-bottom: 1px solid var(--line); }
 .worm-mark span { width: 6px; border-radius: 5px 5px 2px 2px; background: var(--acid); box-shadow: 0 0 14px #dce87322; }
@@ -74,8 +74,21 @@ ul { list-style: none; margin: 0; padding: 0; }
 .file-icon { flex: 0 0 auto; color: #748d91; }
 .tree-notice { margin: 12px; color: #7a6d55; font-size: 10px; }
 
-.center-stack { display: grid; grid-template-rows: minmax(0, 1fr) 210px; min-width: 0; min-height: 0; background: var(--surface); }
-.editor-pane { display: grid; grid-template-rows: 36px 25px minmax(0, 1fr); min-width: 0; min-height: 0; background: #0d1012; }
+.panel-resize-handle { position: relative; z-index: 8; min-width: 0; min-height: 0; border: 0; outline: 0; background: #090c0e; touch-action: none; user-select: none; }
+.panel-resize-handle::after { position: absolute; border-radius: 2px; background: #283136; content: ""; transition: background .12s, box-shadow .12s; }
+.panel-resize-handle[data-orientation="vertical"] { cursor: col-resize; }
+.panel-resize-handle[data-orientation="vertical"]::after { top: 0; bottom: 0; left: 2px; width: 1px; }
+.panel-resize-handle[data-orientation="horizontal"] { cursor: row-resize; }
+.panel-resize-handle[data-orientation="horizontal"]::after { top: 2px; right: 0; left: 0; height: 1px; }
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.panel-resize-handle[data-dragging="true"]::after { background: var(--acid); box-shadow: 0 0 8px #dce87377; }
+.panel-resize-handle:focus-visible { outline: 1px solid #84924f; outline-offset: -1px; }
+body[data-resize-orientation="vertical"], body[data-resize-orientation="vertical"] * { cursor: col-resize !important; user-select: none !important; }
+body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizontal"] * { cursor: row-resize !important; user-select: none !important; }
+
+.center-stack { position: relative; z-index: 0; display: grid; grid-template-rows: minmax(140px, 1fr) 5px var(--bottom-panel-height); min-width: 0; min-height: 0; overflow: hidden; background: var(--surface); contain: layout paint; isolation: isolate; }
+.editor-pane { display: grid; grid-template-rows: 36px 25px minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; background: #0d1012; }
 .editor-tabs { display: flex; min-width: 0; border-bottom: 1px solid var(--line); background: #0a0d0f; }
 .tabs-scroll { display: flex; min-width: 0; overflow: auto hidden; }
 .editor-tab { display: flex; gap: 7px; align-items: center; min-width: 118px; max-width: 190px; height: 36px; padding: 0 9px; border: 0; border-right: 1px solid var(--line); color: #7e898f; background: #0c0f11; font-size: 11px; cursor: default; }
@@ -91,7 +104,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .breadcrumb-bar { display: flex; gap: 16px; align-items: center; padding: 0 13px; overflow: hidden; border-bottom: 1px solid #181e21; color: #626d73; background: #0d1012; font-size: 10px; }
 .breadcrumb-bar span { position: relative; white-space: nowrap; }
 .breadcrumb-bar span + span::before { position: absolute; left: -11px; color: #394247; content: ">"; }
-.monaco-wrap { min-width: 0; min-height: 0; }
+.monaco-wrap { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; contain: layout paint; }
+.monaco-wrap > * { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .review-dot { display: grid; flex: 0 0 auto !important; place-items: center; width: 16px; color: var(--acid); }
 .agent-diff-review { position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
 .diff-review-toolbar { position: absolute; z-index: 5; top: 10px; right: 19px; left: 55px; display: flex; gap: 5px; align-items: center; min-height: 35px; padding: 4px 5px 4px 9px; border: 1px solid #39443d; border-radius: 7px; background: #111719f2; box-shadow: 0 7px 22px #0008, inset 0 1px #ffffff09; backdrop-filter: blur(10px); }
@@ -133,7 +147,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .empty-row { display: flex; gap: 7px; align-items: center; }
 .empty-row svg { color: var(--green); }
 
-.tutor-pane { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-left: 1px solid var(--line); background: linear-gradient(180deg, #101416, #0c0f11); }
+.tutor-pane { position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-left: 1px solid var(--line); background: linear-gradient(180deg, #101416, #0c0f11); }
 .tutor-heading { display: flex; align-items: center; justify-content: space-between; height: 66px; padding: 0 16px; border-bottom: 1px solid var(--line); }
 .eyebrow { color: var(--warm); font-size: 8px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
 .tutor-heading h2 { margin: 2px 0 0; color: #d0d6d2; font-size: 15px; font-weight: 580; letter-spacing: -.02em; }
@@ -348,6 +362,16 @@ ul { list-style: none; margin: 0; padding: 0; }
 .repository-list button[data-active="true"] { color: var(--acid); background: #1c2420; }
 .repository-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repository-list code { color: #78836a; font: 8px "Cascadia Code", monospace; }
+.git-problem-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; margin: 12px; padding: 12px; border: 1px solid #5b4035; border-radius: 8px; color: #d29a79; background: linear-gradient(145deg, #211714, #151313); box-shadow: inset 0 1px #ffffff08; }
+.git-problem-card[data-kind="unsafe-ownership"] { border-color: #59533a; color: #c6b46e; background: linear-gradient(145deg, #201e14, #141512); }
+.git-problem-card > svg { margin-top: 1px; }
+.git-problem-card > div { min-width: 0; }
+.git-problem-card strong { display: block; color: #d6d8ce; font-size: 10px; font-weight: 650; }
+.git-problem-card p { margin: 5px 0 0; color: #9d8e84; font: 10px/1.5 "Avenir Next", sans-serif; }
+.git-problem-card code { display: block; margin-top: 7px; overflow: hidden; color: #817d69; font: 8px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.git-problem-card button { display: flex; grid-column: 1 / -1; gap: 6px; align-items: center; justify-content: center; min-height: 30px; border: 1px solid #655d3c; border-radius: 5px; color: #d9dcbd; background: #2a291b; font-size: 9px; font-weight: 700; cursor: pointer; }
+.git-problem-card button:hover:not(:disabled) { border-color: #82804e; background: #353522; }
+.git-problem-card button:disabled { opacity: .55; cursor: default; }
 .repository-empty { display: flex; flex-direction: column; align-items: center; padding: 48px 19px 0; color: #5f6b70; text-align: center; }
 .repository-empty svg { margin-bottom: 12px; color: #7e8d67; }
 .repository-empty strong { color: #aeb8b2; font-size: 11px; font-weight: 550; }
@@ -697,7 +721,6 @@ ul { list-style: none; margin: 0; padding: 0; }
 .classroom-primary { border-color: #5f6e42; color: #d8e3ba; background: #283120; }
 
 @media (max-width: 1180px) {
-  .workbench { grid-template-columns: 48px 220px minmax(380px, 1fr) 285px; }
   .titlebar-brand b { display: none; }
 }
 

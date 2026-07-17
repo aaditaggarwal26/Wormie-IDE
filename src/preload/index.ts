@@ -13,6 +13,7 @@ const desktopApi: DesktopApi = {
   deleteEntry: (entryPath) => ipcRenderer.invoke(IPC_CHANNELS.deleteEntry, entryPath),
   searchWorkspace: (query) => ipcRenderer.invoke(IPC_CHANNELS.searchWorkspace, query),
   getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.gitStatus),
+  trustGitRepository: (repositoryRoot) => ipcRenderer.invoke(IPC_CHANNELS.gitTrustRepository, repositoryRoot),
   startTerminal: () => ipcRenderer.invoke(IPC_CHANNELS.terminalStart),
   writeTerminal: (data) => ipcRenderer.send(IPC_CHANNELS.terminalWrite, data),
   stopTerminal: () => ipcRenderer.send(IPC_CHANNELS.terminalStop),

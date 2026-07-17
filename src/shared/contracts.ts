@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   deleteEntry: 'workspace:delete-entry',
   searchWorkspace: 'workspace:search',
   gitStatus: 'git:status',
+  gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
   terminalWrite: 'terminal:write',
   terminalStop: 'terminal:stop',
@@ -113,9 +114,18 @@ export type GitRepositorySnapshot = {
   files: GitFileChange[]
 }
 
+export type GitRepositoryProblem = {
+  rootPath: string
+  name: string
+  relativePath: string
+  kind: 'unsafe-ownership' | 'unavailable'
+  message: string
+}
+
 export type GitStatusSnapshot = {
   workspaceRoot: string
   repositories: GitRepositorySnapshot[]
+  problems: GitRepositoryProblem[]
 }
 
 export type TerminalExit = {
@@ -664,6 +674,7 @@ export type DesktopApi = {
   deleteEntry: (entryPath: string) => Promise<WorkspaceMutation | null>
   searchWorkspace: (query: string) => Promise<SearchResult[]>
   getGitStatus: () => Promise<GitStatusSnapshot>
+  trustGitRepository: (repositoryRoot: string) => Promise<void>
   startTerminal: () => Promise<void>
   writeTerminal: (data: string) => void
   stopTerminal: () => void

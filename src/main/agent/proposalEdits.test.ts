@@ -58,6 +58,25 @@ describe('surgical proposal edits', () => {
     expect(() => materializeProposalEdits('content', [{ oldText: '', newText: 'prefix' }], 'a.ts')).toThrow(/uniquely anchored/i)
   })
 
+  it('sorts adjacent edits and preserves unicode and CRLF content', () => {
+    const original = 'α = 1\r\nβ = 2\r\nγ = 3\r\n'
+    const result = materializeProposalEdits(original, [
+      { oldText: 'γ = 3', newText: 'γ = 30' },
+      { oldText: 'α = 1', newText: 'α = 10' }
+    ], 'values.ts')
+
+    expect(result.content).toBe('α = 10\r\nβ = 2\r\nγ = 30\r\n')
+    expect(result.edits.map((edit) => edit.oldText)).toEqual(['α = 1', 'γ = 3'])
+    expect(isReviewedEditSelection(original, 'α = 10\r\nβ = 2\r\nγ = 3\r\n', result.edits)).toBe(true)
+  })
+
+  it('rejects a surgical edit when its final file would exceed the limit', () => {
+    const original = `target${'x'.repeat(499_994)}`
+    expect(() => materializeProposalEdits(original, [
+      { oldText: 'target', newText: 'y'.repeat(100_000) }
+    ], 'large.ts')).toThrow(/too large/i)
+  })
+
   it('requires update proposals to use edits instead of replacement files', () => {
     const base = { summary: 'Update one value', risks: [], verification: ['Run tests'] }
     expect(proposalDraftSchema.safeParse({

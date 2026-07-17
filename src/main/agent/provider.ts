@@ -19,7 +19,7 @@ function extractJson(text: string): unknown {
   return JSON.parse(trimmed.slice(start, end + 1))
 }
 
-function schemaSummary(kind: ModelOperation): string {
+export function schemaSummary(kind: ModelOperation): string {
   if (kind === 'learning') {
     return `{
   "concepts": [{ "name": string, "whyItMatters": string, "mentalModel": string, "commonMistake": string }],

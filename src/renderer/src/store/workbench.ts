@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { CodeProposal, OpenFile, WorkspaceSnapshot } from '@shared/contracts'
-import { languageForPath, resolveProposalPath } from '@/components/proposalReviewModel'
+import { languageForPath, resolveProposalPath } from '../components/proposalReviewModel'
 
 export type EditorDocument = OpenFile & {
   savedContent: string

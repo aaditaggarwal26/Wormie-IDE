@@ -11,9 +11,10 @@ asarUnpack:
   - node_modules/@openai/codex-*/vendor/**
   - node_modules/node-pty/**
 protocols:
-  - name: Wormie classroom invitation
+  - name: Wormie link
     schemes:
       - wormie
+      - wormie-ide
 win:
   target: nsis
 mac:

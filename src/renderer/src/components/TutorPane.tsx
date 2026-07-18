@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   AlertTriangle,
   Activity,
-  BrainCircuit,
   Check,
   ChevronDown,
   FileCode2,
@@ -191,21 +190,19 @@ export function TutorPane(): React.JSX.Element {
   return (
     <aside className="tutor-pane">
       <div className="tutor-heading">
-        <div>
-          <span className="eyebrow">AI Copilot</span>
-          <h2>Learning gate</h2>
-        </div>
+        <h2>Wormie</h2>
         <div className="tutor-heading-actions">
           <button
+            aria-label="Activity"
             aria-controls="agent-activity"
             aria-expanded={activityOpen}
             className="activity-toggle"
             data-active={activityOpen}
             onClick={() => setActivityOpen((open) => !open)}
-            title="Show clean progress and technical events"
+            title="Activity"
             type="button"
           >
-            <Activity size={12} /> Activity
+            <Activity size={14} />
           </button>
           <div className="tutor-status" data-busy={busy}><span /> {stage}</div>
         </div>
@@ -232,10 +229,6 @@ export function TutorPane(): React.JSX.Element {
       <div className="tutor-scroll">
         {!session && (
           <motion.div animate={{ opacity: 1 }} initial={{ opacity: 0 }}>
-            <div className="gate-card">
-              <div className="gate-icon"><BrainCircuit size={20} /></div>
-              <h3>Ask Wormie Agent for help</h3>
-            </div>
             <div className="agent-composer">
               <textarea
                 aria-label="Describe a coding change"
@@ -247,12 +240,12 @@ export function TutorPane(): React.JSX.Element {
                   event.preventDefault()
                   startLearning()
                 }}
-                placeholder="Add protected routes with session-based authentication..."
+                placeholder="Describe a change"
                 rows={1}
                 value={request}
               />
               <div className="composer-meta">
-                <span>{workspace ? `${documents.length} open file${documents.length === 1 ? '' : 's'} in context` : 'Open a workspace first'}</span>
+                <span>{workspace ? `${documents.length} file${documents.length === 1 ? '' : 's'} open` : 'No workspace'}</span>
                 <button
                   disabled={!workspace || !request.trim() || dirtyDocuments.length > 0 || busy}
                   onClick={startLearning}
@@ -415,7 +408,7 @@ export function TutorPane(): React.JSX.Element {
       <div className="unlock-bar" data-unlocked={Boolean(quizResult?.passed)}>
         {busy ? <Square size={12} /> : quizResult?.passed ? <UnlockKeyhole size={14} /> : <LockKeyhole size={14} />}
         <button onClick={() => busy && window.desktop.cancelAgent()} type="button">
-          {busy ? 'Stop AI request' : quizResult?.passed ? 'Generation unlocked' : 'Generation locked'}
+          {busy ? 'Stop' : quizResult?.passed ? 'Unlocked' : 'Locked'}
         </button>
       </div>
     </aside>

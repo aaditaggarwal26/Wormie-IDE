@@ -52,6 +52,50 @@ export const proposalDraftSchema = z.object({
   verification: z.array(z.string().min(1).max(500)).min(1).max(10)
 })
 
+const workspacePath = z.string().min(1).max(500)
+
+export const workspaceAgentStepSchema = z.object({
+  note: z.string().min(1).max(500),
+  action: z.discriminatedUnion('type', [
+    z.object({
+      type: z.literal('search'),
+      query: z.string().min(1).max(200),
+      path: z.string().max(500).optional()
+    }),
+    z.object({
+      type: z.literal('read_file'),
+      relativePath: workspacePath,
+      startLine: z.number().int().positive().max(1_000_000).optional(),
+      endLine: z.number().int().positive().max(1_000_000).optional()
+    }),
+    z.object({
+      type: z.literal('edit_file'),
+      relativePath: workspacePath,
+      oldText: z.string().max(100_000),
+      newText: z.string().max(100_000)
+    }),
+    z.object({
+      type: z.literal('create_file'),
+      relativePath: workspacePath,
+      content: z.string().min(1).max(500_000)
+    }),
+    z.object({
+      type: z.literal('run_check'),
+      checkId: z.string().min(1).max(80)
+    }),
+    z.object({
+      type: z.literal('finish'),
+      summary: z.string().min(1).max(1600),
+      explanations: z.array(z.object({
+        relativePath: workspacePath,
+        explanation: z.string().min(1).max(1000)
+      })).min(1).max(12),
+      risks: z.array(z.string().min(1).max(500)).max(10),
+      verification: z.array(z.string().min(1).max(500)).max(10)
+    })
+  ])
+})
+
 export const changeConceptDraftSchema = z.object({
   concepts: z.array(z.object({
     id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
@@ -144,6 +188,7 @@ export const remediationDraftSchema = z.object({
 
 export type LearningDraft = z.infer<typeof learningDraftSchema>
 export type ProposalDraft = z.infer<typeof proposalDraftSchema>
+export type WorkspaceAgentStep = z.infer<typeof workspaceAgentStepSchema>
 export type ChangeConceptDraft = z.infer<typeof changeConceptDraftSchema>
 export type UnderstandingQuizDraft = z.infer<typeof understandingQuizDraftSchema>
 export type SemanticGradeDraft = z.infer<typeof semanticGradeSchema>

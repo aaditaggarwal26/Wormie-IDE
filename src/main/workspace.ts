@@ -1,4 +1,4 @@
-import { promises as fs } from 'node:fs'
+import { promises as fs, unwatchFile, watchFile, type Stats } from 'node:fs'
 import path from 'node:path'
 import { clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type Store from 'electron-store'
@@ -7,13 +7,18 @@ import {
   type FileTreeNode,
   type OpenFile,
   type SearchResult,
+  type WorkspaceFileChange,
   type WorkspaceFileList,
+  type WriteFileRequest,
+  type WrittenFile,
   type WorkspaceMutation,
   type WorkspaceSnapshot
 } from '../shared/contracts'
 import { isPathInside, validateEntryName } from './pathSafety'
 import type { AppPreferences } from './preferences'
 import { collectWorkspaceFiles } from './workspaceFiles'
+import { assertExpectedFingerprint, fingerprintContent } from './fileVersion'
+import { validateWatchFilePaths } from './fileWatchPolicy'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -175,6 +180,7 @@ export function registerWorkspaceHandlers(
   let activeWorkspaceRoot: string | null = null
   let workspaceTransition: Promise<void> = Promise.resolve()
   let fileIndex: { rootPath: string; promise: ReturnType<typeof collectWorkspaceFiles> } | null = null
+  const watchedFiles = new Map<string, (current: Stats, previous: Stats) => void>()
 
   function assertTrusted(event: IpcMainInvokeEvent): void {
     if (!isTrustedSender(event)) throw new Error('Workspace access was denied for this window.')
@@ -182,6 +188,11 @@ export function registerWorkspaceHandlers(
 
   function invalidateFileIndex(): void {
     fileIndex = null
+  }
+
+  function clearFileWatchers(): void {
+    for (const [filePath, listener] of watchedFiles) unwatchFile(filePath, listener)
+    watchedFiles.clear()
   }
 
   function getFileIndex(rootPath: string) {
@@ -206,6 +217,7 @@ export function registerWorkspaceHandlers(
       if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
       const snapshot = await createWorkspaceSnapshot(resolvedRoot)
       activeWorkspaceRoot = resolvedRoot
+      clearFileWatchers()
       invalidateFileIndex()
       void getFileIndex(resolvedRoot).catch(() => invalidateFileIndex())
       store.set('recentWorkspace', resolvedRoot)
@@ -224,6 +236,24 @@ export function registerWorkspaceHandlers(
     }
 
     return resolvedPath
+  }
+
+  async function readWorkspaceFile(filePath: string): Promise<OpenFile> {
+    const resolvedPath = await resolveWorkspaceFile(filePath)
+    if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
+    const stats = await fs.stat(resolvedPath)
+    if (!stats.isFile()) throw new Error('The requested path is not a file.')
+    if (stats.size > maxFileBytes) throw new Error('Files larger than 2 MB are not opened in the editor.')
+
+    const content = await fs.readFile(resolvedPath, 'utf8')
+    if (content.includes('\0')) throw new Error('Binary files are not supported in the text editor.')
+    return {
+      path: resolvedPath,
+      name: path.basename(resolvedPath),
+      content,
+      language: languageFor(resolvedPath),
+      fingerprint: fingerprintContent(content)
+    }
   }
 
   ipcMain.handle(IPC_CHANNELS.openWorkspace, async (event) => {
@@ -254,31 +284,22 @@ export function registerWorkspaceHandlers(
 
   ipcMain.handle(IPC_CHANNELS.readFile, async (event, filePath: string): Promise<OpenFile> => {
     assertTrusted(event)
-    const resolvedPath = await resolveWorkspaceFile(filePath)
-    if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
-    const stats = await fs.stat(resolvedPath)
-    if (!stats.isFile()) throw new Error('The requested path is not a file.')
-    if (stats.size > maxFileBytes) throw new Error('Files larger than 2 MB are not opened in the editor.')
-
-    const content = await fs.readFile(resolvedPath, 'utf8')
-    if (content.includes('\0')) throw new Error('Binary files are not supported in the text editor.')
-
-    return {
-      path: resolvedPath,
-      name: path.basename(resolvedPath),
-      content,
-      language: languageFor(resolvedPath)
-    }
+    return readWorkspaceFile(filePath)
   })
 
-  ipcMain.handle(IPC_CHANNELS.writeFile, async (event, filePath: string, content: string) => {
+  ipcMain.handle(IPC_CHANNELS.writeFile, async (event, request: WriteFileRequest): Promise<WrittenFile> => {
     assertTrusted(event)
+    if (!request || typeof request.filePath !== 'string' || typeof request.expectedFingerprint !== 'string') throw new Error('The save request is invalid.')
+    const { filePath, content, expectedFingerprint } = request
     if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > maxFileBytes) throw new Error('The file content is invalid or too large.')
     const resolvedPath = await resolveWorkspaceFile(filePath)
     if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
     const stats = await fs.stat(resolvedPath)
     if (!stats.isFile()) throw new Error('The requested path is not a file.')
+    const currentContent = await fs.readFile(resolvedPath, 'utf8')
+    assertExpectedFingerprint(expectedFingerprint, fingerprintContent(currentContent))
     await fs.writeFile(resolvedPath, content, 'utf8')
+    return { path: resolvedPath, fingerprint: fingerprintContent(content) }
   })
 
   ipcMain.handle(
@@ -394,6 +415,34 @@ export function registerWorkspaceHandlers(
     const workspaceRoot = requireWorkspaceRoot()
     const resolvedPath = await resolveWorkspaceFile(filePath)
     clipboard.writeText(kind === 'absolute' ? resolvedPath : path.relative(workspaceRoot, resolvedPath))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.watchWorkspaceFiles, async (event, filePaths: string[]): Promise<void> => {
+    assertTrusted(event)
+    const workspaceRoot = requireWorkspaceRoot()
+    const resolvedPaths = await Promise.all(validateWatchFilePaths(filePaths).map((filePath) => resolveWorkspaceFile(filePath)))
+    clearFileWatchers()
+
+    for (const filePath of resolvedPaths) {
+      const listener = (current: Stats, previous: Stats) => {
+        if (activeWorkspaceRoot !== workspaceRoot || event.sender.isDestroyed()) return
+        if (current.mtimeMs === previous.mtimeMs && current.size === previous.size && current.nlink === previous.nlink) return
+        void (async () => {
+          let change: WorkspaceFileChange
+          if (current.nlink === 0) {
+            change = { workspaceRoot, filePath, kind: 'deleted', fingerprint: null }
+          } else {
+            const content = await fs.readFile(filePath, 'utf8')
+            change = { workspaceRoot, filePath, kind: 'changed', fingerprint: fingerprintContent(content) }
+          }
+          if (activeWorkspaceRoot === workspaceRoot && !event.sender.isDestroyed()) {
+            event.sender.send(IPC_CHANNELS.workspaceFileChanged, change)
+          }
+        })().catch(() => undefined)
+      }
+      watchedFiles.set(filePath, listener)
+      watchFile(filePath, { interval: 750, persistent: false }, listener)
+    }
   })
 
   return { getWorkspaceRoot: () => activeWorkspaceRoot, setWorkspace }

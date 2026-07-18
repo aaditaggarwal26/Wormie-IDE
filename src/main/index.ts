@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
 import { registerAssignmentHandlers } from './assignments'
@@ -11,6 +11,7 @@ import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerWorkspaceHandlers } from './workspace'
+import { registerEditorRecoveryHandlers } from './editorRecovery'
 import { IPC_CHANNELS } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
 
@@ -19,6 +20,7 @@ const trustedWebContents = new Set<number>()
 const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
+const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
 const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
@@ -97,6 +99,19 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    const response = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: 'Unsaved work',
+      message: 'Quit Wormie with unsaved work?',
+      detail: 'Choose Cancel to return to the editor and save. Recent eligible editor text may also be available for recovery.',
+      buttons: ['Quit without saving', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    })
+    if (response === 0) event.preventDefault()
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -110,6 +125,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   const workspace = registerWorkspaceHandlers(store, isTrustedSender)
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
+  registerEditorRecoveryHandlers(editorRecoveryStore, workspace.getWorkspaceRoot, isTrustedSender)
   registerAssignmentHandlers(
     store,
     progressStorageRoot,

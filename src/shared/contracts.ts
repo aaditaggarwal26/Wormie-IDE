@@ -10,6 +10,10 @@ export const IPC_CHANNELS = {
   searchWorkspace: 'workspace:search',
   listWorkspaceFiles: 'workspace:list-files',
   copyWorkspacePath: 'workspace:copy-path',
+  watchWorkspaceFiles: 'workspace:watch-files',
+  workspaceFileChanged: 'workspace:file-changed',
+  editorRecoveryLoad: 'editor-recovery:load',
+  editorRecoverySave: 'editor-recovery:save',
   gitStatus: 'git:status',
   gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
@@ -85,6 +89,52 @@ export type OpenFile = {
   name: string
   content: string
   language: string
+  fingerprint: string
+}
+
+export type WriteFileRequest = {
+  filePath: string
+  content: string
+  expectedFingerprint: string
+}
+
+export type WrittenFile = {
+  path: string
+  fingerprint: string
+}
+
+export type FileViewState = {
+  line: number
+  column: number
+  scrollTop: number
+  scrollLeft: number
+}
+
+export type AutosaveSettings = {
+  mode: 'off' | 'afterDelay' | 'onFocusChange'
+  delayMs: number
+}
+
+export type EditorRecoveryDocument = {
+  path: string
+  dirtyContent?: string
+  view?: FileViewState
+}
+
+export type EditorRecoveryState = {
+  schemaVersion: 1
+  workspaceRoot: string
+  activePath: string | null
+  autosave: AutosaveSettings
+  documents: EditorRecoveryDocument[]
+  closedPaths: string[]
+}
+
+export type WorkspaceFileChange = {
+  workspaceRoot: string
+  filePath: string
+  kind: 'changed' | 'deleted'
+  fingerprint: string | null
 }
 
 export type WorkspaceMutation = {
@@ -709,13 +759,17 @@ export type DesktopApi = {
   restoreWorkspace: () => Promise<WorkspaceSnapshot | null>
   refreshWorkspace: () => Promise<WorkspaceSnapshot>
   readFile: (filePath: string) => Promise<OpenFile>
-  writeFile: (filePath: string, content: string) => Promise<void>
+  writeFile: (request: WriteFileRequest) => Promise<WrittenFile>
   createEntry: (parentPath: string, name: string, type: 'file' | 'directory') => Promise<WorkspaceMutation>
   renameEntry: (entryPath: string, name: string) => Promise<WorkspaceMutation>
   deleteEntry: (entryPath: string) => Promise<WorkspaceMutation | null>
   searchWorkspace: (query: string) => Promise<SearchResult[]>
   listWorkspaceFiles: () => Promise<WorkspaceFileList>
   copyWorkspacePath: (filePath: string, kind: 'absolute' | 'relative') => Promise<void>
+  watchWorkspaceFiles: (filePaths: string[]) => Promise<void>
+  onWorkspaceFileChanged: (callback: (change: WorkspaceFileChange) => void) => () => void
+  loadEditorRecovery: (workspaceRoot: string) => Promise<EditorRecoveryState | null>
+  saveEditorRecovery: (state: EditorRecoveryState) => Promise<void>
   getGitStatus: () => Promise<GitStatusSnapshot>
   trustGitRepository: (repositoryRoot: string) => Promise<void>
   startTerminal: (request: TerminalSessionRequest) => Promise<TerminalSessionInfo>

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi, type TerminalData, type TerminalExit } from '../shared/contracts'
+import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi, type TerminalData, type TerminalExit, type WorkspaceFileChange } from '../shared/contracts'
 
 const desktopApi: DesktopApi = {
   platform: process.platform,
@@ -7,13 +7,21 @@ const desktopApi: DesktopApi = {
   restoreWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.restoreWorkspace),
   refreshWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.refreshWorkspace),
   readFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.readFile, filePath),
-  writeFile: (filePath, content) => ipcRenderer.invoke(IPC_CHANNELS.writeFile, filePath, content),
+  writeFile: (request) => ipcRenderer.invoke(IPC_CHANNELS.writeFile, request),
   createEntry: (parentPath, name, type) => ipcRenderer.invoke(IPC_CHANNELS.createEntry, parentPath, name, type),
   renameEntry: (entryPath, name) => ipcRenderer.invoke(IPC_CHANNELS.renameEntry, entryPath, name),
   deleteEntry: (entryPath) => ipcRenderer.invoke(IPC_CHANNELS.deleteEntry, entryPath),
   searchWorkspace: (query) => ipcRenderer.invoke(IPC_CHANNELS.searchWorkspace, query),
   listWorkspaceFiles: () => ipcRenderer.invoke(IPC_CHANNELS.listWorkspaceFiles),
   copyWorkspacePath: (filePath, kind) => ipcRenderer.invoke(IPC_CHANNELS.copyWorkspacePath, filePath, kind),
+  watchWorkspaceFiles: (filePaths) => ipcRenderer.invoke(IPC_CHANNELS.watchWorkspaceFiles, filePaths),
+  onWorkspaceFileChanged: (callback) => {
+    const listener = (_event: IpcRendererEvent, change: WorkspaceFileChange) => callback(change)
+    ipcRenderer.on(IPC_CHANNELS.workspaceFileChanged, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.workspaceFileChanged, listener)
+  },
+  loadEditorRecovery: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.editorRecoveryLoad, workspaceRoot),
+  saveEditorRecovery: (state) => ipcRenderer.invoke(IPC_CHANNELS.editorRecoverySave, state),
   getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.gitStatus),
   trustGitRepository: (repositoryRoot) => ipcRenderer.invoke(IPC_CHANNELS.gitTrustRepository, repositoryRoot),
   startTerminal: (request) => ipcRenderer.invoke(IPC_CHANNELS.terminalStart, request),

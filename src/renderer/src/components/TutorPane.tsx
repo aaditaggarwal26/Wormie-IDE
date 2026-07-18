@@ -55,6 +55,7 @@ export function TutorPane(): React.JSX.Element {
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const discardProposalReview = useWorkbench((state) => state.discardProposalReview)
   const completeProposalReview = useWorkbench((state) => state.completeProposalReview)
+  const replaceDocumentFromDisk = useWorkbench((state) => state.replaceDocumentFromDisk)
   const dirtyDocuments = useMemo(
     () => documents.filter((document) => document.content !== document.savedContent),
     [documents]
@@ -124,10 +125,12 @@ export function TutorPane(): React.JSX.Element {
       }))
     }),
     onMutate: () => setError(null),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (!result.applied) return
       setWorkspace(result.workspace)
       completeProposalReview(result.changedPaths)
+      const refreshedFiles = await Promise.all(result.changedPaths.map((filePath) => window.desktop.readFile(filePath).catch(() => null)))
+      for (const file of refreshedFiles) if (file) replaceDocumentFromDisk(file)
       addOutput(`Applied AI proposal to ${result.changedPaths.length} file${result.changedPaths.length === 1 ? '' : 's'}.`)
       setProposal(null)
       setSession(null)

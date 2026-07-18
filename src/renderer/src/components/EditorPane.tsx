@@ -33,9 +33,11 @@ type EditorPaneProps = {
   onOpenSuggestedFile: () => void
   onOpenWorkspace: () => void
   onSave: () => void
+  onCloseDocument: (filePath: string) => void
+  onEditorBlur: (filePath: string) => void
 }
 
-const configureEditor: BeforeMount = (monaco) => {
+export const configureEditor: BeforeMount = (monaco) => {
   monaco.editor.defineTheme('wormie-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -74,16 +76,18 @@ export function EditorPane({
   suggestedFileName,
   onOpenSuggestedFile,
   onOpenWorkspace,
-  onSave
+  onSave,
+  onCloseDocument,
+  onEditorBlur
 }: EditorPaneProps): React.JSX.Element {
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
   const setActivePath = useWorkbench((state) => state.setActivePath)
-  const closeDocument = useWorkbench((state) => state.closeDocument)
   const updateDocument = useWorkbench((state) => state.updateDocument)
   const revealLine = useWorkbench((state) => state.revealLine)
   const consumeRevealLine = useWorkbench((state) => state.consumeRevealLine)
   const setCursorPosition = useWorkbench((state) => state.setCursorPosition)
+  const setDocumentView = useWorkbench((state) => state.setDocumentView)
   const proposalReview = useWorkbench((state) => state.proposalReview)
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const updateProposalReviewFile = useWorkbench((state) => state.updateProposalReviewFile)
@@ -125,6 +129,16 @@ export function EditorPane({
       consumeRevealLine()
     })
   }, [activePath, consumeRevealLine, revealLine])
+
+  useEffect(() => {
+    if (!activePath || activeReviewFile || !editorRef.current) return
+    const view = useWorkbench.getState().documents.find((document) => document.path === activePath)?.view
+    if (!view) return
+    requestAnimationFrame(() => {
+      editorRef.current?.setPosition({ lineNumber: view.line, column: view.column })
+      editorRef.current?.setScrollPosition({ scrollTop: view.scrollTop, scrollLeft: view.scrollLeft })
+    })
+  }, [activePath, activeReviewFile])
 
   if (!activeDocument) {
     return (
@@ -189,18 +203,26 @@ export function EditorPane({
                 <span>{document.name}</span>
                 {reviewFile ? (
                   <span className="review-dot" title={reviewFile.pendingBlocks === 0 ? 'AI changes reviewed' : 'AI changes pending review'}><Sparkles size={10} /></span>
-                ) : dirty ? (
-                  <span className="dirty-dot" title="Unsaved changes" />
                 ) : (
                   <span
                     className="tab-close"
                     onClick={(event) => {
                       event.stopPropagation()
-                      closeDocument(document.path)
+                      onCloseDocument(document.path)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onCloseDocument(document.path)
                     }}
                     role="button"
                     tabIndex={0}
-                  ><X size={12} /></span>
+                    title={`Close ${document.name}`}
+                  >
+                    {dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                    <X className="tab-close-x" data-dirty={dirty || undefined} size={12} />
+                  </span>
                 )}
               </button>
             )
@@ -243,11 +265,24 @@ export function EditorPane({
               if (container?.clientWidth && container.clientHeight) {
                 mountedEditor.layout({ width: container.clientWidth, height: container.clientHeight })
               }
+              const restoredView = useWorkbench.getState().documents.find((document) => document.path === useWorkbench.getState().activePath)?.view
+              if (restoredView) {
+                mountedEditor.setPosition({ lineNumber: restoredView.line, column: restoredView.column })
+                mountedEditor.setScrollPosition({ scrollTop: restoredView.scrollTop, scrollLeft: restoredView.scrollLeft })
+              }
               mountedEditor.onDidDispose(() => {
                 if (editorRef.current === mountedEditor) editorRef.current = null
               })
               mountedEditor.onDidChangeCursorPosition(({ position }) => {
                 setCursorPosition(position.lineNumber, position.column)
+              })
+              mountedEditor.onDidScrollChange(({ scrollTop, scrollLeft }) => {
+                const filePath = useWorkbench.getState().activePath
+                if (filePath) setDocumentView(filePath, { scrollTop, scrollLeft })
+              })
+              mountedEditor.onDidBlurEditorText(() => {
+                const filePath = useWorkbench.getState().activePath
+                if (filePath) onEditorBlur(filePath)
               })
             }}
             options={{

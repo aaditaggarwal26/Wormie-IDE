@@ -99,6 +99,9 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .tab-close { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; }
 .tab-close:hover { background: #293034; }
 .dirty-dot { width: 7px; height: 7px; margin: 4px; border-radius: 50%; background: var(--warm); }
+.tab-close-x[data-dirty] { display: none; }
+.tab-close:hover .dirty-dot, .tab-close:focus .dirty-dot { display: none; }
+.tab-close:hover .tab-close-x, .tab-close:focus .tab-close-x { display: block; }
 .save-button { display: grid; place-items: center; width: 35px; height: 35px; margin-left: auto; border: 0; border-left: 1px solid var(--line); color: #687278; background: #0c0f11; }
 .save-button:hover { color: var(--acid); background: #151a1d; }
 .breadcrumb-bar { display: flex; gap: 16px; align-items: center; padding: 0 13px; overflow: hidden; border-bottom: 1px solid #181e21; color: #626d73; background: #0d1012; font-size: 10px; }
@@ -295,6 +298,8 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .ai-settings .field-label { display: block; margin: 9px 0 4px; color: #78848a; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
 .ai-settings input, .ai-settings select { width: 100%; height: 29px; margin: 0; padding: 0 7px; border: 1px solid #303a3f; border-radius: 5px; outline: 0; color: #bdc5c0; background: #111619; font: 9px "Cascadia Code", monospace; }
 .ai-settings input:focus, .ai-settings select:focus { border-color: #687548; }
+.autosave-settings .field-label { display: block; margin: 9px 0 4px; color: #78848a; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+.autosave-settings input, .autosave-settings select { width: 100%; height: 29px; margin: 0; padding: 0 7px; border: 1px solid #303a3f; border-radius: 5px; outline: 0; color: #bdc5c0; background: #111619; font: 9px "Cascadia Code", monospace; }
 .settings-actions { display: flex; gap: 6px; margin-top: 10px; }
 .settings-actions button { flex: 1; min-height: 28px; border: 1px solid #465235; border-radius: 5px; color: #bfc8ae; background: #22291d; font-size: 8px; }
 .settings-actions button:disabled { opacity: .4; }
@@ -330,6 +335,23 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .picker-result mark { color: var(--acid); background: transparent; font-weight: 700; }
 .picker-state { padding: 28px 12px; color: #7d898a; font-size: 11px; text-align: center; }
 .picker-footer { min-height: 29px; padding: 7px 13px; border-top: 1px solid #252e30; color: #6e797b; font: 9px "Cascadia Code", monospace; }
+.modal-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; padding: 28px; background: #020304b8; backdrop-filter: blur(4px); }
+.safety-dialog, .external-change-dialog { width: min(560px, calc(100vw - 40px)); overflow: hidden; border: 1px solid #4a4540; border-radius: 9px; background: #121719; box-shadow: 0 28px 100px #000e; }
+.safety-dialog-heading { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 18px; border-bottom: 1px solid #302f2b; color: var(--warm); }
+.safety-dialog-heading div, .external-change-copy { display: grid; gap: 4px; }
+.safety-dialog-heading span, .external-change-copy span { color: #8b9694; font: 9px "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.safety-dialog-heading strong, .external-change-copy strong { color: #e3e8e4; font: 18px Georgia, serif; font-weight: 500; }
+.safety-dialog ul { max-height: 180px; overflow: auto; margin: 0; padding: 12px 34px; color: #aeb8b3; font: 10px "Cascadia Code", monospace; }
+.safety-dialog > p { margin: 0; padding: 0 18px 12px; color: #818c89; font-size: 10px; }
+.safety-dialog .form-error { color: #df8f75; }
+.safety-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #293133; }
+.safety-dialog-actions button { display: inline-flex; gap: 6px; align-items: center; min-height: 31px; padding: 0 11px; border: 1px solid #354043; border-radius: 5px; color: #aeb8b3; background: #151b1d; font-size: 10px; }
+.safety-dialog-actions button:hover { border-color: #566164; color: #edf1ee; }
+.safety-dialog-actions .primary-button { border-color: #65713d; color: #e9efbf; background: #2a321c; }
+.external-change-dialog { width: min(980px, calc(100vw - 40px)); }
+.external-change-copy { padding: 16px 18px; border-bottom: 1px solid #293133; }
+.external-change-copy p { margin: 4px 0 0; color: #8d9895; font-size: 11px; line-height: 1.5; }
+.external-diff { height: min(480px, 55vh); }
 
 .explorer-heading { gap: 8px; }
 .panel-actions { display: flex; align-items: center; margin-left: auto; }

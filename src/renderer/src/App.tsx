@@ -10,6 +10,8 @@ import { BottomPanel } from '@/components/BottomPanel'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ClassroomPanel } from '@/components/ClassroomPanel'
 import { EditorPane } from '@/components/EditorPane'
+import { DirtyFilesDialog } from '@/components/DirtyFilesDialog'
+import { ExternalChangeReview } from '@/components/ExternalChangeReview'
 import { Explorer } from '@/components/Explorer'
 import { GoToLine } from '@/components/GoToLine'
 import { PanelResizeHandle } from '@/components/PanelResizeHandle'
@@ -21,6 +23,8 @@ import { QuickOpen } from '@/components/QuickOpen'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
 import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
 import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
+import { dirtyDocuments } from '@/editing/editingPolicy'
+import { useSafeEditing } from '@/editing/useSafeEditing'
 import { useWorkbench } from '@/store/workbench'
 import type {
   AgentConfig,
@@ -148,6 +152,9 @@ export default function App(): React.JSX.Element {
   const setBottomView = useWorkbench((state) => state.setBottomView)
   const addOutput = useWorkbench((state) => state.addOutput)
   const revealDocumentLine = useWorkbench((state) => state.revealDocumentLine)
+  const closedPaths = useWorkbench((state) => state.closedPaths)
+  const removeClosedPath = useWorkbench((state) => state.removeClosedPath)
+  const safeEditing = useSafeEditing()
 
   useEffect(() => {
     try {
@@ -363,13 +370,16 @@ export default function App(): React.JSX.Element {
       if (state.proposalReview?.files.some((file) => file.absolutePath === activeDocument.path)) {
         throw new Error('Keep or undo every AI change block before saving this file.')
       }
-      await window.desktop.writeFile(activeDocument.path, activeDocument.content)
-      return activeDocument.path
+      return window.desktop.writeFile({
+        filePath: activeDocument.path,
+        content: activeDocument.content,
+        expectedFingerprint: activeDocument.fingerprint
+      })
     },
-    onSuccess: (filePath) => {
-      if (!filePath) return
-      markSaved(filePath)
-      if (filePath === assignmentState?.manifestPath && workspace) void loadAssignment(workspace.rootPath)
+    onSuccess: (result) => {
+      if (!result) return
+      markSaved(result.path, result.fingerprint)
+      if (result.path === assignmentState?.manifestPath && workspace) void loadAssignment(workspace.rootPath)
     },
     onError: (error) => addOutput(`Could not save file: ${errorMessage(error)}`)
   })
@@ -569,8 +579,31 @@ export default function App(): React.JSX.Element {
   const commandContext = useMemo<WorkbenchCommandContext>(() => ({
     hasWorkspace: Boolean(workspace),
     hasActiveFile: Boolean(activePath),
-    openFolder: () => workspaceMutation.mutate(),
+    hasDirtyFiles: dirtyDocuments(documents).length > 0,
+    hasClosedEditor: closedPaths.length > 0,
+    hasMultipleEditors: documents.length > 1,
+    openFolder: () => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate()),
     save: () => saveMutation.mutate(),
+    saveAll: () => {
+      void safeEditing.saveDocumentPaths(useWorkbench.getState().documents.map((document) => document.path))
+        .catch((error) => addOutput(`Could not save all files: ${errorMessage(error)}`))
+    },
+    closeOthers: () => {
+      if (!activePath) return
+      const paths = useWorkbench.getState().documents.filter((document) => document.path !== activePath).map((document) => document.path)
+      safeEditing.requestDirtyAction(paths, () => paths.forEach((filePath) => useWorkbench.getState().closeDocument(filePath)))
+    },
+    closeSaved: () => {
+      useWorkbench.getState().documents
+        .filter((document) => document.content === document.savedContent)
+        .forEach((document) => useWorkbench.getState().closeDocument(document.path))
+    },
+    reopenClosedEditor: () => {
+      const filePath = useWorkbench.getState().closedPaths[0]
+      if (!filePath) return
+      removeClosedPath(filePath)
+      fileMutation.mutate({ filePath })
+    },
     openQuickOpen: () => setActivePicker('files'),
     openCommandPalette: () => setActivePicker('commands'),
     openSearch: () => focusWorkbenchTarget('search', 'search'),
@@ -600,14 +633,18 @@ export default function App(): React.JSX.Element {
     openSettings: () => setActivity('settings'),
     focusTerminal: () => setBottomView('terminal'),
     editAssignment: () => { setActivity('assignments'); openAssignmentStudio(false) },
-    importAssignment: () => importAssignmentMutation.mutate(),
+    importAssignment: () => safeEditing.runWorkspaceChangingAction(() => importAssignmentMutation.mutate()),
     openClassrooms: () => setActivity('classrooms')
   }), [
     activePath,
     addOutput,
+    closedPaths,
+    documents,
     focusWorkbenchTarget,
     importAssignmentMutation,
     openAssignmentStudio,
+    removeClosedPath,
+    safeEditing,
     saveMutation,
     setActivity,
     setBottomView,
@@ -723,11 +760,11 @@ export default function App(): React.JSX.Element {
   )
 
   useEffect(() => {
-    if (!workspace || documents.length > 0 || automaticallyOpenedWorkspace.current === workspace.rootPath) return
+    if (!workspace || safeEditing.recoveryReadyRoot !== workspace.rootPath || documents.length > 0 || automaticallyOpenedWorkspace.current === workspace.rootPath) return
     automaticallyOpenedWorkspace.current = workspace.rootPath
     const initialFile = findSuggestedFile(workspace.entries)
     if (initialFile) fileMutation.mutate({ filePath: initialFile.path })
-  }, [workspace?.rootPath])
+  }, [documents.length, safeEditing.recoveryReadyRoot, workspace?.rootPath])
 
   const classroomBusy =
     classroomListMutation.isPending ||
@@ -777,7 +814,7 @@ export default function App(): React.JSX.Element {
             onCreate={(parentPath, name, type) => createMutation.mutate({ parentPath, name, type })}
             onDelete={(entryPath) => deleteMutation.mutate(entryPath)}
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
-            onOpenWorkspace={() => workspaceMutation.mutate()}
+            onOpenWorkspace={() => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate())}
             onRefresh={() => workspace && refreshMutation.mutate(workspace.rootPath)}
             onRename={(entryPath, name) => renameMutation.mutate({ entryPath, name })}
             workspace={workspace}
@@ -818,7 +855,7 @@ export default function App(): React.JSX.Element {
             }}
             onCreate={(request) => createClassroomMutation.mutate(request)}
             onJoin={(invite) => joinClassroomMutation.mutate(invite)}
-            onOpenAssignment={(assignmentId) => openClassroomAssignmentMutation.mutate(assignmentId)}
+            onOpenAssignment={(assignmentId) => safeEditing.runWorkspaceChangingAction(() => openClassroomAssignmentMutation.mutate(assignmentId))}
             onPublish={(classroomId) => {
               if (!workspace) return
               publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
@@ -841,7 +878,7 @@ export default function App(): React.JSX.Element {
             openingSubmission={openSubmissionMutation.isPending}
             onEdit={() => openAssignmentStudio(false)}
             onExport={() => exportAssignmentMutation.mutate()}
-            onImport={() => importAssignmentMutation.mutate()}
+            onImport={() => safeEditing.runWorkspaceChangingAction(() => importAssignmentMutation.mutate())}
             onOpenTask={(task) => {
               if (!workspace) return
               const separator = window.desktop.platform === 'win32' ? '\\' : '/'
@@ -921,8 +958,10 @@ export default function App(): React.JSX.Element {
         >
           <EditorPane
             hasWorkspace={Boolean(workspace)}
+            onCloseDocument={safeEditing.closeEditorSafely}
+            onEditorBlur={safeEditing.onEditorBlur}
             onOpenSuggestedFile={() => suggestedFile && fileMutation.mutate({ filePath: suggestedFile.path })}
-            onOpenWorkspace={() => workspaceMutation.mutate()}
+            onOpenWorkspace={() => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate())}
             onSave={() => saveMutation.mutate()}
             openingFile={fileMutation.isPending}
             saving={saveMutation.isPending}
@@ -985,6 +1024,27 @@ export default function App(): React.JSX.Element {
         />
       )}
 
+      {safeEditing.dirtyDialog && (
+        <DirtyFilesDialog
+          busy={safeEditing.dirtyDialog.busy}
+          error={safeEditing.dirtyDialog.error}
+          fileNames={safeEditing.dirtyDialog.paths.map((filePath) => filePath.split(/[\\/]/).at(-1) ?? filePath)}
+          onCancel={safeEditing.dirtyDialog.cancel}
+          onDiscard={safeEditing.dirtyDialog.discard}
+          onSave={safeEditing.dirtyDialog.save}
+        />
+      )}
+
+      {safeEditing.externalConflict && (
+        <ExternalChangeReview
+          change={safeEditing.externalConflict.change}
+          document={safeEditing.externalConflict.document}
+          onCloseEditor={safeEditing.externalConflict.closeEditor}
+          onKeepLocal={safeEditing.externalConflict.keepLocal}
+          onReload={safeEditing.externalConflict.reload}
+        />
+      )}
+
       <AnimatePresence>
         {assignmentStudioOpen && workspace && (
           <AssignmentStudio
@@ -1023,6 +1083,8 @@ function SettingsSidebar(): React.JSX.Element {
   const passingScore = useWorkbench((state) => state.passingScore)
   const setPassingScore = useWorkbench((state) => state.setPassingScore)
   const addOutput = useWorkbench((state) => state.addOutput)
+  const autosave = useWorkbench((state) => state.autosave)
+  const setAutosave = useWorkbench((state) => state.setAutosave)
   const [provider, setProvider] = useState<AgentProvider>('openai-compatible')
   const [model, setModel] = useState('gpt-5.4-mini')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
@@ -1118,6 +1180,34 @@ function SettingsSidebar(): React.JSX.Element {
           value={passingScore}
         />
         <p>Code generation unlocks after this threshold.</p>
+      </div>
+      <div className="settings-block autosave-settings">
+        <div className="settings-title"><span>Autosave</span><b>{autosave.mode === 'off' ? 'Off' : 'Enabled'}</b></div>
+        <label className="field-label" htmlFor="autosave-mode">Save files</label>
+        <select
+          id="autosave-mode"
+          onChange={(event) => setAutosave({ ...autosave, mode: event.target.value as typeof autosave.mode })}
+          value={autosave.mode}
+        >
+          <option value="off">Off</option>
+          <option value="afterDelay">After a delay</option>
+          <option value="onFocusChange">When the editor loses focus</option>
+        </select>
+        {autosave.mode === 'afterDelay' && (
+          <>
+            <label className="field-label" htmlFor="autosave-delay">Delay in milliseconds</label>
+            <input
+              id="autosave-delay"
+              max="10000"
+              min="250"
+              onChange={(event) => setAutosave({ ...autosave, delayMs: Math.min(10_000, Math.max(250, Number(event.target.value) || 1000)) })}
+              step="250"
+              type="number"
+              value={autosave.delayMs}
+            />
+          </>
+        )}
+        <p>AI proposal-review files are never autosaved.</p>
       </div>
       <div className="settings-block ai-settings">
         <div className="settings-title"><span>AI provider</span><b>{connectionLabel}</b></div>

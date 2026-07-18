@@ -333,11 +333,6 @@ export default function App(): React.JSX.Element {
     onError: (error) => addOutput(`Could not delete entry: ${errorMessage(error)}`)
   })
 
-  const searchMutation = useMutation({
-    mutationFn: window.desktop.searchWorkspace,
-    onError: (error) => addOutput(`Could not search workspace: ${errorMessage(error)}`)
-  })
-
   const gitMutation = useMutation({
     mutationFn: window.desktop.getGitStatus,
     onMutate: () => setGitError(null),
@@ -822,10 +817,7 @@ export default function App(): React.JSX.Element {
         )}
         {activity === 'search' && (
           <SearchPanel
-            busy={searchMutation.isPending}
             onOpenFile={(filePath, line) => fileMutation.mutate({ filePath, line })}
-            onSearch={(query) => searchMutation.mutate(query)}
-            results={searchMutation.data ?? []}
             workspace={workspace}
           />
         )}

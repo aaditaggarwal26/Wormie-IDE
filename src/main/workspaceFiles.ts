@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import ignore from 'ignore'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -48,6 +49,12 @@ export async function collectWorkspaceFiles(
   }
 
   const root = await fs.realpath(rootPath)
+  const gitignore = ignore()
+  try {
+    gitignore.add(await fs.readFile(path.join(root, '.gitignore'), 'utf8'))
+  } catch {
+    // A workspace does not need a .gitignore file.
+  }
   const files: WorkspaceFileEntry[] = []
   let truncated = false
 
@@ -66,7 +73,8 @@ export async function collectWorkspaceFiles(
       if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
       const entryPath = path.join(directoryPath, entry.name)
       const relativePath = path.relative(root, entryPath)
-      if (isExcluded(relativePath, options.excludeGlobs)) continue
+      const portableRelativePath = portablePath(relativePath)
+      if (isExcluded(relativePath, options.excludeGlobs) || gitignore.ignores(entry.isDirectory() ? `${portableRelativePath}/` : portableRelativePath)) continue
       if (entry.isDirectory()) {
         await walk(entryPath)
         if (truncated) return

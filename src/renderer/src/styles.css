@@ -362,19 +362,50 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .entry-form { display: flex; gap: 6px; align-items: center; height: 27px; margin: 2px 7px 5px; padding: 0 7px; border: 1px solid #657548; border-radius: 4px; color: var(--warm); background: #111719; }
 .entry-form input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; color: #d4dbd6; background: transparent; font-size: 11px; }
 
-.search-form { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; height: 34px; margin: 10px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 6px; color: #68747a; background: #111619; }
-.search-form:focus-within { border-color: #687548; box-shadow: 0 0 0 1px #68754844; }
-.search-form input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font-family: "Avenir Next", sans-serif; font-size: 11px; }
-.search-form input::placeholder { color: #59646a; }
-.search-form kbd { padding: 2px 4px; border: 1px solid #2b3438; border-radius: 3px; color: #647076; font: 8px "Cascadia Code", monospace; }
-.search-results { height: calc(100% - 97px); overflow: auto; border-top: 1px solid #171d20; }
+.search-panel { display: flex; flex-direction: column; }
+.search-controls { display: grid; gap: 6px; padding: 9px; }
+.search-query-row { display: grid; grid-template-columns: 27px minmax(0, 1fr); gap: 5px; }
+.search-query-row > button, .search-option-row button, .search-input-wrap button { display: grid; place-items: center; min-width: 27px; height: 30px; padding: 0 5px; border: 1px solid #303a3f; border-radius: 5px; color: #768188; background: #111619; font: 9px "Cascadia Code", monospace; }
+.search-query-row > button:hover, .search-option-row button:hover, .search-query-row button[data-active="true"], .search-option-row button[data-active="true"] { border-color: #667343; color: var(--acid); background: #1b2119; }
+.search-input-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; height: 30px; padding-left: 8px; border: 1px solid #303a3f; border-radius: 5px; color: #68747a; background: #111619; }
+.search-input-wrap:focus-within, .replace-input-row input:focus, .search-globs input:focus { border-color: #687548; box-shadow: 0 0 0 1px #68754844; }
+.search-input-wrap input, .replace-input-row input, .search-globs input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font: 11px "Avenir Next", sans-serif; }
+.search-input-wrap button { min-width: 24px; height: 28px; border: 0; background: transparent; }
+.replace-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+.replace-input-row input, .search-globs input { height: 30px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 5px; background: #111619; }
+.replace-input-row button, .search-summary button { padding: 0 8px; border: 1px solid #596640; border-radius: 5px; color: #d2ddad; background: #242c1f; font-size: 9px; }
+.replace-input-row button:disabled, .search-summary button:disabled { opacity: .4; }
+.search-option-row { display: flex; gap: 4px; }
+.search-option-row button:last-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-globs { color: #717d82; font-size: 9px; }
+.search-globs summary { padding: 3px 1px; cursor: default; }
+.search-globs[open] { display: grid; gap: 5px; }
+.search-results { min-height: 0; flex: 1; overflow: auto; border-top: 1px solid #171d20; }
 .panel-message { padding: 22px 16px; color: #6d787e; font-family: "Avenir Next", sans-serif; font-size: 10px; line-height: 1.55; text-align: center; }
 .panel-message.compact { padding: 16px; }
-.search-result { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 9px 38px 9px 12px; overflow: hidden; border: 0; border-bottom: 1px solid #171d20; background: transparent; text-align: left; cursor: default; }
-.search-result:hover { background: #161c1e; }
-.result-path { overflow: hidden; color: #b0bab5; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.result-preview { overflow: hidden; color: #6f7b80; font: 9px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.result-location { position: absolute; right: 8px; top: 10px; color: #67734f; font: 8px "Cascadia Code", monospace; }
+.search-error, .search-error-detail { margin: 8px; padding: 8px; border: 1px solid #654335; border-radius: 5px; color: #d19a7a; background: #211613; font: 10px/1.45 "Avenir Next", sans-serif; }
+.search-error-detail { margin-top: 0; overflow-wrap: anywhere; color: #b9856d; font: 8px/1.45 "Cascadia Code", monospace; }
+.search-summary { display: flex; align-items: center; justify-content: space-between; min-height: 31px; padding: 0 9px; border-bottom: 1px solid #20272a; color: #839088; font-size: 9px; }
+.search-summary button { min-height: 22px; }
+.search-file-group { border-bottom: 1px solid #20272a; }
+.search-file-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; min-height: 31px; padding: 0 6px; background: #101416; }
+.search-file-heading > button { display: flex; gap: 5px; align-items: center; min-width: 0; height: 28px; padding: 0 4px; border: 0; color: #aeb8b3; background: transparent; text-align: left; }
+.search-file-heading > button span { flex: 1; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.search-file-heading > button b { color: #899664; font: 8px "Cascadia Code", monospace; }
+.search-file-heading > button:last-child { display: grid; place-items: center; width: 24px; color: #82905a; }
+.search-file-heading input, .search-match > input { accent-color: #aebd5d; }
+.search-match { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; padding: 2px 6px; }
+.search-match:hover { background: #151a1d; }
+.search-match > input { margin-top: 9px; }
+.search-match-open { position: relative; display: grid; gap: 4px; min-width: 0; padding: 6px 38px 6px 5px; overflow: hidden; border: 0; color: #7d888d; background: transparent; font: 9px "Cascadia Code", monospace; text-align: left; }
+.search-match-open > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-open > b { position: absolute; top: 7px; right: 4px; color: #758052; font-size: 8px; }
+.search-match-open small { display: grid; gap: 2px; min-width: 0; }
+.search-match-open del, .search-match-open ins { overflow: hidden; padding: 2px 4px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-open del { color: #ba8069; background: #3a1d185c; }
+.search-match-open ins { color: #aebe83; background: #23321d7a; }
+.search-match > button:last-child { display: grid; place-items: center; width: 22px; height: 24px; margin-top: 3px; border: 0; border-radius: 4px; color: #7c8956; background: transparent; }
+.search-match > button:last-child:hover { color: var(--acid); background: #222a1d; }
 
 .branch-summary { display: grid; grid-template-columns: auto 1fr; gap: 4px 7px; align-items: center; margin: 11px; padding: 11px; border: 1px solid #2a3431; border-radius: 7px; color: var(--acid); background: #141a19; }
 .branch-summary strong { overflow: hidden; color: #c9d1cc; font-size: 11px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }

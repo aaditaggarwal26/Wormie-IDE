@@ -37,4 +37,18 @@ describe('collectWorkspaceFiles', () => {
     expect(result.files).toHaveLength(2)
     expect(result.truncated).toBe(true)
   })
+
+  it('respects root gitignore rules and their negations', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-files-'))
+    roots.push(root)
+    await fs.mkdir(path.join(root, 'generated'), { recursive: true })
+    await fs.writeFile(path.join(root, '.gitignore'), 'generated/*\n!generated/keep.ts\n')
+    await fs.writeFile(path.join(root, 'generated', 'drop.ts'), '')
+    await fs.writeFile(path.join(root, 'generated', 'keep.ts'), '')
+    await fs.writeFile(path.join(root, 'main.ts'), '')
+
+    const result = await collectWorkspaceFiles(root, { excludeGlobs: [], maxFiles: 20 })
+
+    expect(result.files.map((file) => file.relativePath)).toEqual(['.gitignore', 'generated/keep.ts', 'main.ts'])
+  })
 })

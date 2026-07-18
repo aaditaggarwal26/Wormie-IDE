@@ -6,7 +6,10 @@ import {
   IPC_CHANNELS,
   type FileTreeNode,
   type OpenFile,
-  type SearchResult,
+  type SearchOptions,
+  type WorkspaceReplacementRequest,
+  type WorkspaceReplacementResponse,
+  type WorkspaceSearchResponse,
   type WorkspaceFileChange,
   type WorkspaceFileList,
   type WriteFileRequest,
@@ -19,6 +22,7 @@ import type { AppPreferences } from './preferences'
 import { collectWorkspaceFiles } from './workspaceFiles'
 import { assertExpectedFingerprint, fingerprintContent } from './fileVersion'
 import { validateWatchFilePaths } from './fileWatchPolicy'
+import { applyReplacementEdits, searchWorkspaceFiles, validateReplacementEdits, validateSearchOptions, writeReplacementFile } from './workspaceSearchService'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -37,7 +41,6 @@ const ignoredDirectories = new Set([
 
 const maxFileBytes = 2 * 1024 * 1024
 const maxTreeEntries = 5000
-const maxSearchResults = 100
 
 function isProtectedMetadataPath(workspaceRoot: string, targetPath: string): boolean {
   const relative = path.relative(workspaceRoot, targetPath)
@@ -116,60 +119,6 @@ export async function createWorkspaceSnapshot(rootPath: string): Promise<Workspa
   }
 }
 
-async function searchDirectory(
-  rootPath: string,
-  directoryPath: string,
-  query: string,
-  results: SearchResult[]
-): Promise<void> {
-  if (results.length >= maxSearchResults) return
-
-  const entries = await fs.readdir(directoryPath, { withFileTypes: true })
-  for (const entry of entries) {
-    if (results.length >= maxSearchResults) return
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
-
-    const entryPath = path.join(directoryPath, entry.name)
-    if (entry.isDirectory()) {
-      await searchDirectory(rootPath, entryPath, query, results)
-      continue
-    }
-    if (!entry.isFile()) continue
-
-    const relativePath = path.relative(rootPath, entryPath)
-    if (entry.name.toLowerCase().includes(query)) {
-      results.push({ path: entryPath, relativePath, line: 1, column: 1, preview: relativePath })
-      if (results.length >= maxSearchResults) return
-    }
-
-    try {
-      const stats = await fs.stat(entryPath)
-      if (stats.size > maxFileBytes) continue
-      const content = await fs.readFile(entryPath, 'utf8')
-      if (content.includes('\0')) continue
-
-      const lines = content.split(/\r?\n/)
-      let matchesInFile = 0
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-        const column = lines[lineIndex].toLowerCase().indexOf(query)
-        if (column === -1) continue
-        results.push({
-          path: entryPath,
-          relativePath,
-          line: lineIndex + 1,
-          column: column + 1,
-          preview: lines[lineIndex].trim().slice(0, 180)
-        })
-        matchesInFile += 1
-        if (matchesInFile === 3 || results.length >= maxSearchResults) break
-      }
-    } catch {
-      continue
-    }
-  }
-}
-
 export function registerWorkspaceHandlers(
   store: Store<AppPreferences>,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean
@@ -178,6 +127,7 @@ export function registerWorkspaceHandlers(
   setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>
 } {
   let activeWorkspaceRoot: string | null = null
+  let searchGeneration = 0
   let workspaceTransition: Promise<void> = Promise.resolve()
   let fileIndex: { rootPath: string; promise: ReturnType<typeof collectWorkspaceFiles> } | null = null
   const watchedFiles = new Map<string, (current: Stats, previous: Stats) => void>()
@@ -217,6 +167,7 @@ export function registerWorkspaceHandlers(
       if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
       const snapshot = await createWorkspaceSnapshot(resolvedRoot)
       activeWorkspaceRoot = resolvedRoot
+      searchGeneration += 1
       clearFileWatchers()
       invalidateFileIndex()
       void getFileIndex(resolvedRoot).catch(() => invalidateFileIndex())
@@ -388,17 +339,48 @@ export function registerWorkspaceHandlers(
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.searchWorkspace, async (event, rawQuery: string): Promise<SearchResult[]> => {
+  ipcMain.handle(IPC_CHANNELS.searchWorkspace, async (event, rawOptions: SearchOptions): Promise<WorkspaceSearchResponse> => {
     assertTrusted(event)
     const workspaceRoot = requireWorkspaceRoot()
-    if (typeof rawQuery !== 'string') throw new Error('Enter a valid search query.')
-    const query = rawQuery.trim().toLowerCase()
-    if (!query) return []
-    if (query.length > 200) throw new Error('Search queries are limited to 200 characters.')
+    const options = validateSearchOptions(rawOptions)
+    let files = (await getFileIndex(workspaceRoot)).files
+    if (options.folderPath) {
+      const folderPath = await resolveWorkspaceFile(options.folderPath)
+      const stats = await fs.stat(folderPath)
+      if (!stats.isDirectory()) throw new Error('The search scope must be a folder.')
+      files = files.filter((file) => isPathInside(folderPath, file.path))
+    }
+    const generation = ++searchGeneration
+    return searchWorkspaceFiles(workspaceRoot, files, options, () => generation !== searchGeneration || activeWorkspaceRoot !== workspaceRoot)
+  })
 
-    const results: SearchResult[] = []
-    await searchDirectory(workspaceRoot, workspaceRoot, query, results)
-    return results
+  ipcMain.handle(IPC_CHANNELS.replaceWorkspace, async (event, request: WorkspaceReplacementRequest): Promise<WorkspaceReplacementResponse> => {
+    assertTrusted(event)
+    const workspaceRoot = requireWorkspaceRoot()
+    if (!request || request.workspaceRoot !== workspaceRoot || !Array.isArray(request.files) || request.files.length === 0 || request.files.length > 200) {
+      throw new Error('The replacement request is invalid for this workspace.')
+    }
+    const outcomes: WorkspaceReplacementResponse['outcomes'] = []
+    for (const file of request.files) {
+      try {
+        if (!file || typeof file.filePath !== 'string' || typeof file.expectedFingerprint !== 'string') throw new Error('The replacement file is invalid.')
+        const edits = validateReplacementEdits(file.edits)
+        const resolvedPath = await resolveWorkspaceFile(file.filePath)
+        if (isProtectedMetadataPath(workspaceRoot, resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
+        const stats = await fs.stat(resolvedPath)
+        if (!stats.isFile() || stats.size > maxFileBytes) throw new Error('The file cannot be replaced as text.')
+        const content = await fs.readFile(resolvedPath, 'utf8')
+        if (content.includes('\0')) throw new Error('Binary files cannot be replaced.')
+        assertExpectedFingerprint(file.expectedFingerprint, fingerprintContent(content))
+        const nextContent = applyReplacementEdits(content, edits)
+        await writeReplacementFile(resolvedPath, nextContent, stats.mode)
+        outcomes.push({ filePath: resolvedPath, status: 'applied', replacements: edits.length, fingerprint: fingerprintContent(nextContent) })
+      } catch (error) {
+        outcomes.push({ filePath: typeof file?.filePath === 'string' ? file.filePath : '', status: 'failed', replacements: 0, message: error instanceof Error ? error.message : 'Replacement failed.' })
+      }
+    }
+    invalidateFileIndex()
+    return { workspaceRoot, outcomes }
   })
 
   ipcMain.handle(IPC_CHANNELS.listWorkspaceFiles, async (event): Promise<WorkspaceFileList> => {

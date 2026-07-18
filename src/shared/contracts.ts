@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   renameEntry: 'workspace:rename-entry',
   deleteEntry: 'workspace:delete-entry',
   searchWorkspace: 'workspace:search',
+  replaceWorkspace: 'workspace:replace',
   listWorkspaceFiles: 'workspace:list-files',
   copyWorkspacePath: 'workspace:copy-path',
   watchWorkspaceFiles: 'workspace:watch-files',
@@ -143,12 +144,73 @@ export type WorkspaceMutation = {
   previousPath?: string
 }
 
-export type SearchResult = {
-  path: string
-  relativePath: string
+export type SearchOptions = {
+  requestId: string
+  query: string
+  replacement: string
+  caseSensitive: boolean
+  wholeWord: boolean
+  useRegex: boolean
+  includeGlobs: string[]
+  excludeGlobs: string[]
+  folderPath: string | null
+}
+
+export type SearchMatch = {
+  id: string
+  start: number
+  end: number
   line: number
   column: number
   preview: string
+  matchText: string
+  replacement: string
+}
+
+export type WorkspaceSearchFile = {
+  path: string
+  relativePath: string
+  fingerprint: string
+  matches: SearchMatch[]
+}
+
+export type WorkspaceSearchResponse = {
+  requestId: string
+  workspaceRoot: string
+  files: WorkspaceSearchFile[]
+  totalMatches: number
+  truncated: boolean
+}
+
+export type WorkspaceReplacementEdit = {
+  start: number
+  end: number
+  expectedText: string
+  replacement: string
+}
+
+export type WorkspaceReplacementFile = {
+  filePath: string
+  expectedFingerprint: string
+  edits: WorkspaceReplacementEdit[]
+}
+
+export type WorkspaceReplacementRequest = {
+  workspaceRoot: string
+  files: WorkspaceReplacementFile[]
+}
+
+export type WorkspaceReplacementOutcome = {
+  filePath: string
+  status: 'applied' | 'failed'
+  replacements: number
+  message?: string
+  fingerprint?: string
+}
+
+export type WorkspaceReplacementResponse = {
+  workspaceRoot: string
+  outcomes: WorkspaceReplacementOutcome[]
 }
 
 export type WorkspaceFileEntry = {
@@ -763,7 +825,8 @@ export type DesktopApi = {
   createEntry: (parentPath: string, name: string, type: 'file' | 'directory') => Promise<WorkspaceMutation>
   renameEntry: (entryPath: string, name: string) => Promise<WorkspaceMutation>
   deleteEntry: (entryPath: string) => Promise<WorkspaceMutation | null>
-  searchWorkspace: (query: string) => Promise<SearchResult[]>
+  searchWorkspace: (options: SearchOptions) => Promise<WorkspaceSearchResponse>
+  replaceWorkspace: (request: WorkspaceReplacementRequest) => Promise<WorkspaceReplacementResponse>
   listWorkspaceFiles: () => Promise<WorkspaceFileList>
   copyWorkspacePath: (filePath: string, kind: 'absolute' | 'relative') => Promise<void>
   watchWorkspaceFiles: (filePaths: string[]) => Promise<void>

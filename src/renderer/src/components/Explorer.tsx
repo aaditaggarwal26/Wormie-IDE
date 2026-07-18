@@ -17,6 +17,7 @@ type SelectedEntry = Pick<FileTreeNode, 'name' | 'path' | 'type'>
 type PendingAction = { kind: 'file' | 'directory' | 'rename'; parentPath?: string }
 
 type ExplorerProps = {
+  activePath: string | null
   workspace: WorkspaceSnapshot | null
   busy: boolean
   onOpenWorkspace: () => void
@@ -33,10 +34,20 @@ type TreeNodeProps = {
   selectedPath: string | null
   onSelect: (entry: SelectedEntry) => void
   onOpenFile: (path: string) => void
+  revealPath: string | null
 }
 
-function TreeNode({ node, depth, selectedPath, onSelect, onOpenFile }: TreeNodeProps) {
+function TreeNode({ node, depth, selectedPath, onSelect, onOpenFile, revealPath }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth === 0)
+
+  useEffect(() => {
+    if (!revealPath) return
+    const normalizedNode = node.path.toLocaleLowerCase()
+    const normalizedReveal = revealPath.toLocaleLowerCase()
+    if (normalizedReveal === normalizedNode || normalizedReveal.startsWith(`${normalizedNode}/`) || normalizedReveal.startsWith(`${normalizedNode}\\`)) {
+      setExpanded(true)
+    }
+  }, [node.path, revealPath])
 
   if (node.type === 'directory') {
     return (
@@ -64,6 +75,7 @@ function TreeNode({ node, depth, selectedPath, onSelect, onOpenFile }: TreeNodeP
                 node={child}
                 onOpenFile={onOpenFile}
                 onSelect={onSelect}
+                revealPath={revealPath}
                 selectedPath={selectedPath}
               />
             ))}
@@ -78,6 +90,7 @@ function TreeNode({ node, depth, selectedPath, onSelect, onOpenFile }: TreeNodeP
     <li>
       <button
         className="tree-row file-row"
+        data-entry-path={node.path}
         data-selected={selectedPath === node.path}
         onClick={() => {
           onSelect(node)
@@ -94,6 +107,7 @@ function TreeNode({ node, depth, selectedPath, onSelect, onOpenFile }: TreeNodeP
 }
 
 export function Explorer({
+  activePath,
   workspace,
   busy,
   onOpenWorkspace,
@@ -111,6 +125,27 @@ export function Explorer({
     setSelected(null)
     setPendingAction(null)
   }, [workspace?.rootPath])
+
+  useEffect(() => {
+    if (!activePath || !workspace) return
+    const findFile = (nodes: FileTreeNode[]): FileTreeNode | null => {
+      for (const node of nodes) {
+        if (node.path === activePath) return node
+        if (node.children) {
+          const match = findFile(node.children)
+          if (match) return match
+        }
+      }
+      return null
+    }
+    const file = findFile(workspace.entries)
+    if (!file) return
+    setSelected(file)
+    requestAnimationFrame(() => {
+      const rows = document.querySelectorAll<HTMLElement>('[data-entry-path]')
+      ;[...rows].find((row) => row.dataset.entryPath === activePath)?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [activePath, workspace])
 
   const beginCreate = (kind: 'file' | 'directory') => {
     if (!workspace) return
@@ -140,7 +175,7 @@ export function Explorer({
   }
 
   return (
-    <aside className="side-panel">
+    <aside className="side-panel" data-workbench-focus="explorer" tabIndex={-1}>
       <div className="panel-heading explorer-heading">
         <span>Explorer</span>
         <div className="panel-actions">
@@ -193,6 +228,7 @@ export function Explorer({
                 node={entry}
                 onOpenFile={onOpenFile}
                 onSelect={setSelected}
+                revealPath={activePath}
                 selectedPath={selected?.path ?? null}
               />
             ))}

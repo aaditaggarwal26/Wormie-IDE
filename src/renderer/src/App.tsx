@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpenText, Command, FolderOpen, Gauge, GraduationCap, Search, Settings2 } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { BookOpenText, Search, Settings2 } from 'lucide-react'
 import { ActivityRail } from '@/components/ActivityRail'
 import { AuthScreen } from '@/components/AuthScreen'
 import { AssignmentPanel } from '@/components/AssignmentPanel'
 import { AssignmentStudio } from '@/components/AssignmentStudio'
 import { BottomPanel } from '@/components/BottomPanel'
+import { CommandPalette } from '@/components/CommandPalette'
 import { ClassroomPanel } from '@/components/ClassroomPanel'
 import { EditorPane } from '@/components/EditorPane'
 import { Explorer } from '@/components/Explorer'
+import { GoToLine } from '@/components/GoToLine'
 import { PanelResizeHandle } from '@/components/PanelResizeHandle'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
 import { QuizHistory } from '@/components/QuizHistory'
+import { QuickOpen } from '@/components/QuickOpen'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
+import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
+import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
 import { useWorkbench } from '@/store/workbench'
 import type {
   AgentConfig,
@@ -64,6 +69,7 @@ type PanelLayout = {
 }
 
 const PANEL_LAYOUT_STORAGE_KEY = 'wormie.panel-layout.v1'
+const RECENT_ITEMS_STORAGE_KEY = 'wormie.recent-items.v1'
 const PANEL_HANDLE_SIZE = 5
 const ACTIVITY_RAIL_WIDTH = 50
 const CENTER_MIN_WIDTH = 360
@@ -102,7 +108,8 @@ function loadPanelLayout(): PanelLayout {
 }
 
 export default function App(): React.JSX.Element {
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [activePicker, setActivePicker] = useState<'commands' | 'files' | 'line' | null>(null)
+  const [recentItems, setRecentItems] = useState<RecentItems>(() => parseRecentItems(window.localStorage.getItem(RECENT_ITEMS_STORAGE_KEY)))
   const [assignmentStudioOpen, setAssignmentStudioOpen] = useState(false)
   const [assignmentRecovering, setAssignmentRecovering] = useState(false)
   const [assignmentState, setAssignmentState] = useState<AssignmentWorkspaceState | null>(null)
@@ -140,6 +147,23 @@ export default function App(): React.JSX.Element {
   const setActivity = useWorkbench((state) => state.setActivity)
   const setBottomView = useWorkbench((state) => state.setBottomView)
   const addOutput = useWorkbench((state) => state.addOutput)
+  const revealDocumentLine = useWorkbench((state) => state.revealDocumentLine)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RECENT_ITEMS_STORAGE_KEY, JSON.stringify(recentItems))
+    } catch {
+      // Recent navigation remains available for the current session.
+    }
+  }, [recentItems])
+
+  const rememberFile = useCallback((filePath: string) => {
+    setRecentItems((current) => ({ ...current, files: pushRecentItem(current.files, filePath) }))
+  }, [])
+
+  const rememberCommand = useCallback((commandId: string) => {
+    setRecentItems((current) => ({ ...current, commands: pushRecentItem(current.commands, commandId) }))
+  }, [])
 
   useEffect(() => {
     try {
@@ -247,8 +271,16 @@ export default function App(): React.JSX.Element {
   })
 
   const fileMutation = useMutation({
-    mutationFn: ({ filePath }: { filePath: string; line?: number }) => window.desktop.readFile(filePath),
-    onSuccess: (file, variables) => openDocument(file, variables.line),
+    mutationFn: async ({ filePath, line }: { filePath: string; line?: number }) => {
+      const workspaceRoot = useWorkbench.getState().workspace?.rootPath ?? null
+      const file = await window.desktop.readFile(filePath)
+      return { file, line, workspaceRoot }
+    },
+    onSuccess: ({ file, line, workspaceRoot }) => {
+      if (!workspaceRoot || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return
+      openDocument(file, line)
+      rememberFile(file.path)
+    },
     onError: (error) => addOutput(`Could not open file: ${errorMessage(error)}`)
   })
 
@@ -527,6 +559,62 @@ export default function App(): React.JSX.Element {
     })
   }, [loadAssignment, workspace])
 
+  const focusWorkbenchTarget = useCallback((nextActivity: 'explorer' | 'search', target: 'explorer' | 'search') => {
+    setActivity(nextActivity)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-workbench-focus="${target}"]`)?.focus()
+    }))
+  }, [setActivity])
+
+  const commandContext = useMemo<WorkbenchCommandContext>(() => ({
+    hasWorkspace: Boolean(workspace),
+    hasActiveFile: Boolean(activePath),
+    openFolder: () => workspaceMutation.mutate(),
+    save: () => saveMutation.mutate(),
+    openQuickOpen: () => setActivePicker('files'),
+    openCommandPalette: () => setActivePicker('commands'),
+    openSearch: () => focusWorkbenchTarget('search', 'search'),
+    openGoToLine: () => setActivePicker('line'),
+    revealActiveFile: () => {
+      if (!activePath) return
+      setActivity('explorer')
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[data-entry-path][data-selected="true"]')?.focus()
+      }))
+    },
+    copyAbsolutePath: () => {
+      if (!activePath) return
+      void window.desktop.copyWorkspacePath(activePath, 'absolute')
+        .then(() => addOutput('Copied the absolute file path.'))
+        .catch((error) => addOutput(`Could not copy file path: ${errorMessage(error)}`))
+    },
+    copyRelativePath: () => {
+      if (!activePath) return
+      void window.desktop.copyWorkspacePath(activePath, 'relative')
+        .then(() => addOutput('Copied the relative file path.'))
+        .catch((error) => addOutput(`Could not copy file path: ${errorMessage(error)}`))
+    },
+    focusExplorer: () => focusWorkbenchTarget('explorer', 'explorer'),
+    focusSearch: () => focusWorkbenchTarget('search', 'search'),
+    focusTutor: () => document.querySelector<HTMLElement>('[data-workbench-focus="tutor"]')?.focus(),
+    openSettings: () => setActivity('settings'),
+    focusTerminal: () => setBottomView('terminal'),
+    editAssignment: () => { setActivity('assignments'); openAssignmentStudio(false) },
+    importAssignment: () => importAssignmentMutation.mutate(),
+    openClassrooms: () => setActivity('classrooms')
+  }), [
+    activePath,
+    addOutput,
+    focusWorkbenchTarget,
+    importAssignmentMutation,
+    openAssignmentStudio,
+    saveMutation,
+    setActivity,
+    setBottomView,
+    workspace,
+    workspaceMutation
+  ])
+
   useEffect(() => {
     let active = true
     void window.desktop.getCloudAuth()
@@ -610,34 +698,17 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (assignmentStudioOpen) return
-      const modifier = window.desktop.platform === 'darwin' ? event.metaKey : event.ctrlKey
-      if (!modifier) return
-
-      if (event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        setCommandPaletteOpen((value) => !value)
-      }
-      if (event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault()
-        setActivity('search')
-      }
-      if (event.key === '`') {
-        event.preventDefault()
-        setBottomView('terminal')
-      }
-      if (event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        saveMutation.mutate()
-      }
-      if (event.key.toLowerCase() === 'o') {
-        event.preventDefault()
-        workspaceMutation.mutate()
-      }
+      const command = workbenchCommandRegistry.findByKeyboard(event, window.desktop.platform, commandContext)
+      if (!command) return
+      event.preventDefault()
+      void workbenchCommandRegistry.invoke(command.id, commandContext)
+        .then((invoked) => { if (invoked) rememberCommand(command.id) })
+        .catch((error) => addOutput(`Could not run ${command.title}: ${errorMessage(error)}`))
     }
 
-    window.addEventListener('keydown', handleShortcut)
-    return () => window.removeEventListener('keydown', handleShortcut)
-  }, [assignmentStudioOpen, saveMutation, setActivity, setBottomView, workspaceMutation])
+    window.addEventListener('keydown', handleShortcut, true)
+    return () => window.removeEventListener('keydown', handleShortcut, true)
+  }, [addOutput, assignmentStudioOpen, commandContext, rememberCommand])
 
   const explorerBusy =
     workspaceMutation.isPending ||
@@ -681,10 +752,10 @@ export default function App(): React.JSX.Element {
     <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
         <div className="titlebar-brand"><span>Wormie</span></div>
-        <button className="command-trigger" onClick={() => setCommandPaletteOpen(true)} type="button">
+        <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
           <Search size={13} />
           <span>Search commands</span>
-          <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} K</kbd>
+          <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} Shift P</kbd>
         </button>
         <div className="titlebar-workspace">{workspace?.name ?? 'No workspace'}</div>
       </header>
@@ -701,6 +772,7 @@ export default function App(): React.JSX.Element {
         <ActivityRail />
         {activity === 'explorer' && (
           <Explorer
+            activePath={activePath}
             busy={explorerBusy}
             onCreate={(parentPath, name, type) => createMutation.mutate({ parentPath, name, type })}
             onDelete={(entryPath) => deleteMutation.mutate(entryPath)}
@@ -887,48 +959,31 @@ export default function App(): React.JSX.Element {
         <span>Ln {cursorLine}, Col {cursorColumn}</span>
       </footer>
 
-      <AnimatePresence>
-        {commandPaletteOpen && (
-          <motion.div
-            animate={{ opacity: 1 }}
-            className="command-backdrop"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-            onMouseDown={() => setCommandPaletteOpen(false)}
-          >
-            <motion.div
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="command-palette"
-              exit={{ opacity: 0, scale: 0.98, y: -8 }}
-              initial={{ opacity: 0, scale: 0.98, y: -8 }}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <div className="command-input"><Command size={16} /><span>Choose a workbench action</span></div>
-              <button onClick={() => { setCommandPaletteOpen(false); workspaceMutation.mutate() }} type="button">
-                <FolderOpen size={15} /><span>Open folder</span><kbd>Ctrl O</kbd>
-              </button>
-              <button disabled={!activePath} onClick={() => { setCommandPaletteOpen(false); saveMutation.mutate() }} type="button">
-                <Gauge size={15} /><span>Save active file</span><kbd>Ctrl S</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('search') }} type="button">
-                <Search size={15} /><span>Search project</span><kbd>Ctrl Shift F</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setBottomView('terminal') }} type="button">
-                <Command size={15} /><span>Focus terminal</span><kbd>Ctrl `</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('assignments'); openAssignmentStudio(false) }} type="button">
-                <BookOpenText size={15} /><span>{assignmentState?.manifest ? 'Edit assignment' : 'Create assignment'}</span>
-              </button>
-              <button onClick={() => { setCommandPaletteOpen(false); setActivity('classrooms') }} type="button">
-                <GraduationCap size={15} /><span>Open classrooms</span>
-              </button>
-              <button onClick={() => { setCommandPaletteOpen(false); importAssignmentMutation.mutate() }} type="button">
-                <FolderOpen size={15} /><span>Import assignment package</span>
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {activePicker === 'commands' && (
+        <CommandPalette
+          context={commandContext}
+          onClose={() => setActivePicker(null)}
+          onRecentCommand={rememberCommand}
+          platform={window.desktop.platform}
+          recentCommands={recentItems.commands}
+        />
+      )}
+      {activePicker === 'files' && workspace && (
+        <QuickOpen
+          onClose={() => setActivePicker(null)}
+          onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
+          onRecentFile={rememberFile}
+          recentFiles={recentItems.files}
+          workspace={workspace}
+        />
+      )}
+      {activePicker === 'line' && activePath && (
+        <GoToLine
+          currentLine={cursorLine}
+          onClose={() => setActivePicker(null)}
+          onGo={(line) => revealDocumentLine(activePath, line)}
+        />
+      )}
 
       <AnimatePresence>
         {assignmentStudioOpen && workspace && (

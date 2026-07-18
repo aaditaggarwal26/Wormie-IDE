@@ -21,6 +21,10 @@ const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_REN
 const understandingStore = new Store({ name: 'understanding-state' })
 const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
+const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
+  trustedWebContents.has(event.sender.id) &&
+  event.senderFrame === event.sender.mainFrame &&
+  isTrustedRendererUrl(event.senderFrame.url)
 
 if (process.defaultApp) {
   if (process.argv[1]) app.setAsDefaultProtocolClient('wormie', process.execPath, [path.resolve(process.argv[1])])
@@ -104,12 +108,8 @@ function createWindow(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  const workspace = registerWorkspaceHandlers(store)
+  const workspace = registerWorkspaceHandlers(store, isTrustedSender)
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
-  const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
-    trustedWebContents.has(event.sender.id) &&
-    event.senderFrame === event.sender.mainFrame &&
-    isTrustedRendererUrl(event.senderFrame.url)
   registerAssignmentHandlers(
     store,
     progressStorageRoot,

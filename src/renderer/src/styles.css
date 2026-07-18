@@ -35,7 +35,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .titlebar-workspace { overflow: hidden; padding-left: 20px; color: #879299; font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .command-trigger { -webkit-app-region: no-drag; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; height: 27px; padding: 0 8px; border: 1px solid #252d31; border-radius: 6px; color: #687279; background: #111518; font-size: 11px; text-align: left; transition: border-color .16s, background .16s; }
 .command-trigger:hover { border-color: #3b464b; background: #151a1d; }
-.command-trigger kbd, .command-palette kbd { padding: 2px 5px; border: 1px solid #2b3438; border-radius: 4px; color: #778188; background: #0c0f11; font: 9px "Cascadia Code", monospace; }
+.command-trigger kbd, .workbench-picker kbd { padding: 2px 5px; border: 1px solid #2b3438; border-radius: 4px; color: #879198; background: #0c0f11; font: 9px "Cascadia Code", monospace; white-space: nowrap; }
 
 .workbench { display: grid; grid-template-columns: 50px var(--left-panel-width) 5px minmax(360px, 1fr) 5px var(--right-panel-width); min-height: 0; overflow: hidden; }
 .activity-rail { display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--line); background: #0a0d0f; }
@@ -315,12 +315,21 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .status-mode { display: flex; gap: 5px; align-items: center; color: #c3cf83; }
 .status-spacer { flex: 1; }
 
-.command-backdrop { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: center; padding-top: 75px; background: #02030480; backdrop-filter: blur(3px); }
-.command-palette { width: min(540px, calc(100vw - 40px)); height: fit-content; overflow: hidden; border: 1px solid #394448; border-radius: 10px; background: #121719; box-shadow: 0 24px 90px #000c; }
-.command-input { display: flex; gap: 9px; align-items: center; height: 43px; padding: 0 13px; border-bottom: 1px solid #293136; color: #7e898f; font-size: 12px; }
-.command-palette > button { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; width: calc(100% - 10px); height: 36px; margin: 5px; padding: 0 9px; border: 0; border-radius: 5px; color: #b1bab5; background: transparent; font-size: 11px; text-align: left; }
-.command-palette > button:hover { color: #e1e6e2; background: #263029; }
-.command-palette > button:disabled { opacity: .35; }
+.picker-backdrop { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: center; padding-top: 72px; background: #0203048c; backdrop-filter: blur(3px); }
+.workbench-picker { width: min(610px, calc(100vw - 40px)); max-height: min(560px, calc(100vh - 110px)); overflow: hidden; border: 1px solid #3a4648; border-radius: 9px; background: #111617; box-shadow: 0 28px 100px #000d, 0 0 0 1px #b9cf5520; }
+.picker-input-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 48px; padding: 0 13px; border-bottom: 1px solid #2a3436; color: #8d999b; }
+.picker-input-row input { width: 100%; border: 0; outline: 0; color: #e3e8e4; background: transparent; font: 13px "Cascadia Code", monospace; }
+.picker-input-row input::placeholder { color: #667174; }
+.picker-results { max-height: 455px; overflow: auto; padding: 5px; }
+.picker-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; min-height: 42px; padding: 6px 9px; border: 0; border-radius: 5px; color: #c1cbc5; background: transparent; text-align: left; }
+.picker-result[aria-selected="true"] { color: #f0f3ef; background: #29352b; box-shadow: inset 2px 0 var(--acid); }
+.picker-result[data-disabled] { opacity: .38; }
+.picker-result-copy { display: grid; min-width: 0; gap: 2px; }
+.picker-result-copy strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.picker-result-copy > span { overflow: hidden; color: #7f8c8d; font: 10px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.picker-result mark { color: var(--acid); background: transparent; font-weight: 700; }
+.picker-state { padding: 28px 12px; color: #7d898a; font-size: 11px; text-align: center; }
+.picker-footer { min-height: 29px; padding: 7px 13px; border-top: 1px solid #252e30; color: #6e797b; font: 9px "Cascadia Code", monospace; }
 
 .explorer-heading { gap: 8px; }
 .panel-actions { display: flex; align-items: center; margin-left: auto; }

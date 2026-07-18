@@ -189,7 +189,7 @@ export function TutorPane(): React.JSX.Element {
   }
 
   return (
-    <aside className="tutor-pane">
+    <aside className="tutor-pane" data-workbench-focus="tutor" tabIndex={-1}>
       <div className="tutor-heading">
         <div>
           <span className="eyebrow">AI Copilot</span>

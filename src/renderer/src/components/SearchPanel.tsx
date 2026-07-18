@@ -28,6 +28,7 @@ export function SearchPanel({ workspace, busy, results, onSearch, onOpenFile }: 
       >
         <Search size={14} />
         <input
+          data-workbench-focus="search"
           disabled={!workspace}
           onChange={(event) => {
             setQuery(event.target.value)

@@ -1,17 +1,19 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { dialog, ipcMain } from 'electron'
+import { clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type Store from 'electron-store'
 import {
   IPC_CHANNELS,
   type FileTreeNode,
   type OpenFile,
   type SearchResult,
+  type WorkspaceFileList,
   type WorkspaceMutation,
   type WorkspaceSnapshot
 } from '../shared/contracts'
 import { isPathInside, validateEntryName } from './pathSafety'
 import type { AppPreferences } from './preferences'
+import { collectWorkspaceFiles } from './workspaceFiles'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -163,12 +165,34 @@ async function searchDirectory(
   }
 }
 
-export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
+export function registerWorkspaceHandlers(
+  store: Store<AppPreferences>,
+  isTrustedSender: (event: IpcMainInvokeEvent) => boolean
+): {
   getWorkspaceRoot: () => string | null
   setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>
 } {
   let activeWorkspaceRoot: string | null = null
   let workspaceTransition: Promise<void> = Promise.resolve()
+  let fileIndex: { rootPath: string; promise: ReturnType<typeof collectWorkspaceFiles> } | null = null
+
+  function assertTrusted(event: IpcMainInvokeEvent): void {
+    if (!isTrustedSender(event)) throw new Error('Workspace access was denied for this window.')
+  }
+
+  function invalidateFileIndex(): void {
+    fileIndex = null
+  }
+
+  function getFileIndex(rootPath: string) {
+    if (!fileIndex || fileIndex.rootPath !== rootPath) {
+      fileIndex = {
+        rootPath,
+        promise: collectWorkspaceFiles(rootPath, { excludeGlobs: ['**/*.map', '**/*.min.js'], maxFiles: 50_000 })
+      }
+    }
+    return fileIndex.promise
+  }
 
   function requireWorkspaceRoot(): string {
     if (!activeWorkspaceRoot) throw new Error('Open a workspace first.')
@@ -182,6 +206,8 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
       if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
       const snapshot = await createWorkspaceSnapshot(resolvedRoot)
       activeWorkspaceRoot = resolvedRoot
+      invalidateFileIndex()
+      void getFileIndex(resolvedRoot).catch(() => invalidateFileIndex())
       store.set('recentWorkspace', resolvedRoot)
       return snapshot
     })
@@ -200,13 +226,15 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
     return resolvedPath
   }
 
-  ipcMain.handle(IPC_CHANNELS.openWorkspace, async () => {
+  ipcMain.handle(IPC_CHANNELS.openWorkspace, async (event) => {
+    assertTrusted(event)
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null
     return setWorkspace(result.filePaths[0])
   })
 
-  ipcMain.handle(IPC_CHANNELS.restoreWorkspace, async () => {
+  ipcMain.handle(IPC_CHANNELS.restoreWorkspace, async (event) => {
+    assertTrusted(event)
     const recentWorkspace = store.get('recentWorkspace')
     if (!recentWorkspace) return null
 
@@ -218,9 +246,14 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.refreshWorkspace, () => createWorkspaceSnapshot(requireWorkspaceRoot()))
+  ipcMain.handle(IPC_CHANNELS.refreshWorkspace, (event) => {
+    assertTrusted(event)
+    invalidateFileIndex()
+    return createWorkspaceSnapshot(requireWorkspaceRoot())
+  })
 
-  ipcMain.handle(IPC_CHANNELS.readFile, async (_event, filePath: string): Promise<OpenFile> => {
+  ipcMain.handle(IPC_CHANNELS.readFile, async (event, filePath: string): Promise<OpenFile> => {
+    assertTrusted(event)
     const resolvedPath = await resolveWorkspaceFile(filePath)
     if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
     const stats = await fs.stat(resolvedPath)
@@ -238,7 +271,9 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.writeFile, async (_event, filePath: string, content: string) => {
+  ipcMain.handle(IPC_CHANNELS.writeFile, async (event, filePath: string, content: string) => {
+    assertTrusted(event)
+    if (typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > maxFileBytes) throw new Error('The file content is invalid or too large.')
     const resolvedPath = await resolveWorkspaceFile(filePath)
     if (isProtectedMetadataPath(requireWorkspaceRoot(), resolvedPath)) throw new Error('Workspace metadata is managed by Wormie.')
     const stats = await fs.stat(resolvedPath)
@@ -248,7 +283,8 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
 
   ipcMain.handle(
     IPC_CHANNELS.createEntry,
-    async (_event, parentPath: string, name: string, type: 'file' | 'directory'): Promise<WorkspaceMutation> => {
+    async (event, parentPath: string, name: string, type: 'file' | 'directory'): Promise<WorkspaceMutation> => {
+      assertTrusted(event)
       const workspaceRoot = requireWorkspaceRoot()
       if (type !== 'file' && type !== 'directory') throw new Error('Unsupported workspace entry type.')
       const resolvedParent = await fs.realpath(parentPath)
@@ -264,6 +300,7 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
 
       if (type === 'directory') await fs.mkdir(entryPath)
       else await fs.writeFile(entryPath, '', { encoding: 'utf8', flag: 'wx' })
+      invalidateFileIndex()
 
       return { workspace: await createWorkspaceSnapshot(workspaceRoot), path: entryPath }
     }
@@ -271,7 +308,8 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
 
   ipcMain.handle(
     IPC_CHANNELS.renameEntry,
-    async (_event, entryPath: string, name: string): Promise<WorkspaceMutation> => {
+    async (event, entryPath: string, name: string): Promise<WorkspaceMutation> => {
+      assertTrusted(event)
       const workspaceRoot = requireWorkspaceRoot()
       const resolvedPath = await resolveWorkspaceFile(entryPath)
       if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be renamed here.')
@@ -289,6 +327,7 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
         }
       }
       await fs.rename(resolvedPath, nextPath)
+      invalidateFileIndex()
 
       return {
         workspace: await createWorkspaceSnapshot(workspaceRoot),
@@ -300,7 +339,8 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
 
   ipcMain.handle(
     IPC_CHANNELS.deleteEntry,
-    async (_event, entryPath: string): Promise<WorkspaceMutation | null> => {
+    async (event, entryPath: string): Promise<WorkspaceMutation | null> => {
+      assertTrusted(event)
       const workspaceRoot = requireWorkspaceRoot()
       const resolvedPath = await resolveWorkspaceFile(entryPath)
       if (resolvedPath === workspaceRoot) throw new Error('The workspace root cannot be deleted.')
@@ -321,12 +361,14 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
       const stats = await fs.stat(resolvedPath)
       if (stats.isDirectory()) await fs.rm(resolvedPath, { recursive: true })
       else await fs.unlink(resolvedPath)
+      invalidateFileIndex()
 
       return { workspace: await createWorkspaceSnapshot(workspaceRoot), path: resolvedPath }
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.searchWorkspace, async (_event, rawQuery: string): Promise<SearchResult[]> => {
+  ipcMain.handle(IPC_CHANNELS.searchWorkspace, async (event, rawQuery: string): Promise<SearchResult[]> => {
+    assertTrusted(event)
     const workspaceRoot = requireWorkspaceRoot()
     if (typeof rawQuery !== 'string') throw new Error('Enter a valid search query.')
     const query = rawQuery.trim().toLowerCase()
@@ -336,6 +378,22 @@ export function registerWorkspaceHandlers(store: Store<AppPreferences>): {
     const results: SearchResult[] = []
     await searchDirectory(workspaceRoot, workspaceRoot, query, results)
     return results
+  })
+
+  ipcMain.handle(IPC_CHANNELS.listWorkspaceFiles, async (event): Promise<WorkspaceFileList> => {
+    assertTrusted(event)
+    const workspaceRoot = requireWorkspaceRoot()
+    const result = await getFileIndex(workspaceRoot)
+    if (activeWorkspaceRoot !== workspaceRoot) throw new Error('The active workspace changed while files were being indexed.')
+    return { workspaceRoot, ...result }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.copyWorkspacePath, async (event, filePath: string, kind: 'absolute' | 'relative'): Promise<void> => {
+    assertTrusted(event)
+    if (kind !== 'absolute' && kind !== 'relative') throw new Error('Choose a valid path format.')
+    const workspaceRoot = requireWorkspaceRoot()
+    const resolvedPath = await resolveWorkspaceFile(filePath)
+    clipboard.writeText(kind === 'absolute' ? resolvedPath : path.relative(workspaceRoot, resolvedPath))
   })
 
   return { getWorkspaceRoot: () => activeWorkspaceRoot, setWorkspace }

@@ -48,6 +48,7 @@ type WorkbenchState = {
   consumeRevealLine: () => void
   setCursorPosition: (line: number, column: number) => void
   setActivePath: (filePath: string) => void
+  revealDocumentLine: (filePath: string, line: number) => void
   setActivity: (activity: Activity) => void
   setBottomView: (view: BottomView) => void
   addOutput: (message: string) => void
@@ -151,6 +152,10 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
   consumeRevealLine: () => set({ revealLine: null }),
   setCursorPosition: (cursorLine, cursorColumn) => set({ cursorLine, cursorColumn }),
   setActivePath: (activePath) => set({ activePath }),
+  revealDocumentLine: (activePath, revealLine) => set((state) => ({
+    activePath: state.documents.some((document) => document.path === activePath) ? activePath : state.activePath,
+    revealLine: Number.isInteger(revealLine) && revealLine > 0 ? revealLine : state.revealLine
+  })),
   setActivity: (activity) => set({ activity }),
   setBottomView: (bottomView) => set({ bottomView }),
   addOutput: (message) => set((state) => ({

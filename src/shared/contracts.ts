@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   renameEntry: 'workspace:rename-entry',
   deleteEntry: 'workspace:delete-entry',
   searchWorkspace: 'workspace:search',
+  listWorkspaceFiles: 'workspace:list-files',
+  copyWorkspacePath: 'workspace:copy-path',
   gitStatus: 'git:status',
   gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
@@ -97,6 +99,18 @@ export type SearchResult = {
   line: number
   column: number
   preview: string
+}
+
+export type WorkspaceFileEntry = {
+  path: string
+  relativePath: string
+  name: string
+}
+
+export type WorkspaceFileList = {
+  workspaceRoot: string
+  files: WorkspaceFileEntry[]
+  truncated: boolean
 }
 
 export type GitFileChange = {
@@ -700,6 +714,8 @@ export type DesktopApi = {
   renameEntry: (entryPath: string, name: string) => Promise<WorkspaceMutation>
   deleteEntry: (entryPath: string) => Promise<WorkspaceMutation | null>
   searchWorkspace: (query: string) => Promise<SearchResult[]>
+  listWorkspaceFiles: () => Promise<WorkspaceFileList>
+  copyWorkspacePath: (filePath: string, kind: 'absolute' | 'relative') => Promise<void>
   getGitStatus: () => Promise<GitStatusSnapshot>
   trustGitRepository: (repositoryRoot: string) => Promise<void>
   startTerminal: (request: TerminalSessionRequest) => Promise<TerminalSessionInfo>

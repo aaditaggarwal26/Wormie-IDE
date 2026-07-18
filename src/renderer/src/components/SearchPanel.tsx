@@ -8,6 +8,8 @@ import type {
   WorkspaceSnapshot
 } from '@shared/contracts'
 import { useWorkbench } from '@/store/workbench'
+import * as monaco from 'monaco-editor'
+import { workspacePathToFileUri } from '@/typescript/fileUri'
 
 type SearchPanelProps = {
   workspace: WorkspaceSnapshot | null
@@ -128,6 +130,10 @@ export function SearchPanel({ workspace, onOpenFile }: SearchPanelProps): React.
         const document = state.documents.find((candidate) => candidate.path === outcome.filePath)
         if (!document || document.content === document.savedContent) state.replaceDocumentFromDisk(diskFile)
         else state.setExternalChange(outcome.filePath, { kind: 'changed', diskFile })
+        if (!document) {
+          const model = monaco.editor.getModel(monaco.Uri.parse(workspacePathToFileUri(diskFile.path, window.desktop.platform)))
+          if (model && model.getValue() !== diskFile.content) model.setValue(diskFile.content)
+        }
       }))
       const failures = result.outcomes.filter((outcome) => outcome.status === 'failed')
       if (failures.length > 0) setError(`${failures.length} file${failures.length === 1 ? '' : 's'} could not be changed. Review the details below.`)

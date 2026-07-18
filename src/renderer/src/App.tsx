@@ -14,6 +14,7 @@ import { DirtyFilesDialog } from '@/components/DirtyFilesDialog'
 import { ExternalChangeReview } from '@/components/ExternalChangeReview'
 import { Explorer } from '@/components/Explorer'
 import { GoToLine } from '@/components/GoToLine'
+import { OutlinePanel } from '@/components/OutlinePanel'
 import { PanelResizeHandle } from '@/components/PanelResizeHandle'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
@@ -25,6 +26,7 @@ import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/r
 import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
 import { dirtyDocuments } from '@/editing/editingPolicy'
 import { useSafeEditing } from '@/editing/useSafeEditing'
+import { isTypeScriptProjectFile } from '@/typescript/projectFiles'
 import { useWorkbench } from '@/store/workbench'
 import type {
   AgentConfig,
@@ -577,6 +579,7 @@ export default function App(): React.JSX.Element {
     hasDirtyFiles: dirtyDocuments(documents).length > 0,
     hasClosedEditor: closedPaths.length > 0,
     hasMultipleEditors: documents.length > 1,
+    hasTypeScriptFile: documents.some((document) => document.path === activePath && isTypeScriptProjectFile(document.path)),
     openFolder: () => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate()),
     save: () => saveMutation.mutate(),
     saveAll: () => {
@@ -629,7 +632,9 @@ export default function App(): React.JSX.Element {
     focusTerminal: () => setBottomView('terminal'),
     editAssignment: () => { setActivity('assignments'); openAssignmentStudio(false) },
     importAssignment: () => safeEditing.runWorkspaceChangingAction(() => importAssignmentMutation.mutate()),
-    openClassrooms: () => setActivity('classrooms')
+    openClassrooms: () => setActivity('classrooms'),
+    runEditorAction: (actionId) => window.dispatchEvent(new CustomEvent('wormie:editor-action', { detail: actionId })),
+    renameSymbol: () => window.dispatchEvent(new Event('wormie:rename-symbol'))
   }), [
     activePath,
     addOutput,
@@ -821,6 +826,7 @@ export default function App(): React.JSX.Element {
             workspace={workspace}
           />
         )}
+        {activity === 'outline' && <OutlinePanel />}
         {activity === 'sourceControl' && (
           <SourceControlPanel
             busy={gitMutation.isPending || gitTrustMutation.isPending}
@@ -952,6 +958,7 @@ export default function App(): React.JSX.Element {
             hasWorkspace={Boolean(workspace)}
             onCloseDocument={safeEditing.closeEditorSafely}
             onEditorBlur={safeEditing.onEditorBlur}
+            onOpenFile={(filePath, line) => fileMutation.mutate({ filePath, line })}
             onOpenSuggestedFile={() => suggestedFile && fileMutation.mutate({ filePath: suggestedFile.path })}
             onOpenWorkspace={() => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate())}
             onSave={() => saveMutation.mutate()}

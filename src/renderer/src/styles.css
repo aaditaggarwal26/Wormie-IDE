@@ -352,6 +352,34 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .external-change-copy { padding: 16px 18px; border-bottom: 1px solid #293133; }
 .external-change-copy p { margin: 4px 0 0; color: #8d9895; font-size: 11px; line-height: 1.5; }
 .external-diff { height: min(480px, 55vh); }
+.safe-rename-dialog { width: min(820px, calc(100vw - 40px)); }
+.safe-rename-dialog > header { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 12px; border-bottom: 1px solid #293133; color: #85926a; }
+.safe-rename-dialog > header div { display: flex; gap: 7px; align-items: center; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+.safe-rename-dialog > header button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 4px; color: #7f8a86; background: transparent; }
+.safe-rename-title-row { display: flex; align-items: end; justify-content: space-between; padding: 16px 18px 11px; }
+.safe-rename-title-row span { color: var(--warm); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.safe-rename-title-row h2 { margin: 4px 0 0; color: #e2e7e3; font: 20px Georgia, serif; font-weight: 500; }
+.safe-rename-title-row > b { color: #9dad6e; font: 9px "Cascadia Code", monospace; }
+.safe-rename-dialog > form { display: grid; gap: 5px; padding: 0 18px 14px; }
+.safe-rename-dialog > form label { color: #89958f; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.safe-rename-dialog > form input { height: 34px; padding: 0 9px; border: 1px solid #374145; border-radius: 5px; outline: 0; color: #dce2de; background: #0e1214; font: 12px "Cascadia Code", monospace; }
+.safe-rename-dialog > form input:focus { border-color: #71804a; }
+.safe-rename-error { max-height: 80px; margin: 0 18px 12px; padding: 8px; overflow: auto; border: 1px solid #654335; border-radius: 5px; color: #d19a7a; background: #211613; font: 9px/1.5 "Cascadia Code", monospace; white-space: pre-wrap; }
+.safe-rename-files { max-height: min(430px, 50vh); overflow: auto; border-top: 1px solid #293133; border-bottom: 1px solid #293133; }
+.safe-rename-files article { border-bottom: 1px solid #232b2e; }
+.safe-rename-files article > label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 34px; padding: 0 12px; color: #aab4af; background: #101517; }
+.safe-rename-files article > label span { overflow: hidden; font: 9px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.safe-rename-files article > label b { color: #89965f; font: 8px "Cascadia Code", monospace; }
+.safe-rename-files input { accent-color: #adbd5e; }
+.safe-rename-occurrence { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 7px; padding: 5px 12px; font: 9px/1.45 "Cascadia Code", monospace; }
+.safe-rename-occurrence > span { grid-row: span 2; color: #69754d; text-align: right; }
+.safe-rename-occurrence del, .safe-rename-occurrence ins { overflow: hidden; padding: 2px 5px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.safe-rename-occurrence del { color: #bf8067; background: #3a1d1850; }
+.safe-rename-occurrence ins { color: #b3c18c; background: #24321d66; }
+.safe-rename-dialog > footer { display: flex; gap: 7px; justify-content: flex-end; padding: 12px 16px; }
+.safe-rename-dialog > footer button { min-height: 31px; padding: 0 11px; border: 1px solid #354043; border-radius: 5px; color: #aeb8b3; background: #151b1d; font-size: 10px; }
+.safe-rename-dialog > footer button.primary { border-color: #65713d; color: #e9efbf; background: #2a321c; }
+.safe-rename-dialog button:disabled { opacity: .45; }
 
 .explorer-heading { gap: 8px; }
 .panel-actions { display: flex; align-items: center; margin-left: auto; }
@@ -406,6 +434,17 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .search-match-open ins { color: #aebe83; background: #23321d7a; }
 .search-match > button:last-child { display: grid; place-items: center; width: 22px; height: 24px; margin-top: 3px; border: 0; border-radius: 4px; color: #7c8956; background: transparent; }
 .search-match > button:last-child:hover { color: var(--acid); background: #222a1d; }
+
+.outline-panel { display: flex; flex-direction: column; }
+.outline-search { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; align-items: center; height: 31px; margin: 9px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 5px; color: #68747a; background: #111619; }
+.outline-search:focus-within { border-color: #687548; }
+.outline-search input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font-size: 11px; }
+.outline-symbols { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid #171d20; }
+.outline-symbols > button { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; width: 100%; min-height: 27px; padding-top: 5px; padding-right: 34px; padding-bottom: 5px; border: 0; color: #aeb8b3; background: transparent; text-align: left; }
+.outline-symbols > button:hover { background: #161c1e; }
+.outline-symbols > button span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.outline-symbols > button small { color: #68757a; font-size: 8px; }
+.outline-symbols > button b { position: absolute; top: 7px; right: 8px; color: #748052; font: 8px "Cascadia Code", monospace; }
 
 .branch-summary { display: grid; grid-template-columns: auto 1fr; gap: 4px 7px; align-items: center; margin: 11px; padding: 11px; border: 1px solid #2a3431; border-radius: 7px; color: var(--acid); background: #141a19; }
 .branch-summary strong { overflow: hidden; color: #c9d1cc; font-size: 11px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }

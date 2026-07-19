@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC_CHANNELS, type AgentActivityEvent, type DesktopApi, type TerminalData, type TerminalExit, type WorkspaceFileChange } from '../shared/contracts'
+import {
+  IPC_CHANNELS,
+  type AgentActivityEvent,
+  type CloudAuthUpdate,
+  type DesktopApi,
+  type TerminalData,
+  type TerminalExit,
+  type WorkspaceFileChange
+} from '../shared/contracts'
 
 const desktopApi: DesktopApi = {
   platform: process.platform,
@@ -77,6 +85,11 @@ const desktopApi: DesktopApi = {
   submitAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.assignmentSubmit, request),
   openAssignmentSubmission: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.assignmentOpenSubmission, workspaceRoot),
   getCloudAuth: () => ipcRenderer.invoke(IPC_CHANNELS.cloudGetAuth),
+  onCloudAuthChanged: (callback) => {
+    const listener = (_event: IpcRendererEvent, update: CloudAuthUpdate) => callback(update)
+    ipcRenderer.on(IPC_CHANNELS.cloudAuthChanged, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.cloudAuthChanged, listener)
+  },
   getPendingClassroomInvite: () => ipcRenderer.invoke(IPC_CHANNELS.cloudGetPendingInvite),
   onClassroomInvite: (callback) => {
     const listener = (_event: IpcRendererEvent, inviteLink: string) => {
@@ -88,6 +101,9 @@ const desktopApi: DesktopApi = {
   },
   signUp: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignUp, credentials),
   signIn: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignIn, credentials),
+  requestPasswordReset: (email) => ipcRenderer.invoke(IPC_CHANNELS.cloudRequestPasswordReset, email),
+  updatePassword: (password) => ipcRenderer.invoke(IPC_CHANNELS.cloudUpdatePassword, password),
+  signInWithGoogle: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignInWithGoogle),
   signOut: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignOut),
   listClassrooms: () => ipcRenderer.invoke(IPC_CHANNELS.cloudListClassrooms),
   createClassroom: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudCreateClassroom, request),

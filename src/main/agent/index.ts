@@ -30,9 +30,10 @@ import { CodexAppServer } from './codexAppServer'
 import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
 import { ModelGateway, validateBaseUrl } from './provider'
-import { materializeProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
+import { materializeResolvedProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
-import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
+import { changeConceptDraftSchema, learningDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
+import { runWorkspaceAgent } from './workspaceAgent'
 import type { UnderstandingController } from '../understanding'
 
 type InternalSession = {
@@ -76,11 +77,6 @@ const maxRequestLength = 4_000
 
 function hash(content: string): string {
   return createHash('sha256').update(content).digest('hex')
-}
-
-function createdFilePatch(relativePath: string, content: string): string {
-  const added = content.split(/\r?\n/).map((line) => `+${line}`).join('\n')
-  return `--- /dev/null\n+++ after/${relativePath}\n${added}`.slice(0, 18_000)
 }
 
 function cleanError(error: unknown, secret?: string | null): Error {
@@ -259,13 +255,14 @@ export function registerAgentHandlers(
       signal: AbortSignal,
       onProtocolEvent?: (method: string, detail: string) => void
     ) => Promise<T>,
-    activity?: { sender: WebContents; runId: string }
+    activity?: { sender: WebContents; runId: string },
+    timeoutMs = 120_000
   ): Promise<T> {
     if (activeController) throw new Error('Another AI request is already running.')
     const controller = new AbortController()
     activeController = controller
     activeActivity = activity ?? null
-    const timeout = setTimeout(() => controller.abort(), 120_000)
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     const key = readApiKey()
     try {
       const onProtocolEvent = activity
@@ -461,24 +458,17 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     await assertSessionPolicy(session, rootPath, true)
     const runId = session.publicSession.runId
     emitPhase(event.sender, runId, 'proposal', 'Preparing proposed files', 'active')
-    const currentContext = await buildWorkspaceContext(rootPath, session.contextRequest)
-
-    const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
-      'proposal',
-      `Create a minimal, production-quality implementation for the request below.
-Use only relative workspace paths. For an update, return exact oldText/newText edits instead of the complete file.
-Copy oldText verbatim from the supplied workspace file and include only enough surrounding text to make it unique.
-Keep each edit to one contiguous changed region; unchanged context may appear only at its start or end.
-Never overlap edits, and preserve every byte outside them. For an empty existing file, use one edit with empty oldText.
-Only create actions may return complete UTF-8 file contents. Only update files whose contents were supplied.
-You may create or update files, but never delete files. Do not modify secrets, .git, or node_modules.
-Prefer the smallest coherent change and include concrete verification steps.
-
-<user-request>\n${session.publicSession.request}\n</user-request>\n\n${currentContext}`,
-      proposalDraftSchema,
+    const draft = await runModel((gateway, signal, onProtocolEvent) => runWorkspaceAgent({
+      rootPath,
+      request: session.publicSession.request,
+      model: gateway,
       signal,
-      onProtocolEvent
-    ), { sender: event.sender, runId })
+      onProtocolEvent,
+      onActivity: (label, detail) => emitPhase(event.sender, runId, 'model', label, 'active', detail)
+    }), { sender: event.sender, runId }, 8 * 60_000)
+    if (getWorkspaceRoot() !== session.workspaceRoot) {
+      throw new Error('The workspace changed while the agent was working. Generate a fresh proposal in the active workspace.')
+    }
     emitPhase(event.sender, runId, 'validation', 'Validating proposed file changes', 'active')
 
     const internalChanges: InternalChange[] = []
@@ -498,9 +488,12 @@ Prefer the smallest coherent change and include concrete verification steps.
         if (!resolvedPath || !isPathInside(rootPath, resolvedPath)) throw new Error(`Cannot update missing file: ${change.relativePath}`)
         absolutePath = resolvedPath
         const existing = await fs.readFile(resolvedPath, 'utf8')
+        if (existing !== change.originalContent || !change.edits) {
+          throw new Error(`${change.relativePath} changed while the agent was working. Generate a fresh proposal.`)
+        }
         beforeContent = existing
         expectedHash = hash(existing)
-        const materialized = materializeProposalEdits(existing, change.edits, change.relativePath)
+        const materialized = materializeResolvedProposalEdits(existing, change.edits, change.relativePath)
         content = materialized.content
         surgicalEdits = materialized.edits
         additions = materialized.additions
@@ -518,9 +511,9 @@ Prefer the smallest coherent change and include concrete verification steps.
         }
         if (change.content.includes('\0')) throw new Error(`The proposed content for ${change.relativePath} is invalid.`)
         content = change.content
-        additions = content.split(/\r?\n/).length
-        deletions = 0
-        patch = createdFilePatch(change.relativePath, content)
+        additions = change.additions
+        deletions = change.deletions
+        patch = change.patch
       }
       const canonicalProposalPath = process.platform === 'win32' ? absolutePath.toLowerCase() : absolutePath
       if (proposedPaths.has(canonicalProposalPath)) throw new Error(`The model proposed ${change.relativePath} more than once.`)

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Editor, { loader, type BeforeMount } from '@monaco-editor/react'
-import { motion } from 'framer-motion'
-import { BookOpenCheck, FileText, FolderOpen, Save, Sparkles, X } from 'lucide-react'
+import { FileText, FolderOpen, Save, Sparkles, X } from 'lucide-react'
 import * as monaco from 'monaco-editor'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
@@ -207,21 +206,9 @@ export function EditorPane({
   if (!activeDocument) {
     return (
       <main className="editor-pane welcome-pane">
-        <motion.div
-          animate={{ opacity: 1, y: 0 }}
-          className="welcome-card"
-          initial={{ opacity: 0, y: 14 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="welcome-kicker"><BookOpenCheck size={14} /> Learning workbench</div>
-          <h1>
-            {hasWorkspace ? <>Pick a file.<br /><em>Start</em> by reading.</> : <>Understand the change.<br /><em>Then</em> write the code.</>}
-          </h1>
-          <p>
-            {hasWorkspace
-              ? 'Choose a file from Explorer to open it in the editor. The learning gate will sit between intent and AI-generated changes.'
-              : 'Open a project to start reading and editing. The learning gate will sit between intent and AI-generated changes.'}
-          </p>
+        <div className="welcome-card">
+          <h1>Wormie</h1>
+          <h2>Start</h2>
           {hasWorkspace ? (
             <button
               className="welcome-action"
@@ -230,19 +217,14 @@ export function EditorPane({
               type="button"
             >
               <FileText size={17} />
-              {openingFile ? 'Opening...' : suggestedFileName ? `Open ${suggestedFileName}` : 'No text files found'}
+              {openingFile ? 'Opening...' : suggestedFileName ? `Open ${suggestedFileName}` : 'No files found'}
             </button>
           ) : (
             <button className="welcome-action" onClick={onOpenWorkspace} type="button">
-              <FolderOpen size={17} /> Open a project
+              <FolderOpen size={17} /> Open folder
             </button>
           )}
-          <div className="welcome-sequence" aria-label="Core workflow">
-            <span><b>01</b> Learn</span>
-            <span><b>02</b> Prove</span>
-            <span><b>03</b> Build</span>
-          </div>
-        </motion.div>
+        </div>
       </main>
     )
   }

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { app, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import {
@@ -12,11 +12,13 @@ import {
   type ClassroomPublishRequest,
   type CloudAuthCredentials,
   type CloudAuthState,
+  type CloudAuthUpdate,
   type WorkspaceSnapshot
 } from '../../shared/contracts'
 import { createAssignmentPackage, importAssignmentPackage } from '../assignments/package'
 import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
 import { inviteCodeFrom } from './invite'
+import { authCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
@@ -24,6 +26,8 @@ const credentialsSchema = z.object({
   email: z.email().max(320).transform((value) => value.trim().toLowerCase()),
   password: z.string().min(8).max(128)
 }).strict()
+const emailSchema = z.email().max(320).transform((value) => value.trim().toLowerCase())
+const passwordSchema = z.string().min(8).max(128)
 const createClassroomSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000)
@@ -76,10 +80,11 @@ function authError(error: unknown, action: 'sign-in' | 'sign-up'): Error {
   return cleanError(error, action === 'sign-in' ? 'Could not sign in.' : 'Could not create your account.')
 }
 
-function authState(user: { id: string; email?: string | null } | null, emailConfirmationRequired = false): CloudAuthState {
+function authState(user: { id: string; email?: string | null } | null, emailConfirmationRequired = false, passwordResetRequired = false): CloudAuthState {
   return {
     user: user?.email ? { id: user.id, email: user.email } : null,
-    ...(emailConfirmationRequired ? { emailConfirmationRequired: true } : {})
+    ...(emailConfirmationRequired ? { emailConfirmationRequired: true } : {}),
+    ...(passwordResetRequired ? { passwordResetRequired: true } : {})
   }
 }
 
@@ -92,15 +97,22 @@ export function registerCloudHandlers(
   getWorkspaceRoot: () => string | null,
   setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
-  takePendingInvite: () => string | null
-): void {
+  takePendingInvite: () => string | null,
+  notifyAuthChanged: (update: CloudAuthUpdate) => void
+): { handleAuthCallback: (callback: AuthCallback) => Promise<void> } {
   const client = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      flowType: 'pkce',
       persistSession: true,
       storage: new SecureAuthStorage()
     }
+  })
+  let callbackExchange = Promise.resolve()
+  let passwordRecoveryEvent = false
+  client.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') passwordRecoveryEvent = true
   })
 
   function assertTrusted(event: IpcMainInvokeEvent): void {
@@ -181,6 +193,7 @@ export function registerCloudHandlers(
 
   ipcMain.handle(IPC_CHANNELS.cloudGetAuth, async (event): Promise<CloudAuthState> => {
     assertTrusted(event)
+    await callbackExchange
     const { data, error } = await client.auth.getSession()
     if (error) throw cleanError(error, 'Could not restore your account session.')
     return authState(data.session?.user ?? null)
@@ -197,7 +210,10 @@ export function registerCloudHandlers(
     const { data, error } = await client.auth.signUp({
       email: credentials.email,
       password: credentials.password,
-      options: { data: { display_name: credentials.email.split('@')[0] } }
+      options: {
+        data: { display_name: credentials.email.split('@')[0] },
+        emailRedirectTo: authCallbackUrl
+      }
     })
     if (error) throw authError(error, 'sign-up')
     return authState(data.session?.user ?? null, Boolean(data.user && !data.session))
@@ -209,6 +225,44 @@ export function registerCloudHandlers(
     const { data, error } = await client.auth.signInWithPassword(credentials)
     if (error) throw authError(error, 'sign-in')
     return authState(data.user)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudRequestPasswordReset, async (event, input: string): Promise<void> => {
+    assertTrusted(event)
+    const { error } = await client.auth.resetPasswordForEmail(emailSchema.parse(input), { redirectTo: authCallbackUrl })
+    if (error) throw authError(error, 'sign-in')
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudUpdatePassword, async (event, input: string): Promise<CloudAuthState> => {
+    assertTrusted(event)
+    const { data, error } = await client.auth.updateUser({ password: passwordSchema.parse(input) })
+    if (error) throw authError(error, 'sign-in')
+    return authState(data.user)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudSignInWithGoogle, async (event): Promise<void> => {
+    assertTrusted(event)
+    const { data, error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: authCallbackUrl,
+        skipBrowserRedirect: true
+      }
+    })
+    if (error) throw authError(error, 'sign-in')
+    if (!data.url) throw new Error('Could not start Google sign-in.')
+
+    const authorizationUrl = new URL(data.url)
+    const projectUrl = new URL(supabaseUrl)
+    if (
+      authorizationUrl.protocol !== 'https:' ||
+      authorizationUrl.hostname !== projectUrl.hostname ||
+      authorizationUrl.pathname !== '/auth/v1/authorize' ||
+      authorizationUrl.username ||
+      authorizationUrl.password
+    ) throw new Error('Supabase returned an invalid Google sign-in address.')
+
+    await shell.openExternal(authorizationUrl.toString())
   })
 
   ipcMain.handle(IPC_CHANNELS.cloudSignOut, async (event): Promise<void> => {
@@ -329,4 +383,27 @@ export function registerCloudHandlers(
       await fs.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
   })
+
+  return {
+    handleAuthCallback: (callback) => {
+      callbackExchange = callbackExchange.then(async () => {
+        try {
+          if (callback.kind === 'error') {
+            notifyAuthChanged({ auth: null, error: 'This sign-in or confirmation link could not be completed. Request a new link and try again.' })
+            return
+          }
+          passwordRecoveryEvent = false
+          const { data, error } = await client.auth.exchangeCodeForSession(callback.code)
+          if (error) {
+            notifyAuthChanged({ auth: null, error: authError(error, 'sign-in').message })
+            return
+          }
+          notifyAuthChanged({ auth: authState(data.user, false, passwordRecoveryEvent), error: null })
+        } catch (error) {
+          notifyAuthChanged({ auth: null, error: authError(error, 'sign-in').message })
+        }
+      })
+      return callbackExchange
+    }
+  }
 }

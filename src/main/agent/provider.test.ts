@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CodexAppServer } from './codexAppServer'
-import { isLoopbackUrl, ModelGateway, schemaSummary, validateBaseUrl } from './provider'
+import { isLoopbackUrl, listOpenAICompatibleModels, ModelGateway, schemaSummary, validateBaseUrl } from './provider'
 import { remediationDraftSchema } from './schemas'
 
 describe('validateBaseUrl', () => {
@@ -112,11 +112,35 @@ describe('structured output fallback', () => {
   })
 })
 
+describe('OpenAI-compatible model listing', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('loads, validates, and deduplicates provider model IDs', async () => {
+    const requests: Array<{ url: unknown; authorization: string | null }> = []
+    vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
+      requests.push({ url, authorization: new Headers(init?.headers).get('authorization') })
+      return new Response(JSON.stringify({ data: [
+        { id: 'model-b' }, { id: 'model-a' }, { id: 'model-b' }, { id: 'bad\nmodel' }, { nope: true }
+      ] }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+
+    await expect(listOpenAICompatibleModels('https://api.example.com/v1', 'secret')).resolves.toEqual([
+      { id: 'model-b', displayName: 'model-b', description: '' },
+      { id: 'model-a', displayName: 'model-a', description: '' }
+    ])
+    expect(requests).toEqual([{ url: 'https://api.example.com/v1/models', authorization: 'Bearer secret' }])
+  })
+})
+
 describe('proposal output contract', () => {
   it('tells OpenAI-compatible models to use edits only for updates', () => {
     const summary = schemaSummary('proposal')
     expect(summary).toContain('"edits"?: [{ "oldText": string, "newText": string }]')
     expect(summary).toContain('For action "create", content is required and edits must be omitted.')
     expect(summary).toContain('For action "update", edits are required and content must be omitted.')
+  })
+
+  it('describes the read-only guidance response used by Ask and Plan modes', () => {
+    expect(schemaSummary('guidance')).toContain('"nextSteps": [string]')
   })
 })

@@ -10,6 +10,7 @@ import {
   type AgentActivityFile,
   type AgentActivityPhase,
   type AgentConfigUpdate,
+  type AgentRunResult,
   type ApplyProposalRequest,
   type AppliedProposal,
   type CodeProposal,
@@ -29,10 +30,10 @@ import { buildWorkspaceContext } from './context'
 import { CodexAppServer } from './codexAppServer'
 import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
-import { ModelGateway, validateBaseUrl } from './provider'
+import { listOpenAICompatibleModels, ModelGateway, validateBaseUrl } from './provider'
 import { materializeResolvedProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
-import { changeConceptDraftSchema, learningDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
+import { changeConceptDraftSchema, guidanceDraftSchema, learningDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
 import { runWorkspaceAgent } from './workspaceAgent'
 import type { UnderstandingController } from '../understanding'
 
@@ -341,6 +342,17 @@ export function registerAgentHandlers(
 
   ipcMain.handle(IPC_CHANNELS.agentListCodexModels, () => codexRuntime.listModels())
 
+  ipcMain.handle(IPC_CHANNELS.agentListModels, async () => {
+    const config = getConfig()
+    if (config.provider === 'codex-account') return codexRuntime.listModels()
+    const key = readApiKey()
+    try {
+      return await listOpenAICompatibleModels(config.baseUrl, key.value)
+    } catch (error) {
+      throw cleanError(error, key.value)
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.agentSetPassingScore, (_event, rawScore: number): number => {
     if (!Number.isInteger(rawScore) || rawScore < 60 || rawScore > 100) throw new Error('Passing score must be between 60 and 100.')
     store.set('learningPassingScore', rawScore)
@@ -384,19 +396,22 @@ export function registerAgentHandlers(
     return getConfig()
   })
 
-  ipcMain.handle(IPC_CHANNELS.agentStartLearning, async (event, request: LearningRequest): Promise<LearningSession> => {
+  ipcMain.handle(IPC_CHANNELS.agentStartLearning, async (event, request: LearningRequest): Promise<AgentRunResult> => {
     pruneExpired()
     const runId = validateRunId(request?.runId)
     const rootPath = getWorkspaceRoot()
     if (!rootPath) throw new Error('Open a workspace before asking the tutor for a code change.')
     const intent = typeof request?.request === 'string' ? request.request.trim() : ''
     if (!intent || intent.length > maxRequestLength) throw new Error('Describe the change in 1 to 4,000 characters.')
+    const mode = request?.mode ?? 'agent'
+    if (!['ask', 'plan', 'agent'].includes(mode)) throw new Error('Choose Ask, Plan, or Agent mode.')
     const assignmentPolicy = await currentAssignmentPolicy(rootPath)
     const passingScore = assignmentPolicy.passingScore
-    const imagePaths = await validateImageAttachments(request.imagePaths)
+    const imagePaths = await validateImageAttachments(request?.imagePaths)
     const contextRequest: LearningRequest = {
       runId,
       request: intent,
+      mode,
       activePath: typeof request.activePath === 'string' ? request.activePath : null,
       openPaths: Array.isArray(request.openPaths)
         ? request.openPaths.filter((filePath): filePath is string => typeof filePath === 'string').slice(0, 6)
@@ -406,10 +421,37 @@ export function registerAgentHandlers(
     emitPhase(event.sender, runId, 'context', 'Gathering workspace context', 'active')
     const context = await buildWorkspaceContext(rootPath, contextRequest)
     emitPhase(event.sender, runId, 'context', 'Workspace context ready', 'completed', `${contextRequest.openPaths?.length ?? 0} open files considered`)
-    emitPhase(event.sender, runId, 'learning', 'Preparing the learning plan', 'active')
     const attachmentNote = imagePaths.length
       ? `\n\nThe user attached ${imagePaths.length} screenshot${imagePaths.length === 1 ? '' : 's'} to this request. Use them as visual context.`
       : ''
+
+    if (mode !== 'agent') {
+      const planning = mode === 'plan'
+      emitPhase(event.sender, runId, 'learning', planning ? 'Researching an implementation plan' : 'Researching your question', 'active')
+      const instruction = planning
+        ? `Research the requested change in the supplied workspace and produce a concrete implementation plan. Do not generate implementation code or edit files. Explain the relevant concepts, identify likely files and symbols, order the work, call out risks, and include verification steps.`
+        : `Answer the user's question using the supplied workspace as evidence. Explain the relevant concepts and reference likely files or symbols. Do not propose file edits or generate a full implementation.`
+      const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
+        'guidance',
+        `${instruction}\n\n<user-request>\n${intent}\n</user-request>${attachmentNote}\n\n${context}`,
+        guidanceDraftSchema,
+        signal,
+        onProtocolEvent,
+        imagePaths.length ? { imagePaths } : undefined
+      ), { sender: event.sender, runId })
+      emitPhase(event.sender, runId, 'validation', planning ? 'Plan validated' : 'Answer validated', 'completed')
+      await recordAssignmentActivity(rootPath, {
+        type: 'learning',
+        request: intent,
+        concepts: draft.sections.map((section) => section.title),
+        lessonSummary: draft.summary
+      })
+      emitPhase(event.sender, runId, 'learning', planning ? 'Plan ready' : 'Answer ready', 'completed', `${draft.sections.length} section${draft.sections.length === 1 ? '' : 's'}`)
+      emitPhase(event.sender, runId, 'complete', planning ? 'Planning complete' : 'Answer complete', 'completed')
+      return { id: randomUUID(), runId, mode, request: intent, ...draft }
+    }
+
+    emitPhase(event.sender, runId, 'learning', 'Preparing the learning plan', 'active')
     const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'learning',
       `Analyze this requested change and teach only the prerequisite concepts. Do not provide implementation code yet.
@@ -432,6 +474,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     const publicSession: LearningSession = {
       id: sessionId,
       runId,
+      mode: 'agent',
       request: intent,
       concepts: draft.concepts,
       lessonSummary: draft.lessonSummary,

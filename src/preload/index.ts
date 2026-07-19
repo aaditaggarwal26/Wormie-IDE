@@ -43,6 +43,7 @@ const desktopApi: DesktopApi = {
   getCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentGetCodexAccount),
   connectCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentConnectCodexAccount),
   listCodexModels: () => ipcRenderer.invoke(IPC_CHANNELS.agentListCodexModels),
+  listAgentModels: () => ipcRenderer.invoke(IPC_CHANNELS.agentListModels),
   pathForFile: (file) => webUtils.getPathForFile(file),
   startLearning: (request) => ipcRenderer.invoke(IPC_CHANNELS.agentStartLearning, request),
   submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),

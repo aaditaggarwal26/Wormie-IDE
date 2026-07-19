@@ -9,8 +9,10 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   LockKeyhole,
+  Plus,
   RotateCcw,
   Send,
+  Settings2,
   ShieldCheck,
   Square,
   UnlockKeyhole,
@@ -26,7 +28,16 @@ import {
   reduceAgentActivity,
   type AgentActivityViewState
 } from '@/components/agentActivityModel'
-import type { CodeProposal, LearningSession, QuizResult } from '@shared/contracts'
+import type {
+  AgentConfig,
+  AgentGuidanceSession,
+  AgentMode,
+  AgentModelOption,
+  AgentRunResult,
+  CodeProposal,
+  LearningSession,
+  QuizResult
+} from '@shared/contracts'
 import { proposalReviewProgress } from '@/components/proposalReviewModel'
 
 function errorMessage(error: unknown): string {
@@ -42,7 +53,10 @@ export function TutorPane(): React.JSX.Element {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [dragActive, setDragActive] = useState(false)
   const [pendingRequest, setPendingRequest] = useState<string | null>(null)
+  const [pendingMode, setPendingMode] = useState<AgentMode>('agent')
+  const [mode, setMode] = useState<AgentMode>('agent')
   const [session, setSession] = useState<LearningSession | null>(null)
+  const [guidance, setGuidance] = useState<AgentGuidanceSession | null>(null)
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null)
   const [quizAttempts, setQuizAttempts] = useState(0)
@@ -50,12 +64,17 @@ export function TutorPane(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [activityOpen, setActivityOpen] = useState(false)
   const [activityState, setActivityState] = useState<AgentActivityViewState | null>(null)
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
+  const [modelOptions, setModelOptions] = useState<AgentModelOption[]>([])
+  const [modelSaving, setModelSaving] = useState(false)
   const activeRunId = useRef<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const workspace = useWorkbench((state) => state.workspace)
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
   const setWorkspace = useWorkbench((state) => state.setWorkspace)
+  const setActivity = useWorkbench((state) => state.setActivity)
   const openDocument = useWorkbench((state) => state.openDocument)
   const addOutput = useWorkbench((state) => state.addOutput)
   const proposalReview = useWorkbench((state) => state.proposalReview)
@@ -67,6 +86,17 @@ export function TutorPane(): React.JSX.Element {
     () => documents.filter((document) => document.content !== document.savedContent),
     [documents]
   )
+  const availableModels = useMemo(() => {
+    const options = [...modelOptions]
+    if (agentConfig && !options.some((option) => option.id === agentConfig.model)) {
+      options.unshift({
+        id: agentConfig.model,
+        displayName: agentConfig.model || 'Provider default',
+        description: agentConfig.model ? 'Currently selected model' : 'Let the provider choose the model'
+      })
+    }
+    return options
+  }, [agentConfig, modelOptions])
 
   useEffect(() => window.desktop.onAgentActivity((event) => {
     if (!isRenderableAgentActivity(event) || event.runId !== activeRunId.current) return
@@ -79,17 +109,42 @@ export function TutorPane(): React.JSX.Element {
     setActivityOpen(true)
   }
 
-  const learningMutation = useMutation<LearningSession, Error, { runId: string; intent: string; imagePaths: string[] }>({
-    mutationFn: ({ runId, intent, imagePaths }) => window.desktop.startLearning({
+  useEffect(() => {
+    let active = true
+    void window.desktop.getAgentConfig()
+      .then((config) => {
+        if (!active) return
+        setAgentConfig(config)
+        void window.desktop.listAgentModels()
+          .then((options) => {
+            if (active) setModelOptions(options)
+          })
+          .catch(() => undefined)
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause))
+      })
+    return () => { active = false }
+  }, [])
+
+  const learningMutation = useMutation<AgentRunResult, Error, { runId: string; intent: string; mode: AgentMode; imagePaths: string[] }>({
+    mutationFn: ({ runId, intent, mode: requestMode, imagePaths }) => window.desktop.startLearning({
       runId,
       request: intent,
+      mode: requestMode,
       activePath,
       openPaths: documents.map((document) => document.path),
       imagePaths
     }),
     onMutate: () => setError(null),
-    onSuccess: (nextSession) => {
-      setSession(nextSession)
+    onSuccess: (result) => {
+      if (result.mode === 'agent') {
+        setSession(result)
+        setGuidance(null)
+      } else {
+        setGuidance(result)
+        setSession(null)
+      }
       setAnswers({})
       setQuizResult(null)
       setQuizAttempts(0)
@@ -157,7 +212,7 @@ export function TutorPane(): React.JSX.Element {
     if (!node) return
     if (learningMutation.isPending || error) node.scrollTop = node.scrollHeight
     else node.scrollTop = 0
-  }, [session?.id, proposal?.id, error, learningMutation.isPending])
+  }, [session?.id, guidance?.id, proposal?.id, error, learningMutation.isPending])
   const proposalUnlocked = !proposal?.understanding?.significance.quizRequired || proposal.understanding.gate?.unlocked === true
   const reviewProgress = proposalReview ? proposalReviewProgress(proposalReview.files) : null
   const reviewHasDirtyConflict = proposalReview?.files.some((file) => {
@@ -173,8 +228,25 @@ export function TutorPane(): React.JSX.Element {
     setActivityState(initialAgentActivityState(runId))
     setActivityOpen(true)
     setRequest('')
+    setGuidance(null)
     setPendingRequest(intent)
-    learningMutation.mutate({ runId, intent, imagePaths: attachments.map((attachment) => attachment.path) })
+    setPendingMode(mode)
+    learningMutation.mutate({ runId, intent, mode, imagePaths: attachments.map((attachment) => attachment.path) })
+  }
+
+  const selectModel = (nextModel: string) => {
+    if (!agentConfig || modelSaving || nextModel === agentConfig.model) return
+    const previous = agentConfig
+    setAgentConfig({ ...agentConfig, model: nextModel })
+    setModelSaving(true)
+    void window.desktop.saveAgentConfig({
+      provider: agentConfig.provider,
+      model: nextModel,
+      baseUrl: agentConfig.baseUrl
+    }).then(setAgentConfig).catch((cause) => {
+      setAgentConfig(previous)
+      reportError(cause)
+    }).finally(() => setModelSaving(false))
   }
 
   const addDroppedFiles = (files: File[]) => {
@@ -224,6 +296,7 @@ export function TutorPane(): React.JSX.Element {
     if (proposal) void window.desktop.rejectProposal(proposal.id).catch((cause) => addOutput(`Could not record proposal rejection: ${errorMessage(cause)}`))
     discardProposalReview()
     setSession(null)
+    setGuidance(null)
     setAnswers({})
     setQuizResult(null)
     setQuizAttempts(0)
@@ -231,6 +304,7 @@ export function TutorPane(): React.JSX.Element {
     setError(null)
     setAttachments([])
     setPendingRequest(null)
+    setPendingMode('agent')
     setActivityState(null)
     activeRunId.current = null
     setActivityOpen(false)
@@ -274,7 +348,7 @@ export function TutorPane(): React.JSX.Element {
       )}
 
       <div className="tutor-scroll" ref={scrollRef}>
-        {!session && !pendingRequest && (
+        {!session && !guidance && !pendingRequest && (
           <div className="agent-empty">
             <h3>Ask about your code</h3>
             <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review. Drop screenshots onto this panel to attach them.</p>
@@ -286,8 +360,37 @@ export function TutorPane(): React.JSX.Element {
             <div className="chat-user-message">{pendingRequest}</div>
             <div className="chat-working">
               <LoaderCircle className="spin" size={13} />
-              <span>Wormie is preparing your lesson…</span>
+              <span>{pendingMode === 'plan'
+                ? 'Wormie is researching an implementation plan…'
+                : pendingMode === 'ask'
+                  ? 'Wormie is researching your question…'
+                  : 'Wormie is preparing your lesson…'}</span>
             </div>
+          </div>
+        )}
+
+        {guidance && !pendingRequest && (
+          <div className="guidance-session">
+            <div className="chat-user-message">{guidance.request}</div>
+            <div className="session-toolbar">
+              <span>{guidance.mode === 'plan' ? 'Plan mode · no edits' : 'Ask mode · no edits'}</span>
+              <button onClick={reset} type="button"><RotateCcw size={12} /> Clear</button>
+            </div>
+            <div className="lesson-summary">{guidance.summary}</div>
+            <div className="guidance-sections">
+              {guidance.sections.map((section, index) => (
+                <section key={`${section.title}-${index}`}>
+                  <h4>{section.title}</h4>
+                  <p>{section.content}</p>
+                </section>
+              ))}
+            </div>
+            {guidance.nextSteps.length > 0 && (
+              <div className="guidance-next-steps">
+                <b>Next steps</b>
+                <ol>{guidance.nextSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}</ol>
+              </div>
+            )}
           </div>
         )}
 
@@ -464,16 +567,68 @@ export function TutorPane(): React.JSX.Element {
                 event.preventDefault()
                 startLearning()
               }}
-              placeholder="Ask Wormie · drop screenshots to attach"
+              placeholder={mode === 'plan' ? 'Describe what to plan' : mode === 'ask' ? 'Ask about your code' : 'Describe what to build'}
               rows={1}
               value={request}
             />
             <div className="composer-meta">
-              <span>{workspace ? `${documents.length} open file${documents.length === 1 ? '' : 's'}` : 'Open a folder'}</span>
+              <input
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                aria-label="Attach screenshots"
+                hidden
+                multiple
+                onChange={(event) => {
+                  addDroppedFiles(Array.from(event.currentTarget.files ?? []))
+                  event.currentTarget.value = ''
+                }}
+                ref={attachmentInputRef}
+                type="file"
+              />
+              <button
+                aria-label="Attach screenshots"
+                className="composer-tool"
+                disabled={busy || attachments.length >= maxAttachments}
+                onClick={() => attachmentInputRef.current?.click()}
+                title="Attach screenshots"
+                type="button"
+              ><Plus size={15} /></button>
+              <select
+                aria-label="Agent mode"
+                className="composer-select composer-mode-select"
+                disabled={busy}
+                onChange={(event) => setMode(event.target.value as AgentMode)}
+                title="Choose how Wormie responds"
+                value={mode}
+              >
+                <option value="agent">Agent</option>
+                <option value="plan">Plan</option>
+                <option value="ask">Ask</option>
+              </select>
+              <select
+                aria-label="AI model"
+                className="composer-select composer-model-select"
+                disabled={busy || modelSaving || !agentConfig}
+                onChange={(event) => selectModel(event.target.value)}
+                title={agentConfig ? `${agentConfig.provider} model` : 'Loading model'}
+                value={agentConfig?.model ?? ''}
+              >
+                {!agentConfig && <option value="">Loading model…</option>}
+                {availableModels.map((option) => (
+                  <option key={option.id || 'provider-default'} title={option.description} value={option.id}>{option.displayName}</option>
+                ))}
+              </select>
+              <button
+                aria-label="Agent settings"
+                className="composer-tool"
+                disabled={busy}
+                onClick={() => setActivity('settings')}
+                title="Agent settings"
+                type="button"
+              ><Settings2 size={14} /></button>
               {busy ? (
                 <button
                   aria-label="Stop the AI request"
-                  className="composer-stop"
+                  className="composer-submit composer-stop"
                   onClick={() => window.desktop.cancelAgent()}
                   title="Stop"
                   type="button"
@@ -482,6 +637,7 @@ export function TutorPane(): React.JSX.Element {
                 </button>
               ) : (
                 <button
+                  className="composer-submit"
                   disabled={!workspace || !request.trim() || dirtyDocuments.length > 0}
                   onClick={startLearning}
                   title={dirtyDocuments.length > 0 ? 'Save open changes before starting' : 'Send'}
@@ -496,10 +652,10 @@ export function TutorPane(): React.JSX.Element {
         </div>
       )}
 
-      <div className="unlock-bar" data-unlocked={Boolean(quizResult?.passed)}>
-        {busy ? <Square size={12} /> : quizResult?.passed ? <UnlockKeyhole size={14} /> : <LockKeyhole size={14} />}
+      <div className="unlock-bar" data-unlocked={Boolean(guidance || quizResult?.passed)}>
+        {busy ? <Square size={12} /> : guidance ? <ShieldCheck size={14} /> : quizResult?.passed ? <UnlockKeyhole size={14} /> : <LockKeyhole size={14} />}
         <button onClick={() => busy && window.desktop.cancelAgent()} type="button">
-          {busy ? 'Stop' : quizResult?.passed ? 'Unlocked' : 'Locked'}
+          {busy ? 'Stop' : guidance ? `${guidance.mode === 'plan' ? 'Plan' : 'Ask'} · read only` : quizResult?.passed ? 'Unlocked' : 'Locked'}
         </button>
       </div>
     </aside>

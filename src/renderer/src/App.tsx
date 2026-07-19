@@ -732,7 +732,6 @@ export default function App(): React.JSX.Element {
           <span>Search commands</span>
           <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} K</kbd>
         </button>
-        <div className="titlebar-workspace">{workspace?.name ?? 'No workspace'}</div>
       </header>
 
       <div

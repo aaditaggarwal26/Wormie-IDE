@@ -42,13 +42,16 @@ describe('authenticated product modes', () => {
       classrooms={[classroom]}
       error={null}
       onBack={action}
+      onAddStudent={action}
       onCopyInvite={action}
       onCreate={action}
       onJoin={action}
+      onLeaveClassroom={action}
       onAuthorAssignment={action}
       onOpenAssignment={action}
       onPublish={action}
       onRefresh={action}
+      onRemoveStudent={action}
       onRotateInvite={action}
       onSelectClassroom={action}
       onSelectTab={action}
@@ -63,5 +66,38 @@ describe('authenticated product modes', () => {
     expect(markup).not.toContain('class="workbench"')
     expect(markup).not.toContain('activity-rail')
     expect(markup).not.toContain('terminal-workbench')
+  })
+
+  it('shows roster management only to teachers', () => {
+    const renderPortal = (value: Classroom) => renderToStaticMarkup(<ClassroomPortal
+      actionVersion={0}
+      assignment={null}
+      busy={false}
+      classrooms={[value]}
+      error={null}
+      onAddStudent={action}
+      onAuthorAssignment={action}
+      onBack={action}
+      onCopyInvite={action}
+      onCreate={action}
+      onJoin={action}
+      onLeaveClassroom={action}
+      onOpenAssignment={action}
+      onPublish={action}
+      onRefresh={action}
+      onRemoveStudent={action}
+      onRotateInvite={action}
+      onSelectClassroom={action}
+      onSelectTab={action}
+      onSignOut={action}
+      selectedClassroomId={value.id}
+      selectedTab="people"
+      user={{ id: 'user-1', email: 'user@example.com' }}
+      workspace={null}
+    />)
+
+    expect(renderPortal(classroom)).toContain('Add student')
+    expect(renderPortal({ ...classroom, role: 'student' })).not.toContain('Add student')
+    expect(renderPortal({ ...classroom, role: 'student' })).toContain('Leave classroom')
   })
 })

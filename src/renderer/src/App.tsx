@@ -539,6 +539,36 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const addClassroomStudentMutation = useMutation({
+    mutationFn: ({ classroomId, email }: { classroomId: string; email: string }) => window.desktop.addClassroomStudent(classroomId, email),
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const removeClassroomStudentMutation = useMutation({
+    mutationFn: ({ classroomId, userId }: { classroomId: string; userId: string }) => window.desktop.removeClassroomStudent(classroomId, userId),
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const leaveClassroomMutation = useMutation({
+    mutationFn: window.desktop.leaveClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const publishAssignmentMutation = useMutation({
     mutationFn: window.desktop.publishAssignment,
     onSuccess: (result) => {
@@ -874,6 +904,9 @@ export default function App(): React.JSX.Element {
     createClassroomMutation.isPending ||
     joinClassroomMutation.isPending ||
     rotateInviteMutation.isPending ||
+    addClassroomStudentMutation.isPending ||
+    removeClassroomStudentMutation.isPending ||
+    leaveClassroomMutation.isPending ||
     publishAssignmentMutation.isPending ||
     openClassroomAssignmentMutation.isPending ||
     authorClassroomAssignmentMutation.isPending ||
@@ -973,13 +1006,16 @@ export default function App(): React.JSX.Element {
         }}
         onCreate={(request) => createClassroomMutation.mutate(request)}
         onJoin={(invite) => joinClassroomMutation.mutate(invite)}
+        onAddStudent={(classroomId, email) => addClassroomStudentMutation.mutate({ classroomId, email })}
         onAuthorAssignment={authorClassroomAssignment}
         onOpenAssignment={openClassroomAssignment}
         onPublish={(classroomId) => {
           if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
         }}
         onRefresh={() => classroomListMutation.mutate()}
+        onRemoveStudent={(classroomId, userId) => removeClassroomStudentMutation.mutate({ classroomId, userId })}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
+        onLeaveClassroom={(classroomId) => leaveClassroomMutation.mutate(classroomId)}
         onSelectClassroom={(classroomId) => navigateClassrooms(classroomId, applicationMode.tab)}
         onSelectTab={(tab) => navigateClassrooms(applicationMode.classroomId, tab)}
         onSignOut={() => signOutMutation.mutate()}

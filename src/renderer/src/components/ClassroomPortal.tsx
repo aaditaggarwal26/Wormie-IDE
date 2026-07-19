@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, BookOpenCheck, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import { ArrowLeft, BookOpenCheck, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
 import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
@@ -16,13 +16,16 @@ type ClassroomPortalProps = {
   user: CloudUser
   workspace: WorkspaceSnapshot | null
   onBack: () => void
+  onAddStudent: (classroomId: string, email: string) => void
   onCopyInvite: (inviteLink: string) => void
   onCreate: (request: ClassroomCreateRequest) => void
   onJoin: (invite: string) => void
+  onLeaveClassroom: (classroomId: string) => void
   onAuthorAssignment: (classroom: Classroom) => void
   onOpenAssignment: (classroom: Classroom, assignmentId: string) => void
   onPublish: (classroomId: string) => void
   onRefresh: () => void
+  onRemoveStudent: (classroomId: string, userId: string) => void
   onRotateInvite: (classroomId: string) => void
   onSelectClassroom: (classroomId: string) => void
   onSelectTab: (tab: ClassroomPortalTab) => void
@@ -107,7 +110,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
             <nav className="portal-tabs" aria-label="Classroom sections">{classroomTabsForRole(selected.role).map((tab) => <button aria-selected={selectedTab === tab} key={tab} onClick={() => props.onSelectTab(tab)} role="tab" type="button">{tab}</button>)}</nav>
             <div className="portal-tab-content">
               {selectedTab === 'assignments' && <AssignmentsTab {...props} classroom={selected} />}
-              {selectedTab === 'people' && <PeopleTab classroom={selected} />}
+              {selectedTab === 'people' && <PeopleTab {...props} classroom={selected} />}
               {selectedTab === 'settings' && selected.role === 'teacher' && <ClassroomSettings {...props} classroom={selected} />}
             </div>
           </motion.div> : <div className="portal-empty"><GraduationCap size={28} /><h1>Classrooms live here.</h1><p>Create a class to teach, or join one with an invitation.</p></div>}
@@ -135,11 +138,16 @@ function AssignmentsTab(props: ClassroomPortalProps & { classroom: Classroom }):
   </div>
 }
 
-function PeopleTab({ classroom }: { classroom: Classroom }): React.JSX.Element {
-  return <div className="portal-people"><div className="portal-section-heading"><div><span>Class roster</span><h2>People</h2></div></div>{(['teacher', 'student'] as const).map((role) => {
+function PeopleTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
+  const { classroom } = props
+  const [studentEmail, setStudentEmail] = useState('')
+
+  useEffect(() => setStudentEmail(''), [props.actionVersion])
+
+  return <div className="portal-people"><div className="portal-section-heading"><div><span>Class roster</span><h2>People</h2></div>{classroom.role === 'teacher' && <form className="portal-add-student" onSubmit={(event) => { event.preventDefault(); props.onAddStudent(classroom.id, studentEmail) }}><label className="sr-only" htmlFor="portal-student-email">Student email</label><input id="portal-student-email" onChange={(event) => setStudentEmail(event.target.value)} placeholder="student@example.com" required type="email" value={studentEmail} /><button disabled={props.busy} type="submit"><UserRoundPlus size={14} /> Add student</button></form>}</div>{(['teacher', 'student'] as const).map((role) => {
     const members = classroom.members.filter((member) => member.role === role)
-    return <section className="portal-people-group" key={role}><header><h3>{role === 'teacher' ? 'Teachers' : 'Students'}</h3><span>{members.length}</span></header>{members.length === 0 ? <p>No {role === 'teacher' ? 'teachers' : 'students'} yet.</p> : <div>{members.map((member) => <article key={member.userId}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><b>{member.displayName}</b><small>{member.email ?? (role === 'teacher' ? 'Teacher' : 'Student')}</small></div></article>)}</div>}</section>
-  })}</div>
+    return <section className="portal-people-group" key={role}><header><h3>{role === 'teacher' ? 'Teachers' : 'Students'}</h3><span>{members.length}</span></header>{members.length === 0 ? <p>No {role === 'teacher' ? 'teachers' : 'students'} yet.</p> : <div>{members.map((member) => <article key={member.userId}><span>{member.displayName.slice(0, 1).toUpperCase()}</span><div><b>{member.displayName}</b><small>{member.email ?? (role === 'teacher' ? 'Teacher' : 'Student')}</small></div>{classroom.role === 'teacher' && role === 'student' && <button aria-label={`Remove ${member.displayName}`} disabled={props.busy} onClick={() => { if (window.confirm(`Remove ${member.displayName} from ${classroom.name}?`)) props.onRemoveStudent(classroom.id, member.userId) }} type="button"><UserMinus size={14} /></button>}</article>)}</div>}</section>
+  })}{classroom.role === 'student' && <section className="portal-leave-class"><div><h3>Leave classroom</h3><p>Your local assignment files remain on this computer, but you will lose access to future classroom updates.</p></div><button disabled={props.busy} onClick={() => { if (window.confirm(`Leave ${classroom.name}?`)) props.onLeaveClassroom(classroom.id) }} type="button"><LogOut size={14} /> Leave classroom</button></section>}</div>
 }
 
 function ClassroomSettings(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {

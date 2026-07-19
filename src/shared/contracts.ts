@@ -71,6 +71,9 @@ export const IPC_CHANNELS = {
   cloudCreateClassroom: 'cloud:create-classroom',
   cloudJoinClassroom: 'cloud:join-classroom',
   cloudRotateInvite: 'cloud:rotate-invite',
+  cloudAddStudent: 'cloud:add-student',
+  cloudRemoveStudent: 'cloud:remove-student',
+  cloudLeaveClassroom: 'cloud:leave-classroom',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
@@ -902,6 +905,9 @@ export type DesktopApi = {
   createClassroom: (request: ClassroomCreateRequest) => Promise<Classroom[]>
   joinClassroom: (invite: string) => Promise<Classroom[]>
   rotateClassroomInvite: (classroomId: string) => Promise<Classroom[]>
+  addClassroomStudent: (classroomId: string, email: string) => Promise<Classroom[]>
+  removeClassroomStudent: (classroomId: string, userId: string) => Promise<Classroom[]>
+  leaveClassroom: (classroomId: string) => Promise<Classroom[]>
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>

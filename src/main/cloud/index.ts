@@ -43,6 +43,10 @@ const classroomRowSchema = z.object({
 const memberRowSchema = z.object({
   classroom_id: z.uuid(), user_id: z.uuid(), role: z.enum(['teacher', 'student']), joined_at: z.string()
 })
+const visibleMemberRowSchema = memberRowSchema.extend({
+  email: z.string().email().nullable(),
+  display_name: z.string()
+})
 const inviteRowSchema = z.object({ classroom_id: z.uuid(), code: z.string().regex(/^[a-f0-9]{32}$/) })
 const profileRowSchema = z.object({ id: z.uuid(), display_name: z.string() })
 const assignmentRowSchema = z.object({
@@ -56,6 +60,10 @@ function cleanError(error: unknown, fallback: string): Error {
     return new Error(error.message)
   }
   return new Error(fallback)
+}
+
+function isMissingRosterRpc(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error.code === 'PGRST202' || error.code === '42883'))
 }
 
 function authError(error: unknown, action: 'sign-in' | 'sign-up'): Error {
@@ -129,11 +137,12 @@ export function registerCloudHandlers(
 
   async function listClassrooms(): Promise<Classroom[]> {
     const currentUser = await requireUser()
-    const [classroomsResult, membersResult, invitesResult, assignmentsResult] = await Promise.all([
+    const [classroomsResult, membersResult, invitesResult, assignmentsResult, visibleMembersResult] = await Promise.all([
       client.from('classrooms').select('id,name,description,owner_id,created_at').order('created_at'),
       client.from('classroom_members').select('classroom_id,user_id,role,joined_at'),
       client.from('classroom_invites').select('classroom_id,code').is('revoked_at', null),
-      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,published_by').order('published_at', { ascending: false })
+      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,published_by').order('published_at', { ascending: false }),
+      client.rpc('list_visible_classroom_members')
     ])
     for (const result of [classroomsResult, membersResult, invitesResult, assignmentsResult]) {
       if (result.error) throw cleanError(result.error, 'Could not load classrooms.')
@@ -143,9 +152,15 @@ export function registerCloudHandlers(
     const memberRows = z.array(memberRowSchema).parse(membersResult.data ?? [])
     const inviteRows = z.array(inviteRowSchema).parse(invitesResult.data ?? [])
     const assignmentRows = z.array(assignmentRowSchema).parse(assignmentsResult.data ?? [])
+    if (visibleMembersResult.error && !isMissingRosterRpc(visibleMembersResult.error)) {
+      throw cleanError(visibleMembersResult.error, 'Could not load classroom members.')
+    }
+    const visibleMemberRows = visibleMembersResult.error
+      ? null
+      : z.array(visibleMemberRowSchema).parse(visibleMembersResult.data ?? [])
     const userIds = [...new Set(memberRows.map((member) => member.user_id))]
     let profileRows: z.infer<typeof profileRowSchema>[] = []
-    if (userIds.length > 0) {
+    if (!visibleMemberRows && userIds.length > 0) {
       const profilesResult = await client.from('profiles').select('id,display_name').in('id', userIds)
       if (profilesResult.error) throw cleanError(profilesResult.error, 'Could not load classroom members.')
       profileRows = z.array(profileRowSchema).parse(profilesResult.data ?? [])
@@ -154,18 +169,21 @@ export function registerCloudHandlers(
     const invites = new Map(inviteRows.map((invite) => [invite.classroom_id, invite.code]))
 
     return classroomRows.map((classroom) => {
-      const members = memberRows
-        .filter((member) => member.classroom_id === classroom.id)
-        .map((member) => {
-          const profile = profiles.get(member.user_id)
-          return {
-            userId: member.user_id,
-            email: member.user_id === currentUser.id ? currentUser.email : null,
-            displayName: profile?.display_name ?? 'Wormie user',
-            role: member.role,
-            joinedAt: member.joined_at
-          }
-        })
+      const members = (visibleMemberRows
+        ? visibleMemberRows.filter((member) => member.classroom_id === classroom.id).map((member) => ({
+          userId: member.user_id,
+          email: member.email,
+          displayName: member.display_name,
+          role: member.role,
+          joinedAt: member.joined_at
+        }))
+        : memberRows.filter((member) => member.classroom_id === classroom.id).map((member) => ({
+          userId: member.user_id,
+          email: member.user_id === currentUser.id ? currentUser.email : null,
+          displayName: profiles.get(member.user_id)?.display_name ?? 'Wormie user',
+          role: member.role,
+          joinedAt: member.joined_at
+        })))
         .sort((left, right) => left.role.localeCompare(right.role) || left.displayName.localeCompare(right.displayName))
       const role = memberRows.find((member) => member.classroom_id === classroom.id && member.user_id === currentUser.id)?.role ?? 'student'
       const code = invites.get(classroom.id) ?? null
@@ -304,6 +322,44 @@ export function registerCloudHandlers(
     await requireUser()
     const { error } = await client.rpc('rotate_classroom_invite', { target_classroom_id: id })
     if (error) throw cleanError(error, 'Could not replace the classroom invitation.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudAddStudent, async (event, classroomId: string, email: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const normalizedEmail = emailSchema.parse(email)
+    await requireUser()
+    const { data, error } = await client.rpc('add_classroom_student_by_email', {
+      student_email: normalizedEmail,
+      target_classroom_id: id
+    })
+    if (error) throw cleanError(error, 'Could not add the student.')
+    if (data !== true) throw new Error('No eligible account could be added. Check the email or send an invitation instead.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudRemoveStudent, async (event, classroomId: string, userId: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const studentId = z.uuid().parse(userId)
+    await requireUser()
+    const { data, error } = await client.rpc('remove_classroom_student', {
+      student_user_id: studentId,
+      target_classroom_id: id
+    })
+    if (error) throw cleanError(error, 'Could not remove the student.')
+    if (data !== true) throw new Error('The student is no longer enrolled in this classroom.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudLeaveClassroom, async (event, classroomId: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    await requireUser()
+    const { data, error } = await client.rpc('leave_classroom', { target_classroom_id: id })
+    if (error) throw cleanError(error, 'Could not leave the classroom.')
+    if (data !== true) throw new Error('Only enrolled students can leave this classroom.')
     return listClassrooms()
   })
 

@@ -14,7 +14,7 @@ import { PanelResizeHandle } from '@/components/PanelResizeHandle'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
-import { QuizHistory } from '@/components/QuizHistory'
+import { KnowledgeProfile } from '@/components/KnowledgeProfile'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
 import { useWorkbench } from '@/store/workbench'
 import type {
@@ -956,12 +956,7 @@ export default function App(): React.JSX.Element {
 }
 
 function LearningSidebar(): React.JSX.Element {
-  return (
-    <aside className="side-panel info-panel">
-      <div className="panel-heading"><span>Knowledge</span><BookOpenText size={15} /></div>
-      <QuizHistory compact />
-    </aside>
-  )
+  return <KnowledgeProfile />
 }
 
 function SettingsSidebar(): React.JSX.Element {

@@ -50,8 +50,10 @@ describe('authenticated product modes', () => {
       onRefresh={action}
       onRotateInvite={action}
       onSelectClassroom={action}
+      onSelectTab={action}
       onSignOut={action}
       selectedClassroomId={classroom.id}
+      selectedTab="assignments"
       user={{ id: 'teacher-1', email: 'teacher@example.com' }}
       workspace={null}
     />)

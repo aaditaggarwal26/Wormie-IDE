@@ -918,8 +918,10 @@ export default function App(): React.JSX.Element {
         onRefresh={() => classroomListMutation.mutate()}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
         onSelectClassroom={(classroomId) => openClassrooms(classroomId, applicationMode.tab)}
+        onSelectTab={(tab) => openClassrooms(applicationMode.classroomId, tab)}
         onSignOut={() => signOutMutation.mutate()}
         selectedClassroomId={applicationMode.classroomId}
+        selectedTab={applicationMode.tab}
         user={cloudAuth.user}
         workspace={workspace}
       />

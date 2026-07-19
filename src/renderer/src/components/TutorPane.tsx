@@ -6,13 +6,15 @@ import {
   Check,
   ChevronDown,
   FileCode2,
+  Image as ImageIcon,
   LoaderCircle,
   LockKeyhole,
   RotateCcw,
   Send,
   ShieldCheck,
   Square,
-  UnlockKeyhole
+  UnlockKeyhole,
+  X
 } from 'lucide-react'
 import { useWorkbench } from '@/store/workbench'
 import { UnderstandingQuiz } from '@/components/UnderstandingQuiz'
@@ -31,8 +33,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected AI error occurred.'
 }
 
+type ImageAttachment = { path: string; name: string }
+
+const maxAttachments = 4
+
 export function TutorPane(): React.JSX.Element {
   const [request, setRequest] = useState('')
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([])
+  const [dragActive, setDragActive] = useState(false)
+  const [pendingRequest, setPendingRequest] = useState<string | null>(null)
   const [session, setSession] = useState<LearningSession | null>(null)
   const [answers, setAnswers] = useState<Record<string, number>>({})
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null)
@@ -42,6 +51,7 @@ export function TutorPane(): React.JSX.Element {
   const [activityOpen, setActivityOpen] = useState(false)
   const [activityState, setActivityState] = useState<AgentActivityViewState | null>(null)
   const activeRunId = useRef<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const workspace = useWorkbench((state) => state.workspace)
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
@@ -69,12 +79,13 @@ export function TutorPane(): React.JSX.Element {
     setActivityOpen(true)
   }
 
-  const learningMutation = useMutation<LearningSession, Error, { runId: string; intent: string }>({
-    mutationFn: ({ runId, intent }) => window.desktop.startLearning({
+  const learningMutation = useMutation<LearningSession, Error, { runId: string; intent: string; imagePaths: string[] }>({
+    mutationFn: ({ runId, intent, imagePaths }) => window.desktop.startLearning({
       runId,
       request: intent,
       activePath,
-      openPaths: documents.map((document) => document.path)
+      openPaths: documents.map((document) => document.path),
+      imagePaths
     }),
     onMutate: () => setError(null),
     onSuccess: (nextSession) => {
@@ -83,11 +94,13 @@ export function TutorPane(): React.JSX.Element {
       setQuizResult(null)
       setQuizAttempts(0)
       setProposal(null)
+      setAttachments([])
     },
     onError: (cause, variables) => {
       setRequest((current) => current || variables.intent)
       reportError(cause)
-    }
+    },
+    onSettled: () => setPendingRequest(null)
   })
 
   const quizMutation = useMutation({
@@ -136,6 +149,15 @@ export function TutorPane(): React.JSX.Element {
   })
 
   const busy = learningMutation.isPending || quizMutation.isPending || proposalMutation.isPending || applyMutation.isPending
+
+  // Keep the conversation area anchored to what changed: new content scrolls to
+  // the top of the lesson/proposal, activity and errors scroll into view below.
+  useEffect(() => {
+    const node = scrollRef.current
+    if (!node) return
+    if (learningMutation.isPending || error) node.scrollTop = node.scrollHeight
+    else node.scrollTop = 0
+  }, [session?.id, proposal?.id, error, learningMutation.isPending])
   const proposalUnlocked = !proposal?.understanding?.significance.quizRequired || proposal.understanding.gate?.unlocked === true
   const reviewProgress = proposalReview ? proposalReviewProgress(proposalReview.files) : null
   const reviewHasDirtyConflict = proposalReview?.files.some((file) => {
@@ -151,7 +173,40 @@ export function TutorPane(): React.JSX.Element {
     setActivityState(initialAgentActivityState(runId))
     setActivityOpen(true)
     setRequest('')
-    learningMutation.mutate({ runId, intent })
+    setPendingRequest(intent)
+    learningMutation.mutate({ runId, intent, imagePaths: attachments.map((attachment) => attachment.path) })
+  }
+
+  const addDroppedFiles = (files: File[]) => {
+    setAttachments((current) => {
+      const next = [...current]
+      for (const file of files) {
+        if (next.length >= maxAttachments) break
+        if (!file.type.startsWith('image/')) continue
+        try {
+          const filePath = window.desktop.pathForFile(file)
+          if (filePath && !next.some((attachment) => attachment.path === filePath)) {
+            next.push({ path: filePath, name: file.name || 'screenshot' })
+          }
+        } catch {
+          // Files without a filesystem path (e.g. dragged from a browser) are skipped.
+        }
+      }
+      return next
+    })
+  }
+
+  const composerVisible = !session
+  const handleDragOver = (event: React.DragEvent) => {
+    if (!composerVisible || busy || !event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    setDragActive(true)
+  }
+  const handleDrop = (event: React.DragEvent) => {
+    setDragActive(false)
+    if (!composerVisible || busy || event.dataTransfer.files.length === 0) return
+    event.preventDefault()
+    addDroppedFiles(Array.from(event.dataTransfer.files))
   }
 
   const openProposedFile = (relativePath: string) => {
@@ -174,13 +229,21 @@ export function TutorPane(): React.JSX.Element {
     setQuizAttempts(0)
     setProposal(null)
     setError(null)
+    setAttachments([])
+    setPendingRequest(null)
     setActivityState(null)
     activeRunId.current = null
     setActivityOpen(false)
   }
 
   return (
-    <aside className="tutor-pane">
+    <aside
+      className="tutor-pane"
+      data-drag-active={dragActive}
+      onDragLeave={() => setDragActive(false)}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="tutor-heading">
         <h2>Chat</h2>
         <div className="tutor-heading-actions">
@@ -210,16 +273,27 @@ export function TutorPane(): React.JSX.Element {
         </div>
       )}
 
-      <div className="tutor-scroll">
-        {!session && (
+      <div className="tutor-scroll" ref={scrollRef}>
+        {!session && !pendingRequest && (
           <div className="agent-empty">
             <h3>Ask about your code</h3>
-            <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review.</p>
+            <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review. Drop screenshots onto this panel to attach them.</p>
+          </div>
+        )}
+
+        {!session && pendingRequest && (
+          <div className="chat-exchange">
+            <div className="chat-user-message">{pendingRequest}</div>
+            <div className="chat-working">
+              <LoaderCircle className="spin" size={13} />
+              <span>Wormie is preparing your lesson…</span>
+            </div>
           </div>
         )}
 
         {session && !proposal && (
           <div className="learning-session">
+            <div className="chat-user-message">{session.request}</div>
             <div className="session-toolbar">
               <span>{session.concepts.length} concepts · pass at {session.passingScore}%</span>
               <button onClick={reset} type="button"><RotateCcw size={12} /> Reset</button>
@@ -363,7 +437,23 @@ export function TutorPane(): React.JSX.Element {
 
       {!session && (
         <div className="agent-composer-shell">
-          <div className="agent-composer">
+          <div className="agent-composer" data-drag-active={dragActive}>
+            {attachments.length > 0 && (
+              <div className="composer-attachments">
+                {attachments.map((attachment) => (
+                  <span className="composer-attachment" key={attachment.path}>
+                    <ImageIcon size={11} />
+                    <em>{attachment.name}</em>
+                    <button
+                      aria-label={`Remove ${attachment.name}`}
+                      disabled={busy}
+                      onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))}
+                      type="button"
+                    ><X size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               aria-label="Describe a coding change"
               disabled={busy}
@@ -374,20 +464,32 @@ export function TutorPane(): React.JSX.Element {
                 event.preventDefault()
                 startLearning()
               }}
-              placeholder="Ask Wormie"
+              placeholder="Ask Wormie · drop screenshots to attach"
               rows={1}
               value={request}
             />
             <div className="composer-meta">
               <span>{workspace ? `${documents.length} open file${documents.length === 1 ? '' : 's'}` : 'Open a folder'}</span>
-              <button
-                disabled={!workspace || !request.trim() || dirtyDocuments.length > 0 || busy}
-                onClick={startLearning}
-                title={dirtyDocuments.length > 0 ? 'Save open changes before starting' : 'Send'}
-                type="button"
-              >
-                {learningMutation.isPending ? <LoaderCircle className="spin" size={14} /> : <Send size={14} />}
-              </button>
+              {busy ? (
+                <button
+                  aria-label="Stop the AI request"
+                  className="composer-stop"
+                  onClick={() => window.desktop.cancelAgent()}
+                  title="Stop"
+                  type="button"
+                >
+                  <Square size={12} />
+                </button>
+              ) : (
+                <button
+                  disabled={!workspace || !request.trim() || dirtyDocuments.length > 0}
+                  onClick={startLearning}
+                  title={dirtyDocuments.length > 0 ? 'Save open changes before starting' : 'Send'}
+                  type="button"
+                >
+                  <Send size={14} />
+                </button>
+              )}
             </div>
             {dirtyDocuments.length > 0 && <p className="agent-warning"><AlertTriangle size={11} /> Save open changes first.</p>}
           </div>

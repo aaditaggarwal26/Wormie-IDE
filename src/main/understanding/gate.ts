@@ -11,12 +11,14 @@ import type {
 } from '../../shared/contracts'
 import { gradeDeterministicAnswers } from './grading'
 import type { UnderstandingRepository, UnderstandingState } from './store'
+import type { AssessmentEvidenceInput } from '../mastery/service'
 
 type SemanticGrader = (
   question: PrivateQuizQuestion,
   answer: UnderstandingAnswer
 ) => Promise<{ correct: boolean; explanation: string; misconception?: string }>
 type RemediationGenerator = (quiz: UnderstandingQuiz, feedback: UnderstandingQuestionFeedback[]) => Promise<string>
+type MasteryRecorder = { recordAssessment: (input: AssessmentEvidenceInput) => unknown }
 
 function publicStatus(gate: UnderstandingState['gates'][string]): UnderstandingGateStatus {
   return {
@@ -35,7 +37,8 @@ export class UnderstandingGateService {
   constructor(
     private readonly repository: UnderstandingRepository,
     private readonly semanticGrader?: SemanticGrader,
-    private readonly remediationGenerator?: RemediationGenerator
+    private readonly remediationGenerator?: RemediationGenerator,
+    private readonly mastery?: MasteryRecorder
   ) {}
 
   getSettings() { return this.repository.read().settings }
@@ -135,20 +138,26 @@ export class UnderstandingGateService {
       weakConceptIds,
       remediation
     }
+    this.mastery?.recordAssessment({
+      source: 'change_understanding',
+      assessmentId: gate.quiz.id,
+      sessionId: gate.quiz.changeId,
+      attempt,
+      answers: gate.privateQuestions.map((question) => {
+        const item = feedback.find((candidate) => candidate.questionId === question.id)
+        return {
+          questionId: question.id,
+          conceptId: question.conceptId,
+          score: item?.score ?? (item?.correct ? 1 : 0),
+          difficulty: question.difficulty,
+          format: question.type,
+          ...(item?.misconception ? { misconceptionSummary: item.misconception, correctiveExplanation: item.explanation } : {}),
+          ...(Boolean(item?.misconception) && question.difficulty === 'hard' && gate.quiz.significance.level === 'critical' ? { criticalMisconception: true } : {})
+        }
+      })
+    })
     const now = new Date().toISOString()
     this.repository.update((value) => {
-      const mastery = { ...value.mastery }
-      for (const question of gate.privateQuestions) {
-        const concept = gate.quiz.concepts.find((candidate) => candidate.id === question.conceptId)
-        if (!concept) continue
-        const existing = mastery[concept.id] ?? { conceptId: concept.id, name: concept.name, mastery: 50, attempts: 0, correct: 0, updatedAt: now, evidenceQuizIds: [] }
-        const correct = feedback.some((item) => item.questionId === question.id && item.correct)
-        const attempts = existing.attempts + 1
-        const correctCount = existing.correct + (correct ? 1 : 0)
-        const evidenceWeight = question.difficulty === 'hard' ? 0.16 : question.difficulty === 'medium' ? 0.12 : 0.08
-        const nextMastery = Math.round(existing.mastery + ((correct ? 100 : 0) - existing.mastery) * evidenceWeight)
-        mastery[concept.id] = { ...existing, attempts, correct: correctCount, mastery: nextMastery, updatedAt: now, evidenceQuizIds: [...new Set([...(existing.evidenceQuizIds ?? []), gate.quiz.id])].slice(-20) }
-      }
       const history = passed || shouldRemediate ? [{
         id: `${gate.quiz.id}:${attempt}`,
         changeId: gate.quiz.changeId,
@@ -165,7 +174,6 @@ export class UnderstandingGateService {
         ...value,
         gates: { ...value.gates, [gate.quiz.id]: { ...value.gates[gate.quiz.id], draftAnswers: answers, lastResult: result, attempt, state: passed ? 'passed' : shouldRemediate ? 'remediation' : 'in_progress', updatedAt: now } },
         history,
-        mastery,
         auditEvents: [...value.auditEvents, { type: passed ? 'quiz_passed' as const : 'quiz_failed' as const, at: now, source: gate.quiz.source, significance: gate.quiz.significance.level }]
       }
     })

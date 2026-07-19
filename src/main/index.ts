@@ -11,6 +11,9 @@ import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { MasteryRepository } from './mastery/repository'
+import { MasteryService } from './mastery/service'
+import { KnowledgeGraph } from './mastery/graph'
+import { canonicalConcepts } from './mastery/catalog'
 import { registerWorkspaceHandlers } from './workspace'
 import { IPC_CHANNELS } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
@@ -21,9 +24,10 @@ const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
 const understandingRepository = new UnderstandingRepository(understandingStore)
-const understanding = new UnderstandingController(understandingRepository)
 const masteryStore = new Store({ name: 'mastery-state' })
 const masteryRepository = new MasteryRepository(masteryStore, Object.values(understandingRepository.read().mastery))
+const mastery = new MasteryService(masteryRepository, new KnowledgeGraph(canonicalConcepts))
+const understanding = new UnderstandingController(understandingRepository, mastery)
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 
 if (process.defaultApp) {
@@ -124,7 +128,7 @@ if (!app.requestSingleInstanceLock()) {
   understanding.registerIpc()
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot, mastery)
 
   app.on('second-instance', (_event, commandLine) => {
     const inviteLink = classroomInviteFromArguments(commandLine)

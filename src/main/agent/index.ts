@@ -34,6 +34,10 @@ import { materializeProposalEdits, type ResolvedProposalTextEdit } from './propo
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
 import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
 import type { UnderstandingController } from '../understanding'
+import type { MasteryService } from '../mastery/service'
+import { resolveConcept } from '../mastery/catalog'
+import { resolveOrRegisterConcept } from '../mastery/catalog'
+import { recordPrerequisiteQuizEvidence } from './masteryIntegration'
 
 type InternalSession = {
   publicSession: LearningSession
@@ -137,7 +141,8 @@ export function registerAgentHandlers(
   store: Store<AppPreferences>,
   getWorkspaceRoot: () => string | null,
   understanding: UnderstandingController,
-  progressStorageRoot: string
+  progressStorageRoot: string,
+  mastery: MasteryService
 ): void {
   const sessions = new Map<string, InternalSession>()
   const proposals = new Map<string, InternalProposal>()
@@ -379,25 +384,52 @@ export function registerAgentHandlers(
       'learning',
       `Analyze this requested change and teach only the prerequisite concepts. Do not provide implementation code yet.
 Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test applied understanding, not trivia.
+Use only canonical concept IDs from the supplied catalog. Include weak prerequisite concepts before advanced concepts, while allowing unassessed learners to demonstrate knowledge through diagnostic questions.
 
-<user-request>\n${intent}\n</user-request>\n\n${context}`,
+<user-request>\n${intent}\n</user-request>
+<mastery-context>${JSON.stringify(mastery.promptContext())}</mastery-context>\n\n${context}`,
       learningDraftSchema,
       signal,
       onProtocolEvent
     ), { sender: event.sender, runId })
     emitPhase(event.sender, runId, 'validation', 'Structured learning plan validated', 'completed')
 
+    const resolvedLessons = draft.concepts.map((lesson) => ({ ...lesson, concept: resolveOrRegisterConcept(lesson.id || lesson.name) }))
+    const conceptIdMap = new Map(resolvedLessons.map((lesson) => [lesson.id, lesson.concept.id]))
+    const learningPlan = mastery.learningPlan(resolvedLessons.map((lesson) => lesson.concept.id))
+    const suppliedIds = new Set(resolvedLessons.map((lesson) => lesson.concept.id))
+    const prerequisiteLessons = [...learningPlan.blockingConceptIds, ...learningPlan.diagnosticConceptIds]
+      .filter((conceptId) => !suppliedIds.has(conceptId))
+      .slice(0, 3)
+      .map((conceptId) => resolveConcept(conceptId))
+      .filter((concept): concept is NonNullable<typeof concept> => Boolean(concept))
+      .map((concept) => ({
+        conceptId: concept.id,
+        name: concept.name,
+        whyItMatters: `This prerequisite supports ${resolvedLessons.map((lesson) => lesson.concept.name).join(', ')}.`,
+        mentalModel: concept.description,
+        commonMistake: 'Skipping this prerequisite can make correct-looking code hard to reason about safely.'
+      }))
     const sessionId = randomUUID()
     const quiz = draft.quiz.map((question, index) => ({
       id: `${sessionId}:${index}`,
+      conceptId: conceptIdMap.get(question.conceptId) ?? resolveOrRegisterConcept(question.conceptId).id,
       prompt: question.prompt,
-      options: question.options
+      options: question.options,
+      difficulty: question.difficulty,
+      format: 'multiple_choice' as const
     }))
     const publicSession: LearningSession = {
       id: sessionId,
       runId,
       request: intent,
-      concepts: draft.concepts,
+      concepts: [...prerequisiteLessons, ...resolvedLessons.map((lesson) => ({
+        conceptId: lesson.concept.id,
+        name: lesson.name,
+        whyItMatters: lesson.whyItMatters,
+        mentalModel: lesson.mentalModel,
+        commonMistake: lesson.commonMistake
+      }))],
       lessonSummary: draft.lessonSummary,
       quiz,
       passingScore
@@ -407,7 +439,10 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
       answerKey: draft.quiz.map((question, index) => ({
         questionId: quiz[index].id,
         correctOption: question.correctOption,
-        explanation: question.explanation
+        explanation: question.explanation,
+        conceptId: quiz[index].conceptId,
+        difficulty: question.difficulty,
+        format: 'multiple_choice' as const
       })),
       contextRequest,
       workspaceRoot: rootPath,
@@ -438,6 +473,7 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     session.attempts += 1
     const result = gradeQuiz(submission, session.answerKey, session.publicSession.passingScore)
     session.passed = result.passed
+    recordPrerequisiteQuizEvidence(mastery, session.publicSession.id, session.attempts, result, session.answerKey)
     await recordAssignmentActivity(session.workspaceRoot, { type: 'quiz', sessionId: session.publicSession.id, score: result.score, passed: result.passed })
     emitPhase(
       event.sender,

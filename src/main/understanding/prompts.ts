@@ -1,7 +1,7 @@
 import type {
   ChangeInput,
   ChangeSignificanceResult,
-  KnowledgeMastery,
+  ConceptMasterySummary,
   PrivateQuizQuestion,
   UnderstandingAnswer,
   UnderstandingQuestionFeedback,
@@ -23,7 +23,7 @@ export function buildQuizGenerationPrompt(
   significance: ChangeSignificanceResult,
   conceptDraft: unknown,
   settings: UnderstandingSettings,
-  mastery: KnowledgeMastery[]
+  mastery: ConceptMasterySummary[]
 ): string {
   return `Create a concise understanding check grounded only in the supplied change. Do not ask generic trivia or ask about unchanged code.
 Create ${settings.minimumQuestions}-${settings.maximumQuestions} questions. Use at least two formats and at least one code/control-flow reasoning question.
@@ -32,7 +32,7 @@ Every question must cite an included file. Explanations and rubrics must be prec
 
 <classification>${JSON.stringify(significance)}</classification>
 <concept-analysis>${JSON.stringify(conceptDraft)}</concept-analysis>
-<knowledge-mastery>${JSON.stringify(mastery.map(({ conceptId, mastery: score }) => ({ conceptId, mastery: score })))}</knowledge-mastery>
+<knowledge-mastery>${JSON.stringify(mastery.map(({ conceptId, mastery: score, confidence, status }) => ({ conceptId, mastery: score, confidence, status })))}</knowledge-mastery>
 <change-data>${JSON.stringify(change)}</change-data>`
 }
 

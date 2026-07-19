@@ -195,6 +195,7 @@ export type LearningRequest = {
 }
 
 export type ConceptLesson = {
+  conceptId: string
   name: string
   whyItMatters: string
   mentalModel: string
@@ -203,8 +204,11 @@ export type ConceptLesson = {
 
 export type QuizQuestion = {
   id: string
+  conceptId: string
   prompt: string
   options: string[]
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: 'multiple_choice'
 }
 
 export type LearningSession = {
@@ -353,6 +357,7 @@ export type UnderstandingSubmission = {
 export type UnderstandingQuestionFeedback = {
   questionId: string
   correct: boolean
+  score?: number
   explanation: string
   misconception?: string
 }

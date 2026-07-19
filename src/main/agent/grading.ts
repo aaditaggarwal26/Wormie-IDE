@@ -4,6 +4,9 @@ export type AnswerKey = Array<{
   questionId: string
   correctOption: number
   explanation: string
+  conceptId?: string
+  difficulty?: 'easy' | 'medium' | 'hard'
+  format?: 'multiple_choice'
 }>
 
 export function gradeQuiz(submission: QuizSubmission, answerKey: AnswerKey, passingScore: number): QuizResult {

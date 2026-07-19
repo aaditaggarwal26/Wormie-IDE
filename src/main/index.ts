@@ -11,8 +11,13 @@ import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerWorkspaceHandlers } from './workspace'
-import { IPC_CHANNELS } from '../shared/contracts'
+import { IPC_CHANNELS, type CloudAuthUpdate } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
+import {
+  authCallback,
+  authCallbackFromArguments,
+  type AuthCallback
+} from './cloud/oauth'
 
 const store = new Store<AppPreferences>({ name: 'preferences' })
 const trustedWebContents = new Set<number>()
@@ -21,11 +26,15 @@ const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_REN
 const understandingStore = new Store({ name: 'understanding-state' })
 const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
+let pendingAuthCallback = authCallbackFromArguments(process.argv)
+let handleAuthCallback: ((callback: AuthCallback) => Promise<void>) | null = null
 
-if (process.defaultApp) {
-  if (process.argv[1]) app.setAsDefaultProtocolClient('wormie', process.execPath, [path.resolve(process.argv[1])])
-} else {
-  app.setAsDefaultProtocolClient('wormie')
+for (const protocol of ['wormie', 'wormie-ide']) {
+  if (process.defaultApp) {
+    if (process.argv[1]) app.setAsDefaultProtocolClient(protocol, process.execPath, [path.resolve(process.argv[1])])
+  } else {
+    app.setAsDefaultProtocolClient(protocol)
+  }
 }
 
 function queueClassroomInvite(value: string): void {
@@ -43,9 +52,25 @@ function takePendingClassroomInvite(): string | null {
   return inviteLink
 }
 
+function queueAuthCallback(callback: AuthCallback): void {
+  if (handleAuthCallback) {
+    void handleAuthCallback(callback)
+    return
+  }
+  pendingAuthCallback = callback
+}
+
+function notifyCloudAuthChanged(update: CloudAuthUpdate): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.cloudAuthChanged, update)
+  }
+}
+
 app.on('open-url', (event, url) => {
   event.preventDefault()
-  queueClassroomInvite(url)
+  const callback = authCallback(url)
+  if (callback) queueAuthCallback(callback)
+  else queueClassroomInvite(url)
 })
 
 function createWindow(): void {
@@ -123,6 +148,8 @@ if (!app.requestSingleInstanceLock()) {
   registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
 
   app.on('second-instance', (_event, commandLine) => {
+    const callback = authCallbackFromArguments(commandLine)
+    if (callback) queueAuthCallback(callback)
     const inviteLink = classroomInviteFromArguments(commandLine)
     if (inviteLink) queueClassroomInvite(inviteLink)
     const mainWindow = BrowserWindow.getAllWindows()[0]
@@ -132,8 +159,20 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    registerCloudHandlers(workspace.getWorkspaceRoot, workspace.setWorkspace, isTrustedSender, takePendingClassroomInvite)
+    const cloud = registerCloudHandlers(
+      workspace.getWorkspaceRoot,
+      workspace.setWorkspace,
+      isTrustedSender,
+      takePendingClassroomInvite,
+      notifyCloudAuthChanged
+    )
+    handleAuthCallback = cloud.handleAuthCallback
     createWindow()
+    if (pendingAuthCallback) {
+      const callback = pendingAuthCallback
+      pendingAuthCallback = null
+      void handleAuthCallback(callback)
+    }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })

@@ -149,7 +149,7 @@ function createWindow(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  const workspace = registerWorkspaceHandlers(store, isTrustedSender)
+  const workspace = registerWorkspaceHandlers(store, isTrustedSender, () => workspacePurpose)
   ipcMain.handle(IPC_CHANNELS.workspaceSetPurpose, (event, purpose: unknown): void => {
     if (!isTrustedSender(event)) throw new Error('Untrusted renderer request.')
     if (purpose !== 'sandbox' && purpose !== 'assignment') throw new Error('Invalid workspace purpose.')
@@ -184,6 +184,7 @@ if (!app.requestSingleInstanceLock()) {
     const cloud = registerCloudHandlers(
       workspace.getWorkspaceRoot,
       workspace.setWorkspace,
+      () => workspacePurpose,
       isTrustedSender,
       takePendingClassroomInvite,
       notifyCloudAuthChanged

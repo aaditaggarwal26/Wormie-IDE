@@ -45,6 +45,7 @@ describe('authenticated product modes', () => {
       onCopyInvite={action}
       onCreate={action}
       onJoin={action}
+      onAuthorAssignment={action}
       onOpenAssignment={action}
       onPublish={action}
       onRefresh={action}

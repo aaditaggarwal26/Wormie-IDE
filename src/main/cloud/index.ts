@@ -13,7 +13,8 @@ import {
   type CloudAuthCredentials,
   type CloudAuthState,
   type CloudAuthUpdate,
-  type WorkspaceSnapshot
+  type WorkspaceSnapshot,
+  type WorkspacePurpose
 } from '../../shared/contracts'
 import { createAssignmentPackage, importAssignmentPackage } from '../assignments/package'
 import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
@@ -95,7 +96,8 @@ function samePath(left: string, right: string): boolean {
 
 export function registerCloudHandlers(
   getWorkspaceRoot: () => string | null,
-  setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>,
+  setWorkspace: (rootPath: string, isCurrent?: () => boolean) => Promise<WorkspaceSnapshot>,
+  getWorkspacePurpose: () => WorkspacePurpose,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
   takePendingInvite: () => string | null,
   notifyAuthChanged: (update: CloudAuthUpdate) => void
@@ -375,7 +377,7 @@ export function registerCloudHandlers(
       await fs.writeFile(temporaryPath, packageBuffer, { flag: 'wx' })
       const imported = await importAssignmentPackage(temporaryPath, destination.filePaths[0])
       return {
-        workspace: await setWorkspace(imported.rootPath),
+        workspace: await setWorkspace(imported.rootPath, () => getWorkspacePurpose() === 'assignment'),
         assignmentTitle: imported.assignmentTitle,
         fileCount: imported.fileCount
       }

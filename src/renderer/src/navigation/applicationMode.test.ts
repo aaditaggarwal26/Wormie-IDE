@@ -28,4 +28,23 @@ describe('application navigation', () => {
     })).toBe(false)
     expect(useApplicationNavigation.getState().mode.kind).toBe('classrooms')
   })
+
+  it('returns Assignment IDE to its originating classroom', () => {
+    const transitionId = useApplicationNavigation.getState().beginTransition()
+    useApplicationNavigation.getState().openAssignment(transitionId, {
+      classroomId: 'classroom-1',
+      classroomName: 'Build Lab',
+      assignmentId: 'assignment-1',
+      assignmentTitle: 'Profile screen',
+      role: 'student'
+    })
+
+    useApplicationNavigation.getState().leaveIde()
+
+    expect(useApplicationNavigation.getState().mode).toEqual({
+      kind: 'classrooms',
+      classroomId: 'classroom-1',
+      tab: 'assignments'
+    })
+  })
 })

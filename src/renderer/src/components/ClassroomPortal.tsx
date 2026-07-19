@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, BookOpenCheck, Clipboard, Download, DoorOpen, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import { ArrowLeft, BookOpenCheck, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserRoundPlus, UsersRound, X } from 'lucide-react'
 import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
@@ -19,6 +19,7 @@ type ClassroomPortalProps = {
   onCopyInvite: (inviteLink: string) => void
   onCreate: (request: ClassroomCreateRequest) => void
   onJoin: (invite: string) => void
+  onAuthorAssignment: (classroom: Classroom) => void
   onOpenAssignment: (classroom: Classroom, assignmentId: string) => void
   onPublish: (classroomId: string) => void
   onRefresh: () => void
@@ -66,7 +67,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
     <header className="portal-titlebar">
       <button className="portal-back" onClick={props.onBack} type="button"><ArrowLeft size={15} /> Home</button>
       <div className="portal-brand"><span className="launcher-worm"><i /><i /><i /></span><b>Wormie Classrooms</b></div>
-      <div className="portal-account"><span>{props.user.email}</span><button onClick={props.onSignOut} type="button"><LogOut size={14} /><span className="sr-only">Sign out</span></button></div>
+      <div className="portal-account"><span>{props.user.email}</span><button disabled={props.busy} onClick={props.onSignOut} type="button"><LogOut size={14} /><span className="sr-only">Sign out</span></button></div>
     </header>
 
     <div className="portal-layout">
@@ -128,7 +129,7 @@ function AssignmentsTab(props: ClassroomPortalProps & { classroom: Classroom }):
     : null
   return <div className="portal-section-grid portal-section-grid-single">
     <section className="portal-section-main">
-      <div className="portal-section-heading"><div><span>Course work</span><h2>Assignments</h2></div>{classroom.role === 'teacher' && <button className="portal-accent-button" disabled={props.busy || !publishableAssignment} onClick={() => props.onPublish(classroom.id)} type="button"><Send size={14} /> {publishableAssignment ? `Publish ${publishableAssignment.manifest!.title}` : 'Open a teacher assignment to publish'}</button>}</div>
+      <div className="portal-section-heading"><div><span>Course work</span><h2>Assignments</h2></div>{classroom.role === 'teacher' && <div className="portal-assignment-actions"><button className="portal-secondary-button" disabled={props.busy} onClick={() => props.onAuthorAssignment(classroom)} type="button"><FolderInput size={14} /> Author from folder</button><button className="portal-accent-button" disabled={props.busy || !publishableAssignment} onClick={() => props.onPublish(classroom.id)} type="button"><Send size={14} /> {publishableAssignment ? `Publish ${publishableAssignment.manifest!.title}` : 'No draft ready'}</button></div>}</div>
       {classroom.assignments.length === 0 ? <div className="portal-section-empty"><BookOpenCheck size={21} /><p>No assignments have been published.</p></div> : <div className="portal-assignment-grid">{classroom.assignments.map((assignment, index) => <article key={assignment.id}><span className="portal-assignment-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{assignment.title}</h3><time>{new Date(assignment.publishedAt).toLocaleDateString()}</time></div><button disabled={props.busy} onClick={() => props.onOpenAssignment(classroom, assignment.id)} type="button">{classroom.role === 'student' ? <><Download size={14} /> Open assignment</> : <><DoorOpen size={14} /> Open project</>}</button></article>)}</div>}
     </section>
   </div>

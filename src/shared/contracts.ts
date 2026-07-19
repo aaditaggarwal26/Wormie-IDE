@@ -831,7 +831,7 @@ export type AgentActivityEvent = {
 export type DesktopApi = {
   platform: string
   setWorkspacePurpose: (purpose: WorkspacePurpose) => Promise<void>
-  openWorkspace: () => Promise<WorkspaceSnapshot | null>
+  openWorkspace: (purpose?: WorkspacePurpose) => Promise<WorkspaceSnapshot | null>
   restoreWorkspace: () => Promise<WorkspaceSnapshot | null>
   refreshWorkspace: () => Promise<WorkspaceSnapshot>
   readFile: (filePath: string) => Promise<OpenFile>

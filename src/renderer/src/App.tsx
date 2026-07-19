@@ -161,6 +161,7 @@ export default function App(): React.JSX.Element {
   const safeEditing = useSafeEditing()
   const applicationMode = useApplicationNavigation((state) => state.mode)
   const showLauncher = useApplicationNavigation((state) => state.showLauncher)
+  const leaveCurrentIde = useApplicationNavigation((state) => state.leaveIde)
   const openSandbox = useApplicationNavigation((state) => state.openSandbox)
   const openClassrooms = useApplicationNavigation((state) => state.openClassrooms)
   const beginModeTransition = useApplicationNavigation((state) => state.beginTransition)
@@ -282,7 +283,7 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const workspaceMutation = useMutation({
-    mutationFn: window.desktop.openWorkspace,
+    mutationFn: () => window.desktop.openWorkspace(),
     onSuccess: (result) => {
       if (result) setWorkspace(result)
     },
@@ -552,12 +553,15 @@ export default function App(): React.JSX.Element {
     mutationFn: async ({ assignmentId, classroom, transitionId }: { assignmentId: string; classroom: Classroom; transitionId: number }) => ({
       assignmentId,
       classroom,
-      result: await window.desktop.openClassroomAssignment(assignmentId),
+      result: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.openClassroomAssignment(assignmentId)),
       transitionId
     }),
     onSuccess: async ({ assignmentId, classroom, result, transitionId }) => {
-      if (!result || !isCurrentModeTransition(transitionId)) return
-      await window.desktop.setWorkspacePurpose('assignment')
+      if (!result) {
+        if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        return
+      }
+      if (!isCurrentModeTransition(transitionId)) return
       if (!isCurrentModeTransition(transitionId)) {
         const currentMode = useApplicationNavigation.getState().mode
         await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
@@ -574,16 +578,58 @@ export default function App(): React.JSX.Element {
       setActivity('assignments')
       addOutput(`Opened classroom assignment ${result.assignmentTitle}.`)
     },
-    onError: (error) => setCloudError(errorMessage(error))
+    onError: async (error, variables) => {
+      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      setCloudError(errorMessage(error))
+    }
+  })
+
+  const authorClassroomAssignmentMutation = useMutation({
+    mutationFn: async ({ classroom, transitionId }: { classroom: Classroom; transitionId: number }) => ({
+      classroom,
+      result: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.openWorkspace('assignment')),
+      transitionId
+    }),
+    onSuccess: async ({ classroom, result, transitionId }) => {
+      if (!result) {
+        if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        return
+      }
+      if (!isCurrentModeTransition(transitionId)) return
+      if (!isCurrentModeTransition(transitionId)) {
+        const currentMode = useApplicationNavigation.getState().mode
+        await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
+        return
+      }
+      if (!openAssignmentMode(transitionId, {
+        assignmentId: null,
+        assignmentTitle: 'Assignment authoring',
+        classroomId: classroom.id,
+        classroomName: classroom.name,
+        role: 'teacher'
+      })) return
+      setWorkspace(result)
+      setActivity('assignments')
+      addOutput(`Opened ${result.name} for assignment authoring.`)
+    },
+    onError: async (error, variables) => {
+      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      setCloudError(errorMessage(error))
+    }
   })
 
   const signOutMutation = useMutation({
     mutationFn: window.desktop.signOut,
+    onMutate: () => {
+      beginModeTransition()
+      void window.desktop.setWorkspacePurpose('sandbox')
+    },
     onSuccess: () => {
       setCloudAuth({ user: null })
       setClassrooms([])
       setCloudError(null)
       resetApplicationNavigation()
+      void window.desktop.setWorkspacePurpose('sandbox')
     },
     onError: (error) => setCloudError(errorMessage(error))
   })
@@ -830,6 +876,7 @@ export default function App(): React.JSX.Element {
     rotateInviteMutation.isPending ||
     publishAssignmentMutation.isPending ||
     openClassroomAssignmentMutation.isPending ||
+    authorClassroomAssignmentMutation.isPending ||
     signOutMutation.isPending
 
   const enterSandbox = () => {
@@ -839,10 +886,18 @@ export default function App(): React.JSX.Element {
     }).catch((error) => setCloudError(errorMessage(error)))
   }
 
+  const returnToLauncher = () => {
+    void window.desktop.setWorkspacePurpose('sandbox').then(showLauncher).catch((error) => setCloudError(errorMessage(error)))
+  }
+
+  const navigateClassrooms = (classroomId: string | null = null, tab = applicationMode.kind === 'classrooms' ? applicationMode.tab : 'assignments' as const) => {
+    void window.desktop.setWorkspacePurpose('sandbox').then(() => openClassrooms(classroomId, tab)).catch((error) => setCloudError(errorMessage(error)))
+  }
+
   const leaveIde = () => {
     safeEditing.runWorkspaceChangingAction(() => {
       setActivePicker(null)
-      void window.desktop.setWorkspacePurpose('sandbox').then(showLauncher).catch((error) => addOutput(`Could not leave the IDE: ${errorMessage(error)}`))
+      void window.desktop.setWorkspacePurpose('sandbox').then(leaveCurrentIde).catch((error) => addOutput(`Could not leave the IDE: ${errorMessage(error)}`))
     })
   }
 
@@ -850,6 +905,13 @@ export default function App(): React.JSX.Element {
     safeEditing.runWorkspaceChangingAction(() => {
       const transitionId = beginModeTransition()
       openClassroomAssignmentMutation.mutate({ assignmentId, classroom, transitionId })
+    })
+  }
+
+  const authorClassroomAssignment = (classroom: Classroom) => {
+    safeEditing.runWorkspaceChangingAction(() => {
+      const transitionId = beginModeTransition()
+      authorClassroomAssignmentMutation.mutate({ classroom, transitionId })
     })
   }
 
@@ -884,7 +946,7 @@ export default function App(): React.JSX.Element {
     return <>
       <WormieLauncher
         enrolledCount={classrooms.filter((classroom) => classroom.role === 'student').length}
-        onOpenClassrooms={() => openClassrooms()}
+        onOpenClassrooms={() => navigateClassrooms()}
         onOpenSandbox={enterSandbox}
         onSignOut={() => signOutMutation.mutate()}
         teachingCount={classrooms.filter((classroom) => classroom.role === 'teacher').length}
@@ -903,7 +965,7 @@ export default function App(): React.JSX.Element {
         busy={classroomBusy}
         classrooms={classrooms}
         error={cloudError}
-        onBack={showLauncher}
+        onBack={returnToLauncher}
         onCopyInvite={(inviteLink) => {
           void window.desktop.copyClassroomInvite(inviteLink)
             .then(() => addOutput('Copied the classroom invitation.'))
@@ -911,14 +973,15 @@ export default function App(): React.JSX.Element {
         }}
         onCreate={(request) => createClassroomMutation.mutate(request)}
         onJoin={(invite) => joinClassroomMutation.mutate(invite)}
+        onAuthorAssignment={authorClassroomAssignment}
         onOpenAssignment={openClassroomAssignment}
         onPublish={(classroomId) => {
           if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
         }}
         onRefresh={() => classroomListMutation.mutate()}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
-        onSelectClassroom={(classroomId) => openClassrooms(classroomId, applicationMode.tab)}
-        onSelectTab={(tab) => openClassrooms(applicationMode.classroomId, tab)}
+        onSelectClassroom={(classroomId) => navigateClassrooms(classroomId, applicationMode.tab)}
+        onSelectTab={(tab) => navigateClassrooms(applicationMode.classroomId, tab)}
         onSignOut={() => signOutMutation.mutate()}
         selectedClassroomId={applicationMode.classroomId}
         selectedTab={applicationMode.tab}
@@ -932,13 +995,13 @@ export default function App(): React.JSX.Element {
   return (
     <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
-        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>Wormie</span></button>
+        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
         <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
           <Search size={13} />
           <span>Search commands</span>
           <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} Shift P</kbd>
         </button>
-        <div className="titlebar-workspace">{applicationMode.kind === 'assignment' ? `${applicationMode.context.classroomName} / ${applicationMode.context.assignmentTitle}` : workspace?.name ?? 'No workspace'}</div>
+        <div className="titlebar-workspace">{applicationMode.kind === 'assignment' ? <><span>{applicationMode.context.role}</span>{applicationMode.context.classroomName} / {assignmentState?.manifest?.title ?? applicationMode.context.assignmentTitle}</> : workspace?.name ?? 'No workspace'}</div>
       </header>
 
       <div

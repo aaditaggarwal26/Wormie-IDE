@@ -20,6 +20,7 @@ type ApplicationNavigationState = {
   mode: ApplicationMode
   transitionId: number
   showLauncher: () => void
+  leaveIde: () => void
   openSandbox: () => void
   openClassrooms: (classroomId?: string | null, tab?: ClassroomPortalTab) => void
   beginTransition: () => number
@@ -34,6 +35,12 @@ export const useApplicationNavigation = create<ApplicationNavigationState>((set,
   mode: launcherMode(),
   transitionId: 0,
   showLauncher: () => set((state) => ({ mode: launcherMode(), transitionId: state.transitionId + 1 })),
+  leaveIde: () => set((state) => ({
+    mode: state.mode.kind === 'assignment'
+      ? { kind: 'classrooms', classroomId: state.mode.context.classroomId, tab: 'assignments' }
+      : launcherMode(),
+    transitionId: state.transitionId + 1
+  })),
   openSandbox: () => set((state) => ({ mode: { kind: 'sandbox' }, transitionId: state.transitionId + 1 })),
   openClassrooms: (classroomId = null, tab = 'assignments') => set((state) => ({
     mode: { kind: 'classrooms', classroomId, tab },

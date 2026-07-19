@@ -15,7 +15,8 @@ import {
   type WriteFileRequest,
   type WrittenFile,
   type WorkspaceMutation,
-  type WorkspaceSnapshot
+  type WorkspaceSnapshot,
+  type WorkspacePurpose
 } from '../shared/contracts'
 import { isPathInside, validateEntryName } from './pathSafety'
 import type { AppPreferences } from './preferences'
@@ -23,6 +24,7 @@ import { collectWorkspaceFiles } from './workspaceFiles'
 import { assertExpectedFingerprint, fingerprintContent } from './fileVersion'
 import { validateWatchFilePaths } from './fileWatchPolicy'
 import { applyReplacementEdits, searchWorkspaceFiles, validateReplacementEdits, validateSearchOptions, writeReplacementFile } from './workspaceSearchService'
+import { ensureWorkspaceRequestCurrent } from './workspaceTransition'
 
 const ignoredDirectories = new Set([
   '.git',
@@ -121,10 +123,11 @@ export async function createWorkspaceSnapshot(rootPath: string): Promise<Workspa
 
 export function registerWorkspaceHandlers(
   store: Store<AppPreferences>,
-  isTrustedSender: (event: IpcMainInvokeEvent) => boolean
+  isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
+  getWorkspacePurpose: () => WorkspacePurpose
 ): {
   getWorkspaceRoot: () => string | null
-  setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>
+  setWorkspace: (rootPath: string, isCurrent?: () => boolean) => Promise<WorkspaceSnapshot>
 } {
   let activeWorkspaceRoot: string | null = null
   let searchGeneration = 0
@@ -160,12 +163,14 @@ export function registerWorkspaceHandlers(
     return activeWorkspaceRoot
   }
 
-  function setWorkspace(rootPath: string): Promise<WorkspaceSnapshot> {
+  function setWorkspace(rootPath: string, isCurrent?: () => boolean): Promise<WorkspaceSnapshot> {
     const operation = workspaceTransition.then(async () => {
+      ensureWorkspaceRequestCurrent(isCurrent)
       const resolvedRoot = await fs.realpath(rootPath)
       const stats = await fs.stat(resolvedRoot)
       if (!stats.isDirectory()) throw new Error('The selected workspace is not a directory.')
       const snapshot = await createWorkspaceSnapshot(resolvedRoot)
+      ensureWorkspaceRequestCurrent(isCurrent)
       activeWorkspaceRoot = resolvedRoot
       searchGeneration += 1
       clearFileWatchers()
@@ -207,11 +212,17 @@ export function registerWorkspaceHandlers(
     }
   }
 
-  ipcMain.handle(IPC_CHANNELS.openWorkspace, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.openWorkspace, async (event, expectedPurpose?: unknown) => {
     assertTrusted(event)
+    if (expectedPurpose !== undefined && expectedPurpose !== 'sandbox' && expectedPurpose !== 'assignment') {
+      throw new Error('Invalid workspace purpose.')
+    }
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null
-    return setWorkspace(result.filePaths[0])
+    return setWorkspace(
+      result.filePaths[0],
+      typeof expectedPurpose === 'string' ? () => getWorkspacePurpose() === expectedPurpose : undefined
+    )
   })
 
   ipcMain.handle(IPC_CHANNELS.restoreWorkspace, async (event) => {

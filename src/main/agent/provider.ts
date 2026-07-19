@@ -1,5 +1,7 @@
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { generateObject, generateText } from 'ai'
+import { generateObject, generateText, type ModelMessage } from 'ai'
 import type { ZodType } from 'zod'
 import type { AgentConfig } from '../../shared/contracts'
 import type { CodexAppServer, CodexSession } from './codexAppServer'
@@ -9,6 +11,24 @@ export type ModelSession = CodexSession
 export type GenerateStructuredOptions = {
   session?: ModelSession
   deltaPrompt?: string
+  imagePaths?: string[]
+}
+
+const imageMediaTypes: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp'
+}
+
+async function userMessageWithImages(prompt: string, imagePaths: string[]): Promise<ModelMessage[]> {
+  const images = await Promise.all(imagePaths.map(async (imagePath) => ({
+    type: 'file' as const,
+    data: await fs.readFile(imagePath),
+    mediaType: imageMediaTypes[path.extname(imagePath).toLowerCase()] ?? 'image/png'
+  })))
+  return [{ role: 'user', content: [{ type: 'text', text: prompt }, ...images] }]
 }
 
 const baseInstructions = `You are Wormie, a learning-first coding assistant.
@@ -106,7 +126,8 @@ export class ModelGateway {
         onProtocolEvent,
         options && {
           session: options.session,
-          deltaPrompt: options.deltaPrompt ? `${options.deltaPrompt}${outputReminder}` : undefined
+          deltaPrompt: options.deltaPrompt ? `${options.deltaPrompt}${outputReminder}` : undefined,
+          imagePaths: options.imagePaths
         }
       )
     }
@@ -122,13 +143,16 @@ export class ModelGateway {
     })
     const model = provider(this.config.model)
     const maxOutputTokens = kind === 'proposal' ? 32_000 : kind === 'understanding-quiz' ? 12_000 : kind === 'workspace-step' ? 12_000 : 8_000
+    const imagePaths = options?.imagePaths ?? []
 
     try {
       const { object } = await generateObject({
         model,
         schema,
         system: baseInstructions,
-        prompt,
+        ...(imagePaths.length
+          ? { messages: await userMessageWithImages(prompt, imagePaths) }
+          : { prompt }),
         abortSignal: signal,
         maxOutputTokens
       })
@@ -140,7 +164,15 @@ export class ModelGateway {
     }
 
     const requestedPrompt = `${prompt}\n\nReturn exactly this JSON shape:\n${schemaSummary(kind)}`
-    const first = await generateText({ model, system: baseInstructions, prompt: requestedPrompt, abortSignal: signal, maxOutputTokens })
+    const first = await generateText({
+      model,
+      system: baseInstructions,
+      ...(imagePaths.length
+        ? { messages: await userMessageWithImages(requestedPrompt, imagePaths) }
+        : { prompt: requestedPrompt }),
+      abortSignal: signal,
+      maxOutputTokens
+    })
     const parsed = schema.safeParse(extractJson(first.text))
     if (parsed.success) return parsed.data
 

@@ -14,6 +14,7 @@ import { MasteryRepository } from './mastery/repository'
 import { MasteryService } from './mastery/service'
 import { KnowledgeGraph } from './mastery/graph'
 import { canonicalConcepts } from './mastery/catalog'
+import { registerMasteryIpc } from './mastery/ipc'
 import { registerWorkspaceHandlers } from './workspace'
 import { IPC_CHANNELS } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
@@ -126,6 +127,7 @@ if (!app.requestSingleInstanceLock()) {
     isTrustedSender
   )
   understanding.registerIpc()
+  registerMasteryIpc(mastery, isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
   registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot, mastery)

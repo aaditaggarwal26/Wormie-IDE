@@ -149,9 +149,23 @@ export const remediationDraftSchema = z.object({
   lesson: z.string().min(1).max(1600)
 })
 
+export const reviewDraftSchema = z.object({
+  title: z.string().min(1).max(160),
+  questions: z.array(z.object({
+    prompt: z.string().min(1).max(900),
+    options: z.array(z.string().min(1).max(400)).min(3).max(5),
+    correctOption: z.number().int().min(0).max(4),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
+    explanation: z.string().min(1).max(900)
+  })).min(3).max(5)
+}).superRefine((value, context) => value.questions.forEach((question, index) => {
+  if (question.correctOption >= question.options.length) context.addIssue({ code: 'custom', message: 'The correct option must reference an available answer.', path: ['questions', index, 'correctOption'] })
+}))
+
 export type LearningDraft = z.infer<typeof learningDraftSchema>
 export type ProposalDraft = z.infer<typeof proposalDraftSchema>
 export type ChangeConceptDraft = z.infer<typeof changeConceptDraftSchema>
 export type UnderstandingQuizDraft = z.infer<typeof understandingQuizDraftSchema>
 export type SemanticGradeDraft = z.infer<typeof semanticGradeSchema>
 export type RemediationDraft = z.infer<typeof remediationDraftSchema>
+export type ReviewDraft = z.infer<typeof reviewDraftSchema>

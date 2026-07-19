@@ -32,7 +32,7 @@ import { gradeQuiz, type AnswerKey } from './grading'
 import { ModelGateway, validateBaseUrl } from './provider'
 import { materializeProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
-import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
+import { changeConceptDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, reviewDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
 import type { UnderstandingController } from '../understanding'
 import type { MasteryService } from '../mastery/service'
 import { resolveConcept } from '../mastery/catalog'
@@ -309,6 +309,7 @@ export function registerAgentHandlers(
     generateRemediation: (prompt) => runModel((gateway, signal) => gateway.generateStructured('remediation', prompt, remediationDraftSchema, signal)),
     modelIdentifier: () => getConfig().model || 'codex-default'
   })
+  mastery.setReviewGenerator((prompt) => runModel((gateway, signal) => gateway.generateStructured('review-quiz', prompt, reviewDraftSchema, signal)))
 
   ipcMain.handle(IPC_CHANNELS.agentGetConfig, getConfig)
 

@@ -37,6 +37,23 @@ export const IPC_CHANNELS = {
   understandingSaveAnswers: 'understanding:save-answers',
   understandingSubmit: 'understanding:submit',
   understandingBypass: 'understanding:bypass',
+  masteryOverview: 'mastery:overview',
+  masteryDomains: 'mastery:domains',
+  masteryConcept: 'mastery:concept',
+  masteryEvidence: 'mastery:evidence',
+  masteryMisconceptions: 'mastery:misconceptions',
+  masteryReviews: 'mastery:reviews',
+  masteryStartReview: 'mastery:start-review',
+  masterySubmitReview: 'mastery:submit-review',
+  masteryGetPersonalization: 'mastery:get-personalization',
+  masterySavePersonalization: 'mastery:save-personalization',
+  masteryResetPersonalization: 'mastery:reset-personalization',
+  masteryGetGoals: 'mastery:get-goals',
+  masteryCreateGoal: 'mastery:create-goal',
+  masteryUpdateGoal: 'mastery:update-goal',
+  masteryDeleteGoal: 'mastery:delete-goal',
+  masteryGamification: 'mastery:gamification',
+  masterySyncStatus: 'mastery:sync-status',
   gitAnalyzeStaged: 'git:analyze-staged',
   gitCommitStaged: 'git:commit-staged',
   agentCancel: 'agent:cancel',
@@ -574,6 +591,91 @@ export type GamificationState = {
   processedEventIds: Record<string, true>
 }
 
+export type MasteryConceptView = {
+  conceptId: string
+  name: string
+  description: string
+  domain: ConceptDomain
+  depth: ConceptDepth
+  mastery: number
+  confidence: number
+  status: MasteryStatus
+  lastAssessedAt: string | null
+  nextReviewAt: string | null
+}
+
+export type MasteryOverviewView = {
+  overallMastery: number | null
+  overallConfidence: number
+  assessedConcepts: number
+  unassessedConcepts: number
+  reviewDueConcepts: number
+  statusCounts: Record<MasteryStatus, number>
+  strongConcepts: MasteryConceptView[]
+  weakConcepts: MasteryConceptView[]
+  reviewDue: MasteryConceptView[]
+  recentImprovements: Array<{ conceptId: string; name: string; delta: number; at: string }>
+  recentRegressions: Array<{ conceptId: string; name: string; delta: number; at: string }>
+  estimatedGrowth: { pointsPer30Days: number; evidenceWindowDays: number } | null
+  gamification: Pick<GamificationState, 'totalXp' | 'level' | 'dailyStreak' | 'weeklyStreak'>
+}
+
+export type DomainMasteryView = {
+  domain: Exclude<ConceptDomain, 'custom'>
+  mastery: number | null
+  confidence: number
+  assessedConcepts: number
+  totalConcepts: number
+  weakConcepts: number
+  strongConcepts: number
+  reviewDueConcepts: number
+}
+
+export type MasteryEvidenceView = {
+  id: string
+  conceptId: string
+  source: MasteryEvidenceSource
+  score: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: MasteryEvidenceFormat
+  occurredAt: string
+  assessmentId: string
+  attempt: number
+  assignmentId?: string
+  classroomId?: string
+}
+
+export type MasteryEvidencePage = { page: number; pageSize: number; total: number; items: MasteryEvidenceView[] }
+
+export type ReviewQueueItem = {
+  concept: MasteryConceptView
+  review: ReviewState
+  overdueDays: number
+  forgottenRisk: number
+}
+
+export type ConceptDetailView = {
+  concept: MasteryConceptView
+  reasons: string[]
+  prerequisites: MasteryConceptView[]
+  dependents: MasteryConceptView[]
+  blockingPrerequisiteIds: string[]
+  diagnosticPrerequisiteIds: string[]
+  evidence: MasteryEvidenceView[]
+  scoreHistory: MasteryScorePoint[]
+  misconceptions: MisconceptionRecord[]
+  review: ReviewState | null
+  recommendedAction: 'learn-prerequisites' | 'take-diagnostic' | 'start-review' | 'keep-practicing' | 'continue'
+}
+
+export type ReviewQuestion = { id: string; prompt: string; options: string[]; difficulty: 'easy' | 'medium' | 'hard' }
+export type ReviewSession = { id: string; conceptId: string; title: string; questions: ReviewQuestion[]; createdAt: string }
+export type ReviewSubmission = { sessionId: string; answers: Record<string, number> }
+export type ReviewResult = { sessionId: string; score: number; passed: boolean; feedback: Array<{ questionId: string; correct: boolean; explanation: string }> }
+
+export type LearningGoalInput = Pick<LearningGoal, 'id' | 'title' | 'type' | 'target'> & Partial<Pick<LearningGoal, 'conceptId' | 'domain'>>
+export type MasterySyncStatus = { state: 'local-only' | 'offline' | 'syncing' | 'synced' | 'error'; pending: number; lastSyncedAt: string | null; error?: string }
+
 export type ChangeUnderstandingPreparation = {
   changeId: string
   fingerprint: string
@@ -900,6 +1002,23 @@ export type DesktopApi = {
   saveUnderstandingAnswers: (quizId: string, answers: Record<string, UnderstandingAnswer>) => Promise<UnderstandingGateStatus>
   submitUnderstanding: (submission: UnderstandingSubmission) => Promise<UnderstandingResult>
   bypassUnderstanding: (quizId: string, reason: string) => Promise<UnderstandingGateStatus>
+  getMasteryOverview: () => Promise<MasteryOverviewView>
+  getMasteryDomains: () => Promise<DomainMasteryView[]>
+  getMasteryConcept: (conceptId: string) => Promise<ConceptDetailView>
+  getMasteryEvidence: (request: { conceptId?: string; page: number; pageSize: number }) => Promise<MasteryEvidencePage>
+  getMasteryMisconceptions: (status?: MisconceptionRecord['status']) => Promise<MisconceptionRecord[]>
+  getMasteryReviews: () => Promise<ReviewQueueItem[]>
+  startMasteryReview: (conceptId: string) => Promise<ReviewSession>
+  submitMasteryReview: (submission: ReviewSubmission) => Promise<ReviewResult>
+  getLearningPersonalization: () => Promise<PersonalizationState>
+  saveLearningPersonalization: (update: Partial<ExplicitLearningPreferences>) => Promise<PersonalizationState>
+  resetLearningPersonalization: () => Promise<PersonalizationState>
+  getLearningGoals: () => Promise<LearningGoal[]>
+  createLearningGoal: (input: LearningGoalInput) => Promise<LearningGoal>
+  updateLearningGoal: (id: string, update: Partial<Pick<LearningGoal, 'title' | 'target' | 'status'>>) => Promise<LearningGoal>
+  deleteLearningGoal: (id: string) => Promise<void>
+  getLearningGamification: () => Promise<GamificationState>
+  getMasterySyncStatus: () => Promise<MasterySyncStatus>
   analyzeStagedChange: (repositoryRoot: string, forceNew?: boolean) => Promise<StagedChangeAnalysis>
   commitStagedChange: (request: CommitStagedRequest) => Promise<CommitStagedResult>
   onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void

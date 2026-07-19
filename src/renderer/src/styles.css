@@ -830,8 +830,94 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .classroom-form label { display: grid; gap: 5px; color: #8d9993; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.classroom-form input, .classroom-form textarea { width: 100%; padding: 7px; border: 1px solid #303a35; border-radius: 5px; outline: 0; color: #c4cdc7; background: #111614; font: 11px/1.5 "Avenir Next", sans-serif; text-transform: none; }.classroom-form input { height: 34px; }.classroom-form textarea { min-height: 80px; resize: vertical; }.classroom-form input:focus, .classroom-form textarea:focus { border-color: #657445; }
 .classroom-primary { border-color: #5f6e42; color: #d8e3ba; background: #283120; }
 
+.titlebar-home { -webkit-app-region: no-drag; width: max-content; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.titlebar-home svg { color: #7f8984; }
+
+.launcher-screen, .classroom-portal { width: 100%; height: 100%; color: #d3d9d4; background: #0a0d0c; }
+.launcher-screen { position: relative; display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; isolation: isolate; }
+.launcher-atmosphere { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.launcher-atmosphere::before { position: absolute; inset: 0; content: ""; opacity: .38; background-image: linear-gradient(#273027 1px, transparent 1px), linear-gradient(90deg, #273027 1px, transparent 1px); background-size: 56px 56px; mask-image: linear-gradient(to bottom, transparent 5%, #000 54%, transparent 98%); }
+.launcher-atmosphere span { position: absolute; border-radius: 50%; filter: blur(100px); opacity: .13; }
+.launcher-atmosphere span:nth-child(1) { width: 430px; height: 430px; top: 18%; left: 12%; background: #b6d64d; }
+.launcher-atmosphere span:nth-child(2) { width: 380px; height: 380px; right: 9%; bottom: 4%; background: #d79257; }
+.launcher-atmosphere span:nth-child(3) { width: 240px; height: 240px; top: -90px; right: 30%; background: #7a9b78; }
+.launcher-header, .portal-titlebar { -webkit-app-region: drag; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 142px 0 28px; border-bottom: 1px solid #202720; background: rgba(10, 13, 12, .88); }
+.launcher-brand, .portal-brand { display: flex; gap: 10px; align-items: center; color: #dfe6d8; font-size: 13px; letter-spacing: .02em; }
+.launcher-worm { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
+.launcher-worm i { display: block; width: 4px; border-radius: 3px 3px 1px 1px; background: #c3dd57; }
+.launcher-worm i:nth-child(1) { height: 7px; }.launcher-worm i:nth-child(2) { height: 12px; }.launcher-worm i:nth-child(3) { height: 16px; }
+.launcher-account, .portal-account { -webkit-app-region: no-drag; display: flex; gap: 16px; align-items: center; color: #7f8b84; font-size: 11px; }
+.launcher-account button, .portal-account button, .portal-back { display: inline-flex; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid #303932; border-radius: 5px; color: #a9b4ad; background: #121713; cursor: pointer; }
+.launcher-content { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(580px, 1.28fr); gap: clamp(42px, 7vw, 112px); align-items: center; width: min(1370px, calc(100% - 96px)); margin: 0 auto; }
+.launcher-intro { max-width: 510px; }
+.launcher-kicker, .portal-overline { display: flex; gap: 7px; align-items: center; color: #bdd454; font: 700 10px/1.3 "Cascadia Code", monospace; letter-spacing: .13em; text-transform: uppercase; }
+.launcher-intro h1 { margin: 18px 0 20px; color: #f0f2ed; font: 500 clamp(45px, 5vw, 76px)/.95 Georgia, serif; letter-spacing: -.045em; }
+.launcher-intro p { max-width: 470px; margin: 0; color: #8d9992; font: 15px/1.75 "Avenir Next", system-ui, sans-serif; }
+.launcher-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.launcher-card { position: relative; display: flex; flex-direction: column; min-height: 410px; padding: 24px; overflow: hidden; border: 1px solid #303a31; border-radius: 10px; color: inherit; background: linear-gradient(155deg, #151a16, #0f1311 70%); text-align: left; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
+.launcher-card::after { position: absolute; right: -60px; bottom: -85px; width: 220px; height: 220px; border: 1px solid #4a5847; border-radius: 50%; content: ""; opacity: .35; }
+.launcher-card:hover { transform: translateY(-4px); border-color: #7b8d50; background: linear-gradient(155deg, #1b211a, #111612 70%); }
+.launcher-card-classrooms:hover { border-color: #9a704c; }
+.launcher-card-index { color: #778279; font: 9px "Cascadia Code", monospace; letter-spacing: .12em; }
+.launcher-card-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-top: 62px; border: 1px solid #4b5840; border-radius: 8px; color: #c5db65; background: #20271c; }
+.launcher-card-classrooms .launcher-card-icon { border-color: #5d4635; color: #dda16a; background: #281d17; }
+.launcher-card h2 { margin: 22px 0 12px; color: #e9eee7; font: 500 31px/1.05 Georgia, serif; }
+.launcher-card p { margin: 0; color: #8d9991; font: 12px/1.7 "Avenir Next", system-ui, sans-serif; }
+.launcher-card-meta { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 28px; color: #b9c5b7; font-size: 11px; }
+
+.classroom-portal { display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; }
+.portal-titlebar { display: grid; grid-template-columns: 1fr auto 1fr; }
+.portal-back { -webkit-app-region: no-drag; justify-self: start; padding: 6px 9px; }
+.portal-account { justify-self: end; }
+.portal-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; }
+.portal-sidebar { min-height: 0; padding: 24px 16px; overflow-y: auto; border-right: 1px solid #202720; background: #0c100e; }
+.portal-sidebar-heading, .portal-sidebar-heading > div, .portal-actions, .portal-group-label, .portal-section-heading, .portal-classroom-stats, .portal-invite-card > div:last-child { display: flex; align-items: center; }
+.portal-sidebar-heading { justify-content: space-between; margin-bottom: 14px; }
+.portal-sidebar-heading > div { gap: 8px; color: #aab5ae; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.portal-sidebar-heading b, .portal-group-label b { color: #c1d369; font: 10px "Cascadia Code", monospace; }
+.portal-sidebar-heading button { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid #2c352e; border-radius: 5px; color: #849087; background: #111613; }
+.portal-actions { gap: 7px; margin-bottom: 24px; }
+.portal-actions button { display: flex; flex: 1; gap: 6px; align-items: center; justify-content: center; min-height: 34px; border: 1px solid #3c4836; border-radius: 5px; color: #bdc9b6; background: #171d16; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.portal-error { margin: -12px 0 18px; padding: 9px; border: 1px solid #684335; border-radius: 5px; color: #d5a182; background: #211511; font-size: 11px; line-height: 1.5; }
+.portal-classroom-group { margin-top: 22px; }
+.portal-group-label { justify-content: space-between; padding: 0 7px 8px; color: #728078; font-size: 9px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.portal-classroom-group > button { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; width: 100%; min-height: 54px; padding: 8px; border: 1px solid transparent; border-radius: 7px; color: #aeb8b1; background: transparent; text-align: left; }
+.portal-classroom-group > button:hover, .portal-classroom-group > button[aria-current="page"] { border-color: #394438; background: #161c17; }
+.portal-classroom-group > button > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 7px; color: #c0d16a; background: #232b1e; font: 10px "Cascadia Code", monospace; }
+.portal-classroom-group b, .portal-classroom-group small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-classroom-group b { color: #c4cdc6; font-size: 12px; }.portal-classroom-group small { margin-top: 4px; color: #748078; font-size: 10px; }
+.portal-sidebar-empty { padding: 38px 8px; color: #647069; text-align: center; }.portal-sidebar-empty p { margin: 9px 0 0; font-size: 11px; }
+.portal-main { min-width: 0; min-height: 0; overflow: auto; background: radial-gradient(circle at 80% 4%, rgba(162, 118, 75, .09), transparent 32%), #0a0d0c; }
+.portal-classroom { min-height: 100%; }
+.portal-classroom-header { display: flex; gap: 36px; align-items: flex-end; justify-content: space-between; min-height: 225px; padding: 54px clamp(32px, 6vw, 88px) 38px; border-bottom: 1px solid #252d27; }
+.portal-classroom-header h1, .portal-form h1, .portal-empty h1 { margin: 13px 0 10px; color: #edf0ea; font: 500 45px/1 Georgia, serif; letter-spacing: -.025em; }
+.portal-classroom-header p { max-width: 680px; margin: 0; color: #89958e; font: 13px/1.65 "Avenir Next", system-ui, sans-serif; }
+.portal-classroom-stats { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.portal-classroom-stats span { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border: 1px solid #303a31; border-radius: 5px; color: #89958d; background: #111613; font-size: 10px; white-space: nowrap; }.portal-classroom-stats b { color: #c5d36f; }
+.portal-tabs { display: flex; gap: 28px; height: 50px; padding: 0 clamp(32px, 6vw, 88px); border-bottom: 1px solid #212821; }
+.portal-tabs button { position: relative; border: 0; color: #78857d; background: transparent; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }.portal-tabs button[aria-selected="true"] { color: #ced7cd; }.portal-tabs button[aria-selected="true"]::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; content: ""; background: #bfd557; }
+.portal-tab-content { padding: 34px clamp(32px, 6vw, 88px) 70px; }
+.portal-section-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 24px; align-items: start; }
+.portal-section-main, .portal-invite-card, .portal-people-group { border: 1px solid #2c352e; border-radius: 8px; background: #101512; }
+.portal-section-heading { gap: 24px; justify-content: space-between; padding: 19px 20px; border-bottom: 1px solid #282f29; }.portal-section-heading span { color: #6f7b74; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; }.portal-section-heading h2 { margin: 4px 0 0; color: #d7ddd7; font: 500 23px Georgia, serif; }
+.portal-accent-button, .portal-assignment-grid article button, .portal-primary, .portal-invite-card button { display: inline-flex; gap: 6px; align-items: center; justify-content: center; border: 1px solid #58663e; border-radius: 5px; color: #d2dfaf; background: #273020; font-size: 10px; font-weight: 700; }
+.portal-accent-button { min-height: 34px; padding: 0 11px; }.portal-accent-button:disabled { opacity: .4; }
+.portal-assignment-grid { display: grid; }
+.portal-assignment-grid article { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 82px; padding: 15px 20px; border-bottom: 1px solid #232b24; }.portal-assignment-grid article:last-child { border-bottom: 0; }
+.portal-assignment-number { color: #7d8a6f; font: 10px "Cascadia Code", monospace; }.portal-assignment-grid h3 { margin: 0; color: #c9d2cb; font-size: 13px; }.portal-assignment-grid time { display: block; margin-top: 6px; color: #707c75; font: 9px "Cascadia Code", monospace; }.portal-assignment-grid article button { min-height: 32px; padding: 0 10px; }
+.portal-section-empty { padding: 55px 20px; color: #6c7871; text-align: center; }.portal-section-empty p { margin: 9px 0 0; font-size: 11px; }
+.portal-invite-card { padding: 20px; }.portal-invite-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 28px; border-radius: 7px; color: #c5d65f; background: #232b1e; }.portal-invite-card > span { color: #778279; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }.portal-invite-card h3 { margin: 9px 0 19px; color: #d4dbd3; font: 500 21px Georgia, serif; }.portal-invite-card code { display: block; padding: 10px; overflow: hidden; border: 1px solid #2e3830; border-radius: 5px; color: #aebe75; background: #0b0f0c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.portal-invite-card > div:last-child { gap: 7px; margin-top: 9px; }.portal-invite-card button { flex: 1; min-height: 31px; }
+.portal-people { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }.portal-people > .portal-section-heading { grid-column: 1 / -1; padding: 0 0 10px; border: 0; }.portal-people-group { overflow: hidden; }.portal-people-group > header { display: flex; align-items: center; justify-content: space-between; padding: 15px 17px; border-bottom: 1px solid #293129; }.portal-people-group h3 { margin: 0; color: #bbc5bd; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }.portal-people-group header span { color: #c3d36c; font: 10px "Cascadia Code", monospace; }.portal-people-group > p { padding: 22px 17px; color: #707c75; font-size: 11px; }.portal-people-group article { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 11px; align-items: center; min-height: 61px; padding: 10px 17px; border-bottom: 1px solid #242b25; }.portal-people-group article > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: #c4d071; background: #242c20; font-size: 11px; }.portal-people-group article b, .portal-people-group article small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portal-people-group article b { color: #c9d1cb; font-size: 13px; }.portal-people-group article small { margin-top: 4px; color: #89968e; font-size: 11px; }
+.portal-empty, .portal-form-shell { display: grid; place-items: center; min-height: 100%; padding: 40px; }.portal-empty { color: #68746c; text-align: center; }.portal-empty h1 { font-size: 34px; }.portal-empty p { margin: 0; font-size: 12px; }
+.portal-form { position: relative; display: grid; gap: 16px; width: min(520px, 100%); padding: 35px; border: 1px solid #303a31; border-radius: 10px; background: #111613; box-shadow: 0 24px 80px #0007; }.portal-form h1 { margin: 8px 0 0; font-size: 35px; }.portal-form > p { margin: -8px 0 5px; color: #829087; font-size: 12px; line-height: 1.6; }.portal-form label { display: grid; gap: 7px; color: #8d9991; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.portal-form input, .portal-form textarea { width: 100%; padding: 10px; border: 1px solid #39433a; border-radius: 5px; outline: 0; color: #d3dbd4; background: #0b0f0c; font-size: 12px; text-transform: none; }.portal-form input { height: 39px; }.portal-form textarea { min-height: 105px; resize: vertical; }.portal-form-close { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 30px; height: 30px; border: 0; color: #7b877f; background: transparent; }.portal-primary { min-height: 39px; margin-top: 3px; }.portal-primary:disabled { opacity: .45; }
+
 @media (max-width: 1180px) {
   .titlebar-brand b { display: none; }
+  .launcher-content { grid-template-columns: 1fr; align-content: center; max-width: 850px; }
+  .launcher-intro h1 br { display: none; }
+  .launcher-intro h1 { font-size: 48px; }
+  .launcher-card { min-height: 310px; }.launcher-card-icon { margin-top: 30px; }
+  .portal-section-grid { grid-template-columns: 1fr; }.portal-invite-card { max-width: 440px; }
 }
 
 @media (max-width: 900px) {
@@ -840,6 +926,9 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
   .assignment-studio-backdrop { padding: 12px; }
   .assignment-studio { width: calc(100vw - 24px); }
   .guardrail-grid { grid-template-columns: 1fr; }
+  .launcher-header, .portal-titlebar { padding-right: 90px; padding-left: 16px; }
+  .launcher-content { width: calc(100% - 36px); }.launcher-destinations { grid-template-columns: 1fr; overflow-y: auto; }.launcher-card { min-height: 250px; }
+  .portal-layout { grid-template-columns: 230px minmax(0, 1fr); }.portal-classroom-header { align-items: flex-start; flex-direction: column; }.portal-people { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

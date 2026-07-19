@@ -2,6 +2,7 @@ export const IPC_CHANNELS = {
   openWorkspace: 'workspace:open',
   restoreWorkspace: 'workspace:restore',
   refreshWorkspace: 'workspace:refresh',
+  workspaceSetPurpose: 'workspace:set-purpose',
   readFile: 'workspace:read-file',
   writeFile: 'workspace:write-file',
   createEntry: 'workspace:create-entry',
@@ -74,6 +75,8 @@ export const IPC_CHANNELS = {
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
 } as const
+
+export type WorkspacePurpose = 'sandbox' | 'assignment'
 
 export type FileTreeNode = {
   name: string
@@ -827,6 +830,7 @@ export type AgentActivityEvent = {
 
 export type DesktopApi = {
   platform: string
+  setWorkspacePurpose: (purpose: WorkspacePurpose) => Promise<void>
   openWorkspace: () => Promise<WorkspaceSnapshot | null>
   restoreWorkspace: () => Promise<WorkspaceSnapshot | null>
   refreshWorkspace: () => Promise<WorkspaceSnapshot>

@@ -25,9 +25,6 @@ export type WorkbenchCommandContext = {
   focusTutor: () => void
   openSettings: () => void
   focusTerminal: () => void
-  editAssignment: () => void
-  importAssignment: () => void
-  openClassrooms: () => void
   runEditorAction: (actionId: string) => void
   renameSymbol: () => void
 }
@@ -63,10 +60,7 @@ const definitions: CommandDefinition<WorkbenchCommandContext>[] = [
   { id: 'view.focusSearch', title: 'Focus Search', category: 'View', isEnabled: enabled, run: (context) => context.focusSearch() },
   { id: 'view.focusTutor', title: 'Focus Tutor', category: 'View', isEnabled: enabled, run: (context) => context.focusTutor() },
   { id: 'view.openSettings', title: 'Open Settings', category: 'View', isEnabled: enabled, run: (context) => context.openSettings() },
-  { id: 'view.focusTerminal', title: 'Focus Terminal', category: 'View', shortcut: { key: '`', primary: true }, isEnabled: withWorkspace, run: (context) => context.focusTerminal() },
-  { id: 'assignment.edit', title: 'Create or Edit Assignment', category: 'Assignment', isEnabled: withWorkspace, run: (context) => context.editAssignment() },
-  { id: 'assignment.import', title: 'Import Assignment Package', category: 'Assignment', isEnabled: enabled, run: (context) => context.importAssignment() },
-  { id: 'classroom.open', title: 'Open Classrooms', category: 'Classroom', isEnabled: enabled, run: (context) => context.openClassrooms() }
+  { id: 'view.focusTerminal', title: 'Focus Terminal', category: 'View', shortcut: { key: '`', primary: true }, isEnabled: withWorkspace, run: (context) => context.focusTerminal() }
 ]
 
 export const workbenchCommandRegistry = createCommandRegistry(definitions)

@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, dialog, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
 import { registerAssignmentHandlers } from './assignments'
@@ -12,7 +12,7 @@ import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerEditorRecoveryHandlers } from './editorRecovery'
 import { registerWorkspaceHandlers } from './workspace'
-import { IPC_CHANNELS, type CloudAuthUpdate } from '../shared/contracts'
+import { IPC_CHANNELS, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
 import {
   authCallback,
@@ -27,6 +27,7 @@ const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_REN
 const understandingStore = new Store({ name: 'understanding-state' })
 const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
 const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
+let workspacePurpose: WorkspacePurpose = 'sandbox'
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 let pendingAuthCallback = authCallbackFromArguments(process.argv)
 let handleAuthCallback: ((callback: AuthCallback) => Promise<void>) | null = null
@@ -149,6 +150,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   const workspace = registerWorkspaceHandlers(store, isTrustedSender)
+  ipcMain.handle(IPC_CHANNELS.workspaceSetPurpose, (event, purpose: unknown): void => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted renderer request.')
+    if (purpose !== 'sandbox' && purpose !== 'assignment') throw new Error('Invalid workspace purpose.')
+    workspacePurpose = purpose
+  })
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
   registerEditorRecoveryHandlers(editorRecoveryStore, workspace.getWorkspaceRoot, isTrustedSender)
   registerAssignmentHandlers(
@@ -161,7 +167,7 @@ if (!app.requestSingleInstanceLock()) {
   understanding.registerIpc()
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot)
 
   app.on('second-instance', (_event, commandLine) => {
     const callback = authCallbackFromArguments(commandLine)

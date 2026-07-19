@@ -18,10 +18,12 @@ import {
   type LearningSession,
   type ProposedFileChange,
   type QuizResult,
-  type QuizSubmission
+  type QuizSubmission,
+  type WorkspacePurpose
 } from '../../shared/contracts'
 import { isPathInside, validateEntryName } from '../pathSafety'
 import { readAssignment } from '../assignments/storage'
+import { usesAssignmentPolicy } from './workspacePurpose'
 import { appendAiActivity, type AssignmentAiActivityInput } from '../assignments/activity'
 import type { AppPreferences } from '../preferences'
 import { createWorkspaceSnapshot } from '../workspace'
@@ -132,6 +134,7 @@ function validateRelativeChangePath(rootPath: string, relativePath: string): str
 export function registerAgentHandlers(
   store: Store<AppPreferences>,
   getWorkspaceRoot: () => string | null,
+  getWorkspacePurpose: () => WorkspacePurpose,
   understanding: UnderstandingController,
   progressStorageRoot: string
 ): void {
@@ -180,6 +183,14 @@ export function registerAgentHandlers(
     passingScore: number
     allowGeneration: boolean
   }> {
+    if (!usesAssignmentPolicy(getWorkspacePurpose())) {
+      return {
+        assignmentId: null,
+        assignmentRevision: null,
+        passingScore: store.get('learningPassingScore') ?? 80,
+        allowGeneration: true
+      }
+    }
     const state = await readAssignment(rootPath)
     if (!state.manifest) {
       return {
@@ -209,6 +220,7 @@ export function registerAgentHandlers(
   }
 
   async function recordAssignmentActivity(rootPath: string, input: AssignmentAiActivityInput): Promise<void> {
+    if (!usesAssignmentPolicy(getWorkspacePurpose())) return
     const assignment = await readAssignment(rootPath)
     if (!assignment.manifest || !assignment.revision) return
     await appendAiActivity(progressStorageRoot, rootPath, assignment.manifest, assignment.revision, input)

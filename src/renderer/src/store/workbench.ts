@@ -29,7 +29,7 @@ export type ProposalReview = {
   files: ProposalReviewFile[]
 }
 
-type Activity = 'explorer' | 'search' | 'outline' | 'sourceControl' | 'classrooms' | 'assignments' | 'learning' | 'settings'
+type Activity = 'explorer' | 'search' | 'outline' | 'sourceControl' | 'assignments' | 'settings'
 type BottomView = 'problems' | 'output' | 'terminal' | 'quiz'
 
 type WorkbenchState = {

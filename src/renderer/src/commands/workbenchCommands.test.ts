@@ -28,9 +28,6 @@ function context(hasTypeScriptFile: boolean): WorkbenchCommandContext {
     focusTutor: action,
     openSettings: action,
     focusTerminal: action,
-    editAssignment: action,
-    importAssignment: action,
-    openClassrooms: action,
     runEditorAction: action,
     renameSymbol: action
   }

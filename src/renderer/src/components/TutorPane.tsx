@@ -213,8 +213,8 @@ export function TutorPane(): React.JSX.Element {
       <div className="tutor-scroll">
         {!session && (
           <div className="agent-empty">
-            <FileCode2 size={16} />
-            <span>Ask about your code</span>
+            <h3>Ask about your code</h3>
+            <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review.</p>
           </div>
         )}
 

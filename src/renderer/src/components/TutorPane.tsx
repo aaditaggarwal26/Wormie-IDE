@@ -142,13 +142,6 @@ export function TutorPane(): React.JSX.Element {
     const document = documents.find((candidate) => candidate.path === file.absolutePath)
     return document ? document.content !== document.savedContent : false
   }) ?? false
-  const stage = proposal
-    ? 'Review'
-    : quizResult?.passed
-      ? 'Unlocked'
-      : session
-        ? 'Learning'
-        : 'Idle'
 
   const startLearning = () => {
     const intent = request.trim()
@@ -203,7 +196,6 @@ export function TutorPane(): React.JSX.Element {
           >
             <Activity size={14} />
           </button>
-          <div className="tutor-status" data-busy={busy}><span /> {stage}</div>
         </div>
       </div>
 

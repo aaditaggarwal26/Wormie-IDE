@@ -443,6 +443,12 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const submitAuthLinkMutation = useMutation({
+    mutationFn: window.desktop.submitAuthLink,
+    onMutate: () => setCloudError(null),
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const updatePasswordMutation = useMutation({
     mutationFn: window.desktop.updatePassword,
     onSuccess: (result) => {
@@ -702,13 +708,14 @@ export default function App(): React.JSX.Element {
 
   if (!cloudAuthLoaded || !cloudAuth?.user || cloudAuth.passwordResetRequired) {
     return <AuthScreen
-      busy={authMutation.isPending || googleAuthMutation.isPending || passwordResetMutation.isPending || updatePasswordMutation.isPending}
+      busy={authMutation.isPending || googleAuthMutation.isPending || passwordResetMutation.isPending || submitAuthLinkMutation.isPending || updatePasswordMutation.isPending}
       confirmationRequired={Boolean(cloudAuth?.emailConfirmationRequired)}
       error={cloudError}
       googleBusy={googleAuthMutation.isPending}
       loading={!cloudAuthLoaded}
       onGoogleSignIn={() => googleAuthMutation.mutate()}
       onRequestPasswordReset={(email) => passwordResetMutation.mutate(email)}
+      onSubmitAuthLink={(link) => submitAuthLinkMutation.mutate(link)}
       onSubmit={(mode, credentials) => authMutation.mutate({ mode, credentials })}
       onUpdatePassword={(password) => updatePasswordMutation.mutate(password)}
       passwordResetRequired={Boolean(cloudAuth?.passwordResetRequired)}

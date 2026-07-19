@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, KeyRound, Mail } from 'lucide-react'
+import { ArrowRight, KeyRound, Link2, Mail } from 'lucide-react'
 import type { CloudAuthCredentials } from '@shared/contracts'
 
 type AuthScreenProps = {
@@ -12,6 +12,7 @@ type AuthScreenProps = {
   resetEmailSent: boolean
   onGoogleSignIn: () => void
   onRequestPasswordReset: (email: string) => void
+  onSubmitAuthLink: (link: string) => void
   onSubmit: (mode: 'sign-in' | 'sign-up', credentials: CloudAuthCredentials) => void
   onUpdatePassword: (password: string) => void
 }
@@ -25,10 +26,11 @@ function GoogleMark(): React.JSX.Element {
   </svg>
 }
 
-export function AuthScreen({ busy, confirmationRequired, error, googleBusy, loading, onGoogleSignIn, onRequestPasswordReset, onSubmit, onUpdatePassword, passwordResetRequired, resetEmailSent }: AuthScreenProps): React.JSX.Element {
+export function AuthScreen({ busy, confirmationRequired, error, googleBusy, loading, onGoogleSignIn, onRequestPasswordReset, onSubmitAuthLink, onSubmit, onUpdatePassword, passwordResetRequired, resetEmailSent }: AuthScreenProps): React.JSX.Element {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [authLink, setAuthLink] = useState('')
 
   return <main className="auth-screen">
     <section className="auth-entry">
@@ -65,6 +67,21 @@ export function AuthScreen({ busy, confirmationRequired, error, googleBusy, load
           <button className="auth-mode-switch" disabled={busy || loading} onClick={() => setMode((current) => current === 'sign-in' ? 'sign-up' : 'sign-in')} type="button">
             {mode === 'sign-in' ? 'New to Wormie? Create an account' : 'Already have an account? Sign in'}
           </button>
+
+          <details className="auth-link-fallback">
+            <summary><Link2 size={14} /><span>Have a reset or confirmation link?</span></summary>
+            <form onSubmit={(event) => {
+              event.preventDefault()
+              const link = authLink.trim()
+              if (link) onSubmitAuthLink(link)
+            }}>
+              <p>If clicking the link in your email didn't open Wormie, paste it here — either the link itself or the address-bar URL it opened.</p>
+              <label><span>Link from email</span><div><Link2 size={15} /><input autoComplete="off" disabled={busy || loading} maxLength={8192} onChange={(event) => setAuthLink(event.target.value)} placeholder="wormie-ide://auth/callback?... or http://localhost:3000/#access_token=..." type="text" value={authLink} /></div></label>
+              <button disabled={busy || loading || authLink.trim().length === 0} type="submit">
+                <span>{busy ? 'Opening...' : 'Continue with link'}</span><ArrowRight size={15} />
+              </button>
+            </form>
+          </details>
         </>}
       </div>
     </section>

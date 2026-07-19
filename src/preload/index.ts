@@ -90,6 +90,7 @@ const desktopApi: DesktopApi = {
   signUp: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignUp, credentials),
   signIn: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignIn, credentials),
   requestPasswordReset: (email) => ipcRenderer.invoke(IPC_CHANNELS.cloudRequestPasswordReset, email),
+  submitAuthLink: (link) => ipcRenderer.invoke(IPC_CHANNELS.cloudSubmitAuthLink, link),
   updatePassword: (password) => ipcRenderer.invoke(IPC_CHANNELS.cloudUpdatePassword, password),
   signInWithGoogle: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignInWithGoogle),
   signOut: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignOut),

@@ -56,6 +56,7 @@ export const IPC_CHANNELS = {
   cloudSignUp: 'cloud:sign-up',
   cloudSignIn: 'cloud:sign-in',
   cloudRequestPasswordReset: 'cloud:request-password-reset',
+  cloudSubmitAuthLink: 'cloud:submit-auth-link',
   cloudUpdatePassword: 'cloud:update-password',
   cloudSignInWithGoogle: 'cloud:sign-in-with-google',
   cloudSignOut: 'cloud:sign-out',
@@ -758,6 +759,7 @@ export type DesktopApi = {
   signUp: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
   signIn: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
   requestPasswordReset: (email: string) => Promise<void>
+  submitAuthLink: (link: string) => Promise<void>
   updatePassword: (password: string) => Promise<CloudAuthState>
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>

@@ -18,7 +18,7 @@ import {
 import { createAssignmentPackage, importAssignmentPackage } from '../assignments/package'
 import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
 import { inviteCodeFrom } from './invite'
-import { authCallbackUrl, type AuthCallback } from './oauth'
+import { authCallback, authCallbackUrl, authTokensFromLink, passwordResetCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
@@ -114,6 +114,44 @@ export function registerCloudHandlers(
   client.auth.onAuthStateChange((event) => {
     if (event === 'PASSWORD_RECOVERY') passwordRecoveryEvent = true
   })
+
+  function queueSessionUpdate(run: () => Promise<CloudAuthUpdate>): Promise<void> {
+    callbackExchange = callbackExchange.then(async () => {
+      try {
+        notifyAuthChanged(await run())
+      } catch (error) {
+        notifyAuthChanged({ auth: null, error: authError(error, 'sign-in').message })
+      }
+    })
+    return callbackExchange
+  }
+
+  // The link inside a Supabase email is the `/auth/v1/verify` endpoint, which
+  // 302-redirects to `redirect_to` with the session appended (`?code=...` for
+  // PKCE, `#access_token=...` for implicit). Resolving that redirect here lets
+  // the user paste the raw email link instead of the post-redirect URL. Scoped
+  // strictly to this project's verify endpoint so a pasted link can't make us
+  // fetch an arbitrary host.
+  async function resolveVerifyLink(link: string): Promise<string | null> {
+    let url: URL
+    try { url = new URL(link) } catch { return null }
+    const project = new URL(supabaseUrl)
+    if (url.protocol !== 'https:' || url.hostname !== project.hostname || url.pathname !== '/auth/v1/verify') return null
+    const response = await fetch(url, { redirect: 'manual' })
+    return response.headers.get('location')
+  }
+
+  function processAuthCallback(callback: AuthCallback): Promise<void> {
+    return queueSessionUpdate(async () => {
+      if (callback.kind === 'error') {
+        return { auth: null, error: 'This sign-in or confirmation link could not be completed. Request a new link and try again.' }
+      }
+      passwordRecoveryEvent = false
+      const { data, error } = await client.auth.exchangeCodeForSession(callback.code)
+      if (error) return { auth: null, error: authError(error, 'sign-in').message }
+      return { auth: authState(data.user, false, callback.recovery || passwordRecoveryEvent), error: null }
+    })
+  }
 
   function assertTrusted(event: IpcMainInvokeEvent): void {
     if (!isTrustedSender(event)) throw new Error('Cloud access was denied for this window.')
@@ -229,8 +267,29 @@ export function registerCloudHandlers(
 
   ipcMain.handle(IPC_CHANNELS.cloudRequestPasswordReset, async (event, input: string): Promise<void> => {
     assertTrusted(event)
-    const { error } = await client.auth.resetPasswordForEmail(emailSchema.parse(input), { redirectTo: authCallbackUrl })
+    const { error } = await client.auth.resetPasswordForEmail(emailSchema.parse(input), { redirectTo: passwordResetCallbackUrl })
     if (error) throw authError(error, 'sign-in')
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudSubmitAuthLink, async (event, input: unknown): Promise<void> => {
+    assertTrusted(event)
+    const link = z.string().max(8192).parse(input).trim()
+    // A raw email link points at Supabase's verify endpoint; follow its redirect
+    // to reach the actual callback (with code or tokens). Fall back to the pasted
+    // link itself if it's already a callback / address-bar URL.
+    const resolved = (await resolveVerifyLink(link)) ?? link
+    const callback = authCallback(resolved)
+    if (callback) {
+      await processAuthCallback(callback)
+      return
+    }
+    const tokens = authTokensFromLink(resolved)
+    if (!tokens) throw new Error("That doesn't look like a Wormie sign-in link. Copy the full link from your email (or the address bar URL it opened) and paste it here.")
+    await queueSessionUpdate(async () => {
+      const { data, error } = await client.auth.setSession({ access_token: tokens.accessToken, refresh_token: tokens.refreshToken })
+      if (error) return { auth: null, error: authError(error, 'sign-in').message }
+      return { auth: authState(data.user, false, tokens.recovery), error: null }
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.cloudUpdatePassword, async (event, input: string): Promise<CloudAuthState> => {
@@ -384,26 +443,5 @@ export function registerCloudHandlers(
     }
   })
 
-  return {
-    handleAuthCallback: (callback) => {
-      callbackExchange = callbackExchange.then(async () => {
-        try {
-          if (callback.kind === 'error') {
-            notifyAuthChanged({ auth: null, error: 'This sign-in or confirmation link could not be completed. Request a new link and try again.' })
-            return
-          }
-          passwordRecoveryEvent = false
-          const { data, error } = await client.auth.exchangeCodeForSession(callback.code)
-          if (error) {
-            notifyAuthChanged({ auth: null, error: authError(error, 'sign-in').message })
-            return
-          }
-          notifyAuthChanged({ auth: authState(data.user, false, passwordRecoveryEvent), error: null })
-        } catch (error) {
-          notifyAuthChanged({ auth: null, error: authError(error, 'sign-in').message })
-        }
-      })
-      return callbackExchange
-    }
-  }
+  return { handleAuthCallback: processAuthCallback }
 }

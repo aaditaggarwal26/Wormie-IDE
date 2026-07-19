@@ -149,9 +149,6 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .activity-toggle { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 4px; color: #778288; background: transparent; }
 .activity-toggle:hover, .activity-toggle[data-active="true"] { color: #cccccc; background: #2a2d2e; }
 .activity-toggle:focus-visible { outline: 2px solid #6b96bd; outline-offset: 2px; }
-.tutor-status { display: flex; gap: 5px; align-items: center; color: #667178; font-size: 9px; text-transform: uppercase; }
-.tutor-status span { width: 5px; height: 5px; border-radius: 50%; background: #6a9955; }
-.tutor-status[data-busy="true"] span { background: #3794ff; animation: pulse 1.2s ease-in-out infinite; }
 .agent-activity-shell { flex: 0 1 auto; max-height: 40%; overflow: auto; border-bottom: 1px solid var(--line); background: #181818; scrollbar-color: #424242 transparent; scrollbar-width: thin; }
 .agent-activity { padding: 10px 12px 12px; }
 .activity-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: #86918b; font-size: 8px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
@@ -680,6 +677,12 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .auth-card form > button:hover { background: #39462a; }
 .auth-card button:disabled { opacity: .48; cursor: default; }
 .auth-mode-switch { width: 100%; margin-top: 18px; border: 0; color: #9aa66c; background: transparent; font-size: 10px; }
+.auth-link-fallback { margin-top: 18px; border-top: 1px solid #252c29; padding-top: 14px; }
+.auth-link-fallback summary { display: flex; gap: 7px; align-items: center; color: #6f7a72; font-size: 10px; cursor: pointer; list-style: none; }
+.auth-link-fallback summary::-webkit-details-marker { display: none; }
+.auth-link-fallback summary:hover { color: #9aa66c; }
+.auth-link-fallback[open] summary { color: #9aa66c; margin-bottom: 6px; }
+.auth-link-fallback p { margin: 0; color: #66726c; font-size: 10px; line-height: 1.5; }
 .auth-notice, .auth-error { margin: 0 0 18px; padding: 10px 11px; border-radius: 5px; font: 10px/1.5 "Avenir Next", sans-serif; }
 .auth-notice { display: flex; gap: 8px; align-items: center; border: 1px solid #4b5937; color: #b8c58d; background: #192016; }
 .auth-error { border: 1px solid #654335; color: #d19a7a; background: #211613; }

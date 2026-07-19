@@ -23,8 +23,8 @@ describe('classroom portal model', () => {
   })
 
   it('keeps teacher settings private from student navigation', () => {
-    expect(classroomTabsForRole('teacher')).toEqual(['assignments', 'people', 'settings'])
-    expect(classroomTabsForRole('student')).toEqual(['assignments', 'people'])
+    expect(classroomTabsForRole('teacher')).toEqual(['assignments', 'people', 'mastery', 'settings'])
+    expect(classroomTabsForRole('student')).toEqual(['assignments', 'people', 'mastery'])
     expect(validClassroomTab('student', 'settings')).toBe('assignments')
   })
 })

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, BookOpenCheck, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
-import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import { ArrowLeft, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, ClassroomMasterySnapshot, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
 
@@ -11,6 +11,8 @@ type ClassroomPortalProps = {
   busy: boolean
   classrooms: Classroom[]
   error: string | null
+  mastery: ClassroomMasterySnapshot | null
+  masteryBusy: boolean
   selectedClassroomId: string | null
   selectedTab: ClassroomPortalTab
   user: CloudUser
@@ -111,6 +113,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
             <div className="portal-tab-content">
               {selectedTab === 'assignments' && <AssignmentsTab {...props} classroom={selected} />}
               {selectedTab === 'people' && <PeopleTab {...props} classroom={selected} />}
+              {selectedTab === 'mastery' && <MasteryTab {...props} classroom={selected} />}
               {selectedTab === 'settings' && selected.role === 'teacher' && <ClassroomSettings {...props} classroom={selected} />}
             </div>
           </motion.div> : <div className="portal-empty"><GraduationCap size={28} /><h1>Classrooms live here.</h1><p>Create a class to teach, or join one with an invitation.</p></div>}
@@ -155,5 +158,24 @@ function ClassroomSettings(props: ClassroomPortalProps & { classroom: Classroom 
   return <div className="portal-settings">
     <div className="portal-section-heading"><div><span>Teacher controls</span><h2>Classroom settings</h2></div></div>
     <section className="portal-settings-card"><div><Link2 size={18} /><div><h3>Student invitation</h3><p>Share this invitation with students, or replace it to invalidate the previous link.</p></div></div>{classroom.inviteLink ? <><code>{classroom.inviteLink}</code><div><button onClick={() => props.onCopyInvite(classroom.inviteLink!)} type="button"><Clipboard size={13} /> Copy invitation</button><button disabled={props.busy} onClick={() => props.onRotateInvite(classroom.id)} type="button"><RotateCw size={13} /> Replace link</button></div></> : <p className="portal-settings-unavailable">Invitation data is unavailable. Refresh the classroom and try again.</p>}</section>
+  </div>
+}
+
+function MasteryTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
+  const visibleStudentIds = [...new Set([...(props.mastery?.concepts.map((item) => item.studentId) ?? []), ...(props.mastery?.events.map((item) => item.studentId) ?? [])])]
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null)
+  const effectiveStudentId = selectedStudentId && visibleStudentIds.includes(selectedStudentId) ? selectedStudentId : visibleStudentIds[0] ?? null
+  const memberName = (studentId: string) => props.classroom.members.find((member) => member.userId === studentId)?.displayName ?? 'Student'
+  const concepts = props.mastery?.concepts.filter((item) => item.studentId === effectiveStudentId) ?? []
+  const events = props.mastery?.events.filter((item) => item.studentId === effectiveStudentId) ?? []
+  const average = concepts.length ? Math.round(concepts.reduce((total, concept) => total + concept.mastery, 0) / concepts.length) : 0
+
+  if (props.masteryBusy && !props.mastery) return <div className="portal-mastery-state"><RefreshCw className="spin" size={22} /><p>Loading classroom mastery...</p></div>
+  if (!props.mastery || visibleStudentIds.length === 0) return <div className="portal-mastery-state"><BrainCircuit size={24} /><h2>No mastery activity yet.</h2><p>Completed classroom understanding checks will appear here.</p></div>
+
+  return <div className="portal-mastery">
+    {props.mastery.pendingSyncCount > 0 && <div className="portal-sync-notice">{props.mastery.pendingSyncCount} local mastery event{props.mastery.pendingSyncCount === 1 ? '' : 's'} waiting to sync.</div>}
+    {props.classroom.role === 'teacher' && <aside className="portal-mastery-students"><span>Students</span>{visibleStudentIds.map((studentId) => <button aria-current={effectiveStudentId === studentId ? 'true' : undefined} key={studentId} onClick={() => setSelectedStudentId(studentId)} type="button"><b>{memberName(studentId)}</b><small>{props.mastery!.concepts.filter((item) => item.studentId === studentId).length} concepts</small></button>)}</aside>}
+    <section className="portal-mastery-detail"><header><div><span className="portal-overline">Classroom mastery</span><h2>{memberName(effectiveStudentId!)}</h2></div><strong>{average}<small>%</small></strong></header><div className="portal-mastery-concepts">{concepts.length ? concepts.map((concept) => <article key={concept.conceptId}><div><b>{concept.conceptName}</b><small>{concept.correct} correct across {concept.attempts} attempts</small></div><span>{concept.mastery}%</span><i><em style={{ width: `${concept.mastery}%` }} /></i></article>) : <p>No concept evidence yet.</p>}</div><div className="portal-mastery-events"><h3>Recent checks</h3>{events.map((event) => <article key={`${event.quizId}:${event.attempt}`}><CheckCircle2 data-passed={event.passed} size={15} /><div><b>{event.title}</b><time>{new Date(event.completedAt).toLocaleString()}</time></div><strong>{event.score}%</strong></article>)}</div></section>
   </div>
 }

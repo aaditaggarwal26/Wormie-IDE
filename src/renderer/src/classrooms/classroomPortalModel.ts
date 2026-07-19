@@ -9,7 +9,7 @@ export function groupClassrooms(classrooms: Classroom[]): { teaching: Classroom[
 }
 
 export function classroomTabsForRole(role: Classroom['role']): ClassroomPortalTab[] {
-  return role === 'teacher' ? ['assignments', 'people', 'settings'] : ['assignments', 'people']
+  return role === 'teacher' ? ['assignments', 'people', 'mastery', 'settings'] : ['assignments', 'people', 'mastery']
 }
 
 export function validClassroomTab(role: Classroom['role'], tab: ClassroomPortalTab): ClassroomPortalTab {

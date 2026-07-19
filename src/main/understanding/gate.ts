@@ -2,11 +2,13 @@ import type {
   ChangeInput,
   ChangeSignificanceResult,
   ChangeSource,
+  KnowledgeMastery,
   PrivateQuizQuestion,
   UnderstandingAnswer,
   UnderstandingGateStatus,
   UnderstandingQuestionFeedback,
   UnderstandingQuiz,
+  UnderstandingResult,
   UnderstandingSubmission
 } from '../../shared/contracts'
 import { gradeDeterministicAnswers } from './grading'
@@ -17,6 +19,24 @@ type SemanticGrader = (
   answer: UnderstandingAnswer
 ) => Promise<{ correct: boolean; explanation: string; misconception?: string }>
 type RemediationGenerator = (quiz: UnderstandingQuiz, feedback: UnderstandingQuestionFeedback[]) => Promise<string>
+
+export type ClassroomUnderstandingScope = {
+  classroomId: string
+  assignmentId: string | null
+  userId: string
+}
+
+export type UnderstandingCompletion = {
+  scope: ClassroomUnderstandingScope
+  quiz: UnderstandingQuiz
+  result: UnderstandingResult
+  mastery: KnowledgeMastery[]
+  completedAt: string
+}
+
+function classroomScopeKey(scope: ClassroomUnderstandingScope): string {
+  return `${scope.classroomId}:${scope.userId}`
+}
 
 function publicStatus(gate: UnderstandingState['gates'][string]): UnderstandingGateStatus {
   return {
@@ -32,17 +52,28 @@ function publicStatus(gate: UnderstandingState['gates'][string]): UnderstandingG
 }
 
 export class UnderstandingGateService {
+  private completionListener: ((completion: UnderstandingCompletion) => void) | null = null
+
   constructor(
     private readonly repository: UnderstandingRepository,
     private readonly semanticGrader?: SemanticGrader,
-    private readonly remediationGenerator?: RemediationGenerator
+    private readonly remediationGenerator?: RemediationGenerator,
+    private readonly getClassroomScope?: () => ClassroomUnderstandingScope | null
   ) {}
+
+  setCompletionListener(listener: (completion: UnderstandingCompletion) => void): void {
+    this.completionListener = listener
+  }
 
   getSettings() { return this.repository.read().settings }
   setSettings(settings: ReturnType<UnderstandingGateService['getSettings']>) { return this.repository.setSettings(settings) }
   getHistory() {
     const state = this.repository.read()
-    return { history: state.history, mastery: Object.values(state.mastery).sort((left, right) => left.name.localeCompare(right.name)) }
+    const classroomScope = this.getClassroomScope?.() ?? null
+    const scopeKey = classroomScope ? classroomScopeKey(classroomScope) : null
+    const history = scopeKey ? state.classroomHistory[scopeKey] ?? [] : state.history
+    const mastery = scopeKey ? state.classroomMastery[scopeKey] ?? {} : state.mastery
+    return { history, mastery: Object.values(mastery).sort((left, right) => left.name.localeCompare(right.name)) }
   }
 
   createGate(change: ChangeInput, quiz: UnderstandingQuiz, privateQuestions: PrivateQuizQuestion[]): UnderstandingGateStatus {
@@ -95,6 +126,7 @@ export class UnderstandingGateService {
 
   async submit(submission: UnderstandingSubmission) {
     const state = this.repository.read()
+    const classroomScope = this.getClassroomScope?.() ?? null
     const gate = state.gates[submission.quizId]
     if (!gate) throw new Error('Understanding quiz not found.')
     if (gate.state === 'passed' || gate.state === 'bypassed') return gate.lastResult ?? {
@@ -136,8 +168,9 @@ export class UnderstandingGateService {
       remediation
     }
     const now = new Date().toISOString()
-    this.repository.update((value) => {
-      const mastery = { ...value.mastery }
+    const scopeKey = classroomScope ? classroomScopeKey(classroomScope) : null
+    const updatedState = this.repository.update((value) => {
+      const mastery = { ...(scopeKey ? value.classroomMastery[scopeKey] ?? {} : value.mastery) }
       for (const question of gate.privateQuestions) {
         const concept = gate.quiz.concepts.find((candidate) => candidate.id === question.conceptId)
         if (!concept) continue
@@ -149,6 +182,7 @@ export class UnderstandingGateService {
         const nextMastery = Math.round(existing.mastery + ((correct ? 100 : 0) - existing.mastery) * evidenceWeight)
         mastery[concept.id] = { ...existing, attempts, correct: correctCount, mastery: nextMastery, updatedAt: now, evidenceQuizIds: [...new Set([...(existing.evidenceQuizIds ?? []), gate.quiz.id])].slice(-20) }
       }
+      const currentHistory = scopeKey ? value.classroomHistory[scopeKey] ?? [] : value.history
       const history = passed || shouldRemediate ? [{
         id: `${gate.quiz.id}:${attempt}`,
         changeId: gate.quiz.changeId,
@@ -160,20 +194,33 @@ export class UnderstandingGateService {
         concepts: gate.quiz.concepts.map((concept) => concept.name),
         completedAt: now,
         durationSeconds: Math.max(0, Math.round((Date.now() - Date.parse(gate.startedAt)) / 1000))
-      }, ...value.history].slice(0, 500) : value.history
+      }, ...currentHistory].slice(0, 500) : currentHistory
       return {
         ...value,
         gates: { ...value.gates, [gate.quiz.id]: { ...value.gates[gate.quiz.id], draftAnswers: answers, lastResult: result, attempt, state: passed ? 'passed' : shouldRemediate ? 'remediation' : 'in_progress', updatedAt: now } },
-        history,
-        mastery,
+        ...(scopeKey ? {
+          classroomHistory: { ...value.classroomHistory, [scopeKey]: history },
+          classroomMastery: { ...value.classroomMastery, [scopeKey]: mastery }
+        } : { history, mastery }),
         auditEvents: [...value.auditEvents, { type: passed ? 'quiz_passed' as const : 'quiz_failed' as const, at: now, source: gate.quiz.source, significance: gate.quiz.significance.level }]
       }
     })
+    if (classroomScope && this.completionListener) {
+      this.completionListener({
+        scope: classroomScope,
+        quiz: gate.quiz,
+        result,
+        mastery: Object.values(updatedState.classroomMastery[classroomScopeKey(classroomScope)] ?? {}),
+        completedAt: now
+      })
+    }
     return result
   }
 
   bypass(quizId: string, rawReason: string): UnderstandingGateStatus {
     const state = this.repository.read()
+    const classroomScope = this.getClassroomScope?.() ?? null
+    const scopeKey = classroomScope ? classroomScopeKey(classroomScope) : null
     const gate = state.gates[quizId]
     if (!gate) throw new Error('Understanding quiz not found.')
     if (!state.settings.developerBypass) throw new Error('Developer bypass is disabled.')
@@ -181,20 +228,26 @@ export class UnderstandingGateService {
     const reason = typeof rawReason === 'string' ? rawReason.trim() : ''
     if (state.settings.bypassRequiresReason && (reason.length < 8 || reason.length > 500)) throw new Error('Enter a bypass reason between 8 and 500 characters.')
     const now = new Date().toISOString()
-    const next = this.repository.update((value) => ({
-      ...value,
-      gates: { ...value.gates, [quizId]: { ...value.gates[quizId], state: 'bypassed', updatedAt: now } },
-      history: [{ id: `${quizId}:bypass`, changeId: gate.quiz.changeId, source: gate.quiz.source, title: gate.quiz.title, significance: gate.quiz.significance.level, score: null, outcome: 'bypassed' as const, concepts: gate.quiz.concepts.map((concept) => concept.name), completedAt: now, bypassReason: reason || undefined }, ...value.history].slice(0, 500),
-      auditEvents: [...value.auditEvents, { type: 'gate_bypassed' as const, at: now, source: gate.quiz.source, significance: gate.quiz.significance.level }]
-    }))
+    const next = this.repository.update((value) => {
+      const entry = { id: `${quizId}:bypass`, changeId: gate.quiz.changeId, source: gate.quiz.source, title: gate.quiz.title, significance: gate.quiz.significance.level, score: null, outcome: 'bypassed' as const, concepts: gate.quiz.concepts.map((concept) => concept.name), completedAt: now, bypassReason: reason || undefined }
+      return {
+        ...value,
+        gates: { ...value.gates, [quizId]: { ...value.gates[quizId], state: 'bypassed', updatedAt: now } },
+        ...(scopeKey
+          ? { classroomHistory: { ...value.classroomHistory, [scopeKey]: [entry, ...(value.classroomHistory[scopeKey] ?? [])].slice(0, 500) } }
+          : { history: [entry, ...value.history].slice(0, 500) }),
+        auditEvents: [...value.auditEvents, { type: 'gate_bypassed' as const, at: now, source: gate.quiz.source, significance: gate.quiz.significance.level }]
+      }
+    })
     return publicStatus(next.gates[quizId])
   }
 
   recordRejected(change: ChangeInput, significance: ChangeSignificanceResult): void {
+    const classroomScope = this.getClassroomScope?.() ?? null
+    const scopeKey = classroomScope ? classroomScopeKey(classroomScope) : null
     const now = new Date().toISOString()
-    this.repository.update((state) => ({
-      ...state,
-      history: [{
+    this.repository.update((state) => {
+      const entry = {
         id: `${change.id}:rejected:${now}`,
         changeId: change.id,
         source: change.source,
@@ -204,15 +257,21 @@ export class UnderstandingGateService {
         outcome: 'rejected' as const,
         concepts: significance.detectedConcepts,
         completedAt: now
-      }, ...state.history].slice(0, 500),
-      auditEvents: [...state.auditEvents, {
+      }
+      return {
+        ...state,
+        ...(scopeKey
+          ? { classroomHistory: { ...state.classroomHistory, [scopeKey]: [entry, ...(state.classroomHistory[scopeKey] ?? [])].slice(0, 500) } }
+          : { history: [entry, ...state.history].slice(0, 500) }),
+        auditEvents: [...state.auditEvents, {
         type: 'change_rejected' as const,
         at: now,
         source: change.source,
         significance: significance.level,
         reasonCount: significance.triggerReasons.length
       }]
-    }))
+      }
+    })
   }
 
   assertUnlocked(changeId: string, source: ChangeSource, fingerprint: string): void {

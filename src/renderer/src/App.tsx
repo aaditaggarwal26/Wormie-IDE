@@ -40,6 +40,7 @@ import type {
   AssignmentTaskProgressUpdate,
   AssignmentWorkspaceState,
   Classroom,
+  ClassroomMasterySnapshot,
   CloudAuthCredentials,
   CloudAuthState,
   CodexAccountStatus,
@@ -130,6 +131,7 @@ export default function App(): React.JSX.Element {
   const [resetEmailSent, setResetEmailSent] = useState(false)
   const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [classroomMastery, setClassroomMastery] = useState<ClassroomMasterySnapshot | null>(null)
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
@@ -539,6 +541,15 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const classroomMasteryMutation = useMutation({
+    mutationFn: window.desktop.listClassroomMastery,
+    onSuccess: (result) => {
+      const mode = useApplicationNavigation.getState().mode
+      if (mode.kind === 'classrooms' && mode.classroomId === result.classroomId) setClassroomMastery(result)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const addClassroomStudentMutation = useMutation({
     mutationFn: ({ classroomId, email }: { classroomId: string; email: string }) => window.desktop.addClassroomStudent(classroomId, email),
     onSuccess: (result) => {
@@ -586,7 +597,7 @@ export default function App(): React.JSX.Element {
       result: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.openClassroomAssignment(assignmentId)),
       transitionId
     }),
-    onSuccess: async ({ assignmentId, classroom, result, transitionId }) => {
+    onSuccess: async ({ result, transitionId }) => {
       if (!result) {
         if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
         return
@@ -597,13 +608,7 @@ export default function App(): React.JSX.Element {
         await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
         return
       }
-      if (!openAssignmentMode(transitionId, {
-        assignmentId,
-        assignmentTitle: result.assignmentTitle,
-        classroomId: classroom.id,
-        classroomName: classroom.name,
-        role: classroom.role
-      })) return
+      if (!openAssignmentMode(transitionId, result.context)) return
       setWorkspace(result.workspace)
       setActivity('assignments')
       addOutput(`Opened classroom assignment ${result.assignmentTitle}.`)
@@ -616,11 +621,11 @@ export default function App(): React.JSX.Element {
 
   const authorClassroomAssignmentMutation = useMutation({
     mutationFn: async ({ classroom, transitionId }: { classroom: Classroom; transitionId: number }) => ({
-      classroom,
-      result: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.openWorkspace('assignment')),
+      context: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.beginClassroomAssignmentAuthoring(classroom.id)),
+      result: await window.desktop.openWorkspace('assignment'),
       transitionId
     }),
-    onSuccess: async ({ classroom, result, transitionId }) => {
+    onSuccess: async ({ context, result, transitionId }) => {
       if (!result) {
         if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
         return
@@ -631,13 +636,7 @@ export default function App(): React.JSX.Element {
         await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
         return
       }
-      if (!openAssignmentMode(transitionId, {
-        assignmentId: null,
-        assignmentTitle: 'Assignment authoring',
-        classroomId: classroom.id,
-        classroomName: classroom.name,
-        role: 'teacher'
-      })) return
+      if (!openAssignmentMode(transitionId, context)) return
       setWorkspace(result)
       setActivity('assignments')
       addOutput(`Opened ${result.name} for assignment authoring.`)
@@ -826,6 +825,12 @@ export default function App(): React.JSX.Element {
   }, [cloudAuth?.user?.id])
 
   useEffect(() => {
+    if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'mastery' || !applicationMode.classroomId) return
+    setClassroomMastery(null)
+    classroomMasteryMutation.mutate(applicationMode.classroomId)
+  }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
+
+  useEffect(() => {
     if (restored.current) return
     restored.current = true
     void window.desktop.restoreWorkspace().then((result) => {
@@ -996,6 +1001,8 @@ export default function App(): React.JSX.Element {
         actionVersion={classroomActionVersion}
         assignment={assignmentState}
         busy={classroomBusy}
+        mastery={classroomMastery}
+        masteryBusy={classroomMasteryMutation.isPending}
         classrooms={classrooms}
         error={cloudError}
         onBack={returnToLauncher}
@@ -1012,7 +1019,10 @@ export default function App(): React.JSX.Element {
         onPublish={(classroomId) => {
           if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
         }}
-        onRefresh={() => classroomListMutation.mutate()}
+        onRefresh={() => {
+          classroomListMutation.mutate()
+          if (applicationMode.tab === 'mastery' && applicationMode.classroomId) classroomMasteryMutation.mutate(applicationMode.classroomId)
+        }}
         onRemoveStudent={(classroomId, userId) => removeClassroomStudentMutation.mutate({ classroomId, userId })}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
         onLeaveClassroom={(classroomId) => leaveClassroomMutation.mutate(classroomId)}

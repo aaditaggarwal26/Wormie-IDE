@@ -109,4 +109,49 @@ describe('UnderstandingGateService', () => {
     expect(restored?.draftAnswers.open.value).toMatch(/renderer/)
     expect(restored?.lastResult).toBeNull()
   })
+
+  it('keeps classroom mastery separate from sandbox mastery and emits a sync event', async () => {
+    const repository = new UnderstandingRepository(new MemoryStorage())
+    const service = new UnderstandingGateService(repository, undefined, undefined, () => ({
+      classroomId: 'classroom-1',
+      assignmentId: 'assignment-1',
+      userId: 'student-1'
+    }))
+    let completionClassroom: string | null = null
+    service.setCompletionListener((completion) => { completionClassroom = completion.scope.classroomId })
+    service.createGate(change, quiz(), privateQuestions)
+
+    await service.submit({ quizId: 'quiz-1', answers: { q1: { value: 'xss' } } })
+
+    expect(repository.read().mastery).toEqual({})
+    expect(repository.read().classroomMastery['classroom-1:student-1'].auth.mastery).toBeGreaterThan(50)
+    expect(service.getHistory().mastery[0].conceptId).toBe('auth')
+    expect(completionClassroom).toBe('classroom-1')
+  })
+
+  it('keeps the same student mastery independent across classrooms', async () => {
+    const repository = new UnderstandingRepository(new MemoryStorage())
+    let classroomId = 'classroom-1'
+    const service = new UnderstandingGateService(repository, undefined, undefined, () => ({ classroomId, assignmentId: null, userId: 'student-1' }))
+    service.createGate(change, quiz(), privateQuestions)
+    await service.submit({ quizId: 'quiz-1', answers: { q1: { value: 'xss' } } })
+
+    classroomId = 'classroom-2'
+    service.createGate(change, { ...quiz(), id: 'quiz-2', questions: quiz().questions.map((question) => ({ ...question, id: question.id.replace('quiz-1', 'quiz-2') })) }, privateQuestions)
+    await service.submit({ quizId: 'quiz-2', answers: { q1: { value: 'style' } } })
+
+    const state = repository.read()
+    expect(state.classroomMastery['classroom-1:student-1'].auth.mastery).not.toBe(state.classroomMastery['classroom-2:student-1'].auth.mastery)
+  })
+
+  it('keeps local mastery private between students in the same classroom', async () => {
+    const repository = new UnderstandingRepository(new MemoryStorage())
+    let userId = 'student-1'
+    const service = new UnderstandingGateService(repository, undefined, undefined, () => ({ classroomId: 'classroom-1', assignmentId: null, userId }))
+    service.createGate(change, quiz(), privateQuestions)
+    await service.submit({ quizId: 'quiz-1', answers: { q1: { value: 'xss' } } })
+
+    userId = 'student-2'
+    expect(service.getHistory()).toEqual({ history: [], mastery: [] })
+  })
 })

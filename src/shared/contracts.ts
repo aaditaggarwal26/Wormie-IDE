@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   cloudAddStudent: 'cloud:add-student',
   cloudRemoveStudent: 'cloud:remove-student',
   cloudLeaveClassroom: 'cloud:leave-classroom',
+  cloudBeginAssignmentAuthoring: 'cloud:begin-assignment-authoring',
+  cloudListClassroomMastery: 'cloud:list-classroom-mastery',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
@@ -813,7 +815,43 @@ export type ClassroomPublishRequest = {
   workspaceRoot: string
 }
 
-export type ClassroomOpenAssignmentResult = AssignmentImportResult
+export type ClassroomAssignmentContext = {
+  classroomId: string
+  classroomName: string
+  assignmentId: string | null
+  assignmentTitle: string
+  role: 'teacher' | 'student'
+}
+
+export type ClassroomOpenAssignmentResult = AssignmentImportResult & { context: ClassroomAssignmentContext }
+
+export type ClassroomMasteryConcept = {
+  studentId: string
+  conceptId: string
+  conceptName: string
+  mastery: number
+  attempts: number
+  correct: number
+  updatedAt: string
+}
+
+export type ClassroomMasteryEvent = {
+  studentId: string
+  assignmentId: string | null
+  quizId: string
+  attempt: number
+  score: number
+  passed: boolean
+  title: string
+  completedAt: string
+}
+
+export type ClassroomMasterySnapshot = {
+  classroomId: string
+  concepts: ClassroomMasteryConcept[]
+  events: ClassroomMasteryEvent[]
+  pendingSyncCount: number
+}
 
 export type AgentActivityState = 'pending' | 'active' | 'completed' | 'failed' | 'stopped'
 export type AgentActivityPhase = 'context' | 'learning' | 'model' | 'validation' | 'quiz' | 'proposal' | 'approval' | 'apply' | 'complete'
@@ -908,6 +946,8 @@ export type DesktopApi = {
   addClassroomStudent: (classroomId: string, email: string) => Promise<Classroom[]>
   removeClassroomStudent: (classroomId: string, userId: string) => Promise<Classroom[]>
   leaveClassroom: (classroomId: string) => Promise<Classroom[]>
+  beginClassroomAssignmentAuthoring: (classroomId: string) => Promise<ClassroomAssignmentContext>
+  listClassroomMastery: (classroomId: string) => Promise<ClassroomMasterySnapshot>
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>

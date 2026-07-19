@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type {
   ChangeInput,
   ChangeSignificanceResult,
@@ -12,7 +12,7 @@ import type {
 import { IPC_CHANNELS } from '../../shared/contracts'
 import type { ChangeConceptDraft, RemediationDraft, SemanticGradeDraft, UnderstandingQuizDraft } from '../agent/schemas'
 import { fingerprintChange } from './fingerprint'
-import { UnderstandingGateService } from './gate'
+import { UnderstandingGateService, type ClassroomUnderstandingScope, type UnderstandingCompletion } from './gate'
 import { toPublicQuestion } from './grading'
 import { buildConceptExtractionPrompt, buildQuizGenerationPrompt, buildRemediationPrompt, buildSemanticGradingPrompt } from './prompts'
 import { sanitizeChangeContext } from './redaction'
@@ -32,7 +32,7 @@ export class UnderstandingController {
   private ai: UnderstandingAi | null = null
   private readonly quizContexts = new Map<string, string>()
 
-  constructor(readonly repository: UnderstandingRepository) {
+  constructor(readonly repository: UnderstandingRepository, getClassroomScope?: () => ClassroomUnderstandingScope | null) {
     this.gates = new UnderstandingGateService(
       repository,
       async (question, answer) => {
@@ -44,8 +44,13 @@ export class UnderstandingController {
         if (!this.ai) throw new Error('AI remediation is unavailable.')
         const result = await this.ai.generateRemediation(buildRemediationPrompt(quiz, feedback, this.quizContexts.get(quiz.id) ?? ''))
         return result.lesson
-      }
+      },
+      getClassroomScope
     )
+  }
+
+  setCompletionListener(listener: (completion: UnderstandingCompletion) => void): void {
+    this.gates.setCompletionListener(listener)
   }
 
   setAi(ai: UnderstandingAi): void {
@@ -105,23 +110,30 @@ export class UnderstandingController {
     return { changeId: change.id, fingerprint, significance, gate: this.gates.createGate(change, quiz, privateQuestions) }
   }
 
-  registerIpc(): void {
-    ipcMain.handle(IPC_CHANNELS.understandingGetSettings, () => this.gates.getSettings())
-    ipcMain.handle(IPC_CHANNELS.understandingSaveSettings, (_event, settings) => this.gates.setSettings(settings))
-    ipcMain.handle(IPC_CHANNELS.understandingGetHistory, () => this.gates.getHistory())
-    ipcMain.handle(IPC_CHANNELS.understandingGetGate, (_event, changeId: string, fingerprint?: string) => {
+  registerIpc(isTrustedSender: (event: IpcMainInvokeEvent) => boolean): void {
+    const assertTrusted = (event: IpcMainInvokeEvent) => {
+      if (!isTrustedSender(event)) throw new Error('Understanding access was denied for this window.')
+    }
+    ipcMain.handle(IPC_CHANNELS.understandingGetSettings, (event) => { assertTrusted(event); return this.gates.getSettings() })
+    ipcMain.handle(IPC_CHANNELS.understandingSaveSettings, (event, settings) => { assertTrusted(event); return this.gates.setSettings(settings) })
+    ipcMain.handle(IPC_CHANNELS.understandingGetHistory, (event) => { assertTrusted(event); return this.gates.getHistory() })
+    ipcMain.handle(IPC_CHANNELS.understandingGetGate, (event, changeId: string, fingerprint?: string) => {
+      assertTrusted(event)
       if (typeof changeId !== 'string' || changeId.length > 200) throw new Error('Invalid change ID.')
       return this.gates.getStatus(changeId, typeof fingerprint === 'string' ? fingerprint : undefined)
     })
-    ipcMain.handle(IPC_CHANNELS.understandingSaveAnswers, (_event, quizId: string, answers: Record<string, UnderstandingAnswer>) => {
+    ipcMain.handle(IPC_CHANNELS.understandingSaveAnswers, (event, quizId: string, answers: Record<string, UnderstandingAnswer>) => {
+      assertTrusted(event)
       if (typeof quizId !== 'string' || quizId.length > 200 || !answers || typeof answers !== 'object') throw new Error('Invalid quiz draft.')
       return this.gates.saveAnswers(quizId, answers)
     })
-    ipcMain.handle(IPC_CHANNELS.understandingSubmit, (_event, submission) => {
+    ipcMain.handle(IPC_CHANNELS.understandingSubmit, (event, submission) => {
+      assertTrusted(event)
       if (!submission || typeof submission.quizId !== 'string' || submission.quizId.length > 200 || !submission.answers || typeof submission.answers !== 'object') throw new Error('Invalid quiz submission.')
       return this.gates.submit(submission)
     })
-    ipcMain.handle(IPC_CHANNELS.understandingBypass, (_event, quizId: string, reason: string) => {
+    ipcMain.handle(IPC_CHANNELS.understandingBypass, (event, quizId: string, reason: string) => {
+      assertTrusted(event)
       if (typeof quizId !== 'string' || quizId.length > 200 || typeof reason !== 'string' || reason.length > 500) throw new Error('Invalid bypass request.')
       return this.gates.bypass(quizId, reason)
     })

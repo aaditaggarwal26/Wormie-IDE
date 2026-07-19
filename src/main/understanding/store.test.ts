@@ -12,8 +12,10 @@ describe('UnderstandingRepository', () => {
   it('migrates missing and legacy state to current defaults', () => {
     expect(migrateUnderstandingState(undefined)).toEqual(createEmptyUnderstandingState())
     const migrated = migrateUnderstandingState({ schemaVersion: 0, history: [] })
-    expect(migrated.schemaVersion).toBe(1)
+    expect(migrated.schemaVersion).toBe(2)
     expect(migrated.settings).toEqual(defaultUnderstandingSettings)
+    expect(migrated.classroomHistory).toEqual({})
+    expect(migrated.classroomMastery).toEqual({})
   })
 
   it('persists and restores state through the existing key-value abstraction', () => {

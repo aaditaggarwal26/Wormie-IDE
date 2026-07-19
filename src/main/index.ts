@@ -12,8 +12,9 @@ import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerEditorRecoveryHandlers } from './editorRecovery'
 import { registerWorkspaceHandlers } from './workspace'
-import { IPC_CHANNELS, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
+import { IPC_CHANNELS, type ClassroomAssignmentContext, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
+import { MasterySyncQueue } from './cloud/masterySync'
 import {
   authCallback,
   authCallbackFromArguments,
@@ -26,8 +27,18 @@ const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
 const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
-const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
+const masterySyncStore = new Store<{ queue?: unknown }>({ name: 'mastery-sync' })
+const masterySyncQueue = new MasterySyncQueue(masterySyncStore)
 let workspacePurpose: WorkspacePurpose = 'sandbox'
+let activeAssignmentContext: (ClassroomAssignmentContext & { userId: string }) | null = null
+const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore), () => {
+  if (!activeAssignmentContext || activeAssignmentContext.role !== 'student') return null
+  return {
+    classroomId: activeAssignmentContext.classroomId,
+    assignmentId: activeAssignmentContext.assignmentId,
+    userId: activeAssignmentContext.userId
+  }
+})
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 let pendingAuthCallback = authCallbackFromArguments(process.argv)
 let handleAuthCallback: ((callback: AuthCallback) => Promise<void>) | null = null
@@ -154,6 +165,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!isTrustedSender(event)) throw new Error('Untrusted renderer request.')
     if (purpose !== 'sandbox' && purpose !== 'assignment') throw new Error('Invalid workspace purpose.')
     workspacePurpose = purpose
+    if (purpose === 'sandbox') activeAssignmentContext = null
   })
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
   registerEditorRecoveryHandlers(editorRecoveryStore, workspace.getWorkspaceRoot, isTrustedSender)
@@ -164,7 +176,7 @@ if (!app.requestSingleInstanceLock()) {
     workspace.setWorkspace,
     isTrustedSender
   )
-  understanding.registerIpc()
+  understanding.registerIpc(isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
   registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot)
@@ -185,10 +197,13 @@ if (!app.requestSingleInstanceLock()) {
       workspace.getWorkspaceRoot,
       workspace.setWorkspace,
       () => workspacePurpose,
+      (context) => { activeAssignmentContext = context },
+      masterySyncQueue,
       isTrustedSender,
       takePendingClassroomInvite,
       notifyCloudAuthChanged
     )
+    understanding.setCompletionListener(cloud.recordUnderstandingCompletion)
     handleAuthCallback = cloud.handleAuthCallback
     createWindow()
     if (pendingAuthCallback) {

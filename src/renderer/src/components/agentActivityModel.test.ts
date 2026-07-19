@@ -17,6 +17,26 @@ describe('agent activity model', () => {
     expect(state.phases[0]).toMatchObject({ label: 'Received', state: 'completed' })
   })
 
+  it('stops every spinning phase when a failure or stop arrives', () => {
+    let state = initialAgentActivityState('run-1')
+    state = reduceAgentActivity(state, {
+      id: 'a', runId: 'run-1', timestamp: '2026-07-15T00:00:00.000Z',
+      kind: 'phase', phase: 'context', label: 'Workspace context ready', state: 'completed'
+    })
+    state = reduceAgentActivity(state, {
+      id: 'b', runId: 'run-1', timestamp: '2026-07-15T00:00:01.000Z',
+      kind: 'phase', phase: 'learning', label: 'Preparing the learning plan', state: 'active'
+    })
+    state = reduceAgentActivity(state, {
+      id: 'c', runId: 'run-1', timestamp: '2026-07-15T00:00:02.000Z',
+      kind: 'phase', phase: 'model', label: 'AI request failed', state: 'failed'
+    })
+
+    expect(state.phases.find((phase) => phase.phase === 'context')?.state).toBe('completed')
+    expect(state.phases.find((phase) => phase.phase === 'learning')?.state).toBe('stopped')
+    expect(state.phases.find((phase) => phase.phase === 'model')?.state).toBe('failed')
+  })
+
   it('ignores other runs and caps technical events at 120', () => {
     let state = initialAgentActivityState('run-1')
     state = reduceAgentActivity(state, {

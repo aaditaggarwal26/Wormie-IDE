@@ -25,6 +25,9 @@ describe('MasteryService', () => {
     service.recordAssessment({ ...input, attempt: 2, answers: [{ ...input.answers[0], score: 0 }] })
     expect(Object.keys(repository.read().profile.evidence)).toHaveLength(2)
     expect(repository.read().profile.concepts['ipc.validation'].correctEvidence).toBe(1)
+    expect(repository.read().reviews['ipc.validation'].nextReviewAt).toBeTruthy()
+    expect(repository.read().gamification.totalXp).toBeGreaterThan(0)
+    expect(repository.read().personalization.inferred.observations).toBe(2)
   })
 
   it('identifies weak blockers and diagnostic prerequisites without blocking on missing history', () => {

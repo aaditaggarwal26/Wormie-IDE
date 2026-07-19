@@ -4,6 +4,11 @@ import { canonicalConcepts, resolveOrRegisterConcept } from './catalog'
 import type { KnowledgeGraph } from './graph'
 import { applyEvidence } from './model'
 import type { MasteryRepository } from './repository'
+import { applyMisconceptionEvidence } from './misconceptions'
+import { inferPreference, personalizationPrompt } from './personalization'
+import { scheduleReview } from './reviews'
+import { applyRewardEvent } from './gamification'
+import { progressGoals } from './goals'
 
 export type AssessmentAnswerEvidence = {
   questionId: string
@@ -58,10 +63,35 @@ export class MasteryService {
       })
     }
     if (pending.length) {
-      this.repository.update((state) => ({
-        ...state,
-        profile: pending.reduce((profile, evidence) => applyEvidence(profile, evidence, now), state.profile)
-      }))
+      this.repository.update((state) => {
+        let profile = state.profile
+        let misconceptions = state.misconceptions
+        let personalization = state.personalization
+        let gamification = state.gamification
+        for (const evidence of pending) {
+          profile = applyEvidence(profile, evidence, now)
+          const before = misconceptions
+          misconceptions = applyMisconceptionEvidence(misconceptions, evidence)
+          personalization = inferPreference(personalization, { conceptId: evidence.conceptId, format: evidence.format, score: evidence.score, misconception: evidence.misconceptionSummary }, now)
+          gamification = applyRewardEvent(gamification, { id: `reward:${evidence.id}`, evidenceId: evidence.id, type: 'evidence', occurredAt: evidence.occurredAt, score: evidence.score, difficulty: evidence.difficulty, format: evidence.format, attempt: evidence.attempt, conceptId: evidence.conceptId })
+          for (const [id, item] of Object.entries(misconceptions)) {
+            if (item.status === 'resolved' && before[id]?.status !== 'resolved') gamification = applyRewardEvent(gamification, { id: `resolved:${id}:${evidence.id}`, evidenceId: evidence.id, type: 'misconception_resolved', occurredAt: evidence.occurredAt, conceptId: evidence.conceptId })
+          }
+        }
+        const reviews = { ...state.reviews }
+        const byConcept = new Map<string, MasteryEvidence[]>()
+        for (const evidence of pending) byConcept.set(evidence.conceptId, [...(byConcept.get(evidence.conceptId) ?? []), evidence])
+        for (const [conceptId, evidence] of byConcept) {
+          const score = evidence.reduce((sum, item) => sum + item.score, 0) / evidence.length
+          reviews[conceptId] = { ...scheduleReview(reviews[conceptId] ?? null, { score, confidence: profile.concepts[conceptId]?.confidence ?? 0, occurredAt: now }), conceptId }
+          if (input.source === 'review') gamification = applyRewardEvent(gamification, { id: `review:${input.assessmentId}:${conceptId}`, type: 'review_completed', occurredAt: now, conceptId })
+        }
+        let goals = state.goals
+        const xpDelta = gamification.totalXp - state.gamification.totalXp
+        if (xpDelta > 0) goals = progressGoals(goals, { type: 'xp', amount: xpDelta }, now)
+        if (input.source === 'review') goals = progressGoals(goals, { type: 'review', amount: 1 }, now)
+        return { ...state, profile, misconceptions, personalization, gamification, reviews, goals }
+      })
     }
     return { acceptedEvidenceIds: pending.map((item) => item.id), conceptIds: [...new Set(pending.map((item) => item.conceptId))].sort() }
   }
@@ -81,11 +111,13 @@ export class MasteryService {
     return { conceptIds, blockingConceptIds: [...blocking].sort(), diagnosticConceptIds: [...diagnostic].sort() }
   }
 
-  promptContext(): { catalog: Array<{ id: string; name: string; prerequisiteIds: string[] }>; profile: ConceptMasterySummary[] } {
-    const profile = this.repository.read().profile
+  promptContext(): { catalog: Array<{ id: string; name: string; prerequisiteIds: string[] }>; profile: ConceptMasterySummary[]; personalization: ReturnType<typeof personalizationPrompt> } {
+    const state = this.repository.read()
+    const profile = state.profile
     return {
       catalog: canonicalConcepts.filter((concept) => concept.active).map(({ id, name, prerequisiteIds }) => ({ id, name, prerequisiteIds })),
-      profile: Object.values(profile.concepts).map(({ conceptId, mastery, confidence, status }) => ({ conceptId, mastery, confidence, status })).sort((left, right) => left.conceptId.localeCompare(right.conceptId)).slice(0, 100)
+      profile: Object.values(profile.concepts).map(({ conceptId, mastery, confidence, status }) => ({ conceptId, mastery, confidence, status })).sort((left, right) => left.conceptId.localeCompare(right.conceptId)).slice(0, 100),
+      personalization: personalizationPrompt(state.personalization)
     }
   }
 }

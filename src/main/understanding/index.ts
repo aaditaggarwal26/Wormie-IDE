@@ -76,8 +76,8 @@ export class UnderstandingController {
       const canonical = conceptIdMap.get(concept.id)!
       return { ...concept, id: canonical.id, name: canonical.name }
     }) }
-    const profile = this.mastery?.promptContext().profile ?? []
-    const draft = await this.ai.generateQuiz(buildQuizGenerationPrompt(safeChange, significance, concepts, this.gates.getSettings(), profile))
+    const promptContext = this.mastery?.promptContext()
+    const draft = await this.ai.generateQuiz(buildQuizGenerationPrompt(safeChange, significance, concepts, this.gates.getSettings(), promptContext?.profile ?? [], promptContext?.personalization))
     this.validateGrounding(draft, safeChange, significance)
 
     const quizId = randomUUID()

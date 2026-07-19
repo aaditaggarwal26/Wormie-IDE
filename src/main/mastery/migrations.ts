@@ -1,7 +1,9 @@
-import type { KnowledgeMastery, MasteryEvidence, MasteryProfile } from '../../shared/contracts'
+import type { KnowledgeMastery, LearningAward, MasteryEvidence, MasteryProfile } from '../../shared/contracts'
 import { resolveConcept, registerCustomConcept } from './catalog'
 import { applyEvidence, createEmptyMasteryProfile } from './model'
 import type { MasteryState } from './repository'
+import { createDefaultPersonalization } from './personalization'
+import { createEmptyGamification } from './gamification'
 
 export const MASTERY_SCHEMA_VERSION = 1
 const sources = new Set(['prerequisite_quiz', 'change_understanding', 'review', 'challenge', 'assignment', 'classroom_assessment', 'teacher_assessment', 'test_out', 'legacy_import'])
@@ -39,7 +41,7 @@ function restoreProfile(value: unknown, now: string): MasteryProfile {
 }
 
 export function migrateMasteryState(raw: unknown, legacy: KnowledgeMastery[] = [], now = new Date().toISOString(), deviceId = 'device-local'): MasteryState {
-  const candidate = raw && typeof raw === 'object' ? raw as { deviceId?: unknown; profile?: unknown } : {}
+  const candidate = raw && typeof raw === 'object' ? raw as { deviceId?: unknown; profile?: unknown; reviews?: unknown; misconceptions?: unknown; personalization?: unknown; goals?: unknown; gamification?: unknown } : {}
   let profile = restoreProfile(candidate.profile, now)
   for (const item of legacy) {
     if (!item || typeof item !== 'object') continue
@@ -56,5 +58,21 @@ export function migrateMasteryState(raw: unknown, legacy: KnowledgeMastery[] = [
       }, now)
     }
   }
-  return { schemaVersion: MASTERY_SCHEMA_VERSION, deviceId: typeof candidate.deviceId === 'string' && candidate.deviceId.length <= 200 ? candidate.deviceId : deviceId, profile }
+  const objectOrEmpty = <T>(value: unknown): Record<string, T> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, T> : {}
+  const personalization = candidate.personalization && typeof candidate.personalization === 'object'
+    ? { ...createDefaultPersonalization(), ...(candidate.personalization as object), explicit: { ...createDefaultPersonalization().explicit, ...((candidate.personalization as { explicit?: object }).explicit ?? {}) }, inferred: { ...createDefaultPersonalization().inferred, ...((candidate.personalization as { inferred?: object }).inferred ?? {}) } }
+    : createDefaultPersonalization()
+  const gamification = candidate.gamification && typeof candidate.gamification === 'object'
+    ? { ...createEmptyGamification(), ...(candidate.gamification as object), awards: objectOrEmpty<LearningAward>((candidate.gamification as { awards?: unknown }).awards), processedEventIds: objectOrEmpty<true>((candidate.gamification as { processedEventIds?: unknown }).processedEventIds) }
+    : createEmptyGamification()
+  return {
+    schemaVersion: MASTERY_SCHEMA_VERSION,
+    deviceId: typeof candidate.deviceId === 'string' && candidate.deviceId.length <= 200 ? candidate.deviceId : deviceId,
+    profile,
+    reviews: objectOrEmpty(candidate.reviews),
+    misconceptions: objectOrEmpty(candidate.misconceptions),
+    personalization,
+    goals: objectOrEmpty(candidate.goals),
+    gamification
+  }
 }

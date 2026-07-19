@@ -1,18 +1,28 @@
 import { randomUUID } from 'node:crypto'
-import type { KnowledgeMastery, MasteryProfile } from '../../shared/contracts'
+import type { GamificationState, KnowledgeMastery, LearningGoal, MasteryProfile, MisconceptionRecord, PersonalizationState, ReviewState } from '../../shared/contracts'
 import { createEmptyMasteryProfile } from './model'
 import { MASTERY_SCHEMA_VERSION, migrateMasteryState } from './migrations'
+import { createDefaultPersonalization } from './personalization'
+import { createEmptyGamification } from './gamification'
 
 export type MasteryState = {
   schemaVersion: number
   deviceId: string
   profile: MasteryProfile
+  reviews: Record<string, ReviewState>
+  misconceptions: Record<string, MisconceptionRecord>
+  personalization: PersonalizationState
+  goals: Record<string, LearningGoal>
+  gamification: GamificationState
 }
 
 type KeyValueStorage = { get: (key: string) => unknown; set: (key: string, value: unknown) => void }
 
 export function createEmptyMasteryState(deviceId: string = randomUUID()): MasteryState {
-  return { schemaVersion: MASTERY_SCHEMA_VERSION, deviceId, profile: createEmptyMasteryProfile() }
+  return {
+    schemaVersion: MASTERY_SCHEMA_VERSION, deviceId, profile: createEmptyMasteryProfile(), reviews: {}, misconceptions: {}, goals: {},
+    personalization: createDefaultPersonalization(), gamification: createEmptyGamification()
+  }
 }
 
 export class MasteryRepository {

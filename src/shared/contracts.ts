@@ -489,6 +489,91 @@ export type MasteryProfile = {
   dedupeKeys: Record<string, string>
 }
 
+export type ReviewState = {
+  conceptId: string
+  nextReviewAt: string
+  intervalDays: number
+  ease: number
+  stability: number
+  lapseCount: number
+  lastOutcome: 'passed' | 'partial' | 'failed'
+  lastReviewedAt: string
+}
+
+export type MisconceptionRecord = {
+  id: string
+  conceptId: string
+  summary: string
+  correctiveExplanation: string
+  source: MasteryEvidenceSource
+  status: 'active' | 'remediated' | 'resolved'
+  critical: boolean
+  recurrenceCount: number
+  firstSeenAt: string
+  lastSeenAt: string
+  lastEvidenceGroup: string
+  evidenceIds: string[]
+  remediationCompletedAt?: string
+  resolvedAt?: string
+  resolvingEvidenceId?: string
+}
+
+export type ExplicitLearningPreferences = {
+  teachingStyle: 'balanced' | 'visual' | 'socratic' | 'example-driven'
+  lessonVerbosity: 'concise' | 'standard' | 'detailed'
+  exampleStyle: 'practical' | 'minimal' | 'analogy' | 'mixed'
+  quizDifficulty: 'adaptive' | 'gentle' | 'challenging'
+  reviewTolerance: 'low' | 'balanced' | 'high'
+  inferenceEnabled: boolean
+}
+
+export type InferredLearningPreferences = {
+  preferredFormats: MasteryEvidenceFormat[]
+  weakConceptIds: string[]
+  strongConceptIds: string[]
+  recurringMisconceptions: string[]
+  observations: number
+  updatedAt: string | null
+}
+
+export type PersonalizationState = { explicit: ExplicitLearningPreferences; inferred: InferredLearningPreferences }
+
+export type LearningGoal = {
+  id: string
+  title: string
+  type: 'mastery' | 'reviews' | 'streak' | 'xp'
+  target: number
+  progress: number
+  status: 'active' | 'completed' | 'archived'
+  conceptId?: string
+  domain?: ConceptDomain
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export type LearningAward = {
+  id: string
+  ruleId: string
+  kind: 'xp' | 'achievement' | 'badge' | 'milestone'
+  xp: number
+  reason: string
+  earnedAt: string
+  evidenceId?: string
+  conceptId?: string
+  ruleVersion: number
+}
+
+export type GamificationState = {
+  totalXp: number
+  level: number
+  dailyStreak: number
+  weeklyStreak: number
+  activeDates: string[]
+  awards: Record<string, LearningAward>
+  processedEventIds: Record<string, true>
+}
+
 export type ChangeUnderstandingPreparation = {
   changeId: string
   fingerprint: string

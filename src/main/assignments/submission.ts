@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
-import type { BigIntStats } from 'node:fs'
 import type {
   AssignmentAiActivity,
   AssignmentManifest,
@@ -10,6 +9,7 @@ import type {
   AssignmentSubmission,
   AssignmentSubmissionFile
 } from '../../shared/contracts'
+import { isUnchangedFile } from '../fileIdentity'
 import { isPathInside } from '../pathSafety'
 import { assignmentAiActivitySchema } from './activity'
 import { assignmentProgressSchema } from './progress'
@@ -38,10 +38,6 @@ export const assignmentSubmissionSchema = z.object({
   aiActivity: z.array(assignmentAiActivitySchema).max(2_000),
   files: z.array(submissionFileSchema).max(50)
 }).strict()
-
-function sameFile(left: BigIntStats, right: BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs
-}
 
 async function readBoundedHandle(handle: Awaited<ReturnType<typeof fs.open>>, limit: number, label: string): Promise<Buffer> {
   const chunks: Buffer[] = []
@@ -72,7 +68,7 @@ async function snapshotTaskFile(workspaceRoot: string, relativePath: string): Pr
     const content = await readBoundedHandle(handle, maxSnapshotBytes, `Task evidence ${relativePath}`)
     const after = await handle.stat({ bigint: true })
     const pathIdentity = await fs.stat(await fs.realpath(absolutePath), { bigint: true })
-    if (!sameFile(before, after) || !sameFile(before, pathIdentity)) throw new Error(`Task evidence changed while submitting: ${relativePath}`)
+    if (!isUnchangedFile(before, after) || !isUnchangedFile(before, pathIdentity)) throw new Error(`Task evidence changed while submitting: ${relativePath}`)
     return {
       path: relativePath,
       contentBase64: content.toString('base64'),
@@ -142,7 +138,7 @@ export async function readAssignmentSubmission(
     const content = await readBoundedHandle(handle, maxSubmissionJsonBytes, 'The submission')
     const after = await handle.stat({ bigint: true })
     const pathIdentity = await fs.stat(await fs.realpath(filePath), { bigint: true })
-    if (!sameFile(before, after) || !sameFile(before, pathIdentity)) throw new Error('The submission changed while opening.')
+    if (!isUnchangedFile(before, after) || !isUnchangedFile(before, pathIdentity)) throw new Error('The submission changed while opening.')
     raw = JSON.parse(content.toString('utf8'))
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error('The submission contains invalid JSON.')

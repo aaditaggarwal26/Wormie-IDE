@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import type { BigIntStats } from 'node:fs'
 import type {
   AssignmentManifest,
   AssignmentManifestDraft,
   AssignmentWorkspaceState
 } from '../../shared/contracts'
 import { isPathInside } from '../pathSafety'
+import { isSameFileIdentity } from '../fileIdentity'
 import { assignmentManifestDraftSchema, assignmentManifestSchema } from './schema'
 
 const assignmentDirectoryName = '.wormie'
@@ -39,10 +39,6 @@ async function lstatIfPresent(filePath: string): Promise<Awaited<ReturnType<type
     if (error.code === 'ENOENT') return null
     throw error
   })
-}
-
-function isSameFile(left: BigIntStats, right: BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino
 }
 
 async function readHandleBounded(
@@ -100,7 +96,7 @@ async function writeJsonAtomically(
     handle = await fs.open(temporaryPath, 'wx')
     const handleIdentity = await handle.stat({ bigint: true })
     const temporaryPathIdentity = await fs.stat(temporaryPath, { bigint: true })
-    if (!isSameFile(handleIdentity, temporaryPathIdentity)) throw new Error('The assignment temporary file changed during save.')
+    if (!isSameFileIdentity(handleIdentity, temporaryPathIdentity)) throw new Error('The assignment temporary file changed during save.')
     const temporaryRealPath = await fs.realpath(temporaryPath)
     if (!isPathInside(canonicalDirectory, temporaryRealPath)) throw new Error('The assignment temporary file is outside the workspace.')
     await handle.writeFile(payload, 'utf8')
@@ -109,17 +105,17 @@ async function writeJsonAtomically(
     handle = null
     const currentDirectory = await fs.realpath(directoryPath)
     const currentDirectoryIdentity = await fs.stat(currentDirectory, { bigint: true })
-    if (currentDirectory !== canonicalDirectory || !isSameFile(directoryIdentity, currentDirectoryIdentity)) {
+    if (currentDirectory !== canonicalDirectory || !isSameFileIdentity(directoryIdentity, currentDirectoryIdentity)) {
       throw new Error('The assignment directory changed during save.')
     }
     const stagedIdentity = await fs.stat(temporaryPath, { bigint: true })
-    if (!isSameFile(handleIdentity, stagedIdentity)) throw new Error('The assignment temporary file changed during save.')
+    if (!isSameFileIdentity(handleIdentity, stagedIdentity)) throw new Error('The assignment temporary file changed during save.')
     await beforeReplace?.()
     await fs.rename(temporaryPath, filePath)
     const finalRealPath = await fs.realpath(filePath)
     if (!isPathInside(canonicalDirectory, finalRealPath)) throw new Error('The assignment manifest was written outside the workspace.')
     const finalIdentity = await fs.stat(finalRealPath, { bigint: true })
-    if (!isSameFile(handleIdentity, finalIdentity)) throw new Error('The assignment manifest changed during save.')
+    if (!isSameFileIdentity(handleIdentity, finalIdentity)) throw new Error('The assignment manifest changed during save.')
     await syncDirectory(canonicalDirectory)
   } catch (error) {
     await handle?.close().catch(() => undefined)
@@ -187,13 +183,13 @@ export async function readAssignment(workspaceRoot: string): Promise<AssignmentW
     if (stats.size > maxAssignmentBytes) throw new Error('The assignment manifest is larger than 256 KB.')
     const handleIdentity = await handle.stat({ bigint: true })
     const pathIdentity = await fs.stat(manifestPath, { bigint: true })
-    if (!isSameFile(handleIdentity, pathIdentity)) throw new Error('The assignment manifest changed while opening.')
+    if (!isSameFileIdentity(handleIdentity, pathIdentity)) throw new Error('The assignment manifest changed while opening.')
     const resolvedManifest = await fs.realpath(manifestPath)
     if (!isPathInside(await fs.realpath(workspaceRoot), resolvedManifest)) {
       throw new Error('The assignment manifest is outside the workspace.')
     }
     const resolvedIdentity = await fs.stat(resolvedManifest, { bigint: true })
-    if (!isSameFile(handleIdentity, resolvedIdentity)) throw new Error('The assignment manifest changed while opening.')
+    if (!isSameFileIdentity(handleIdentity, resolvedIdentity)) throw new Error('The assignment manifest changed while opening.')
     const payload = await handle.readFile('utf8')
     value = JSON.parse(payload)
     const result = assignmentManifestSchema.safeParse(value)
@@ -223,15 +219,15 @@ export async function readAssignmentRevision(workspaceRoot: string): Promise<str
     const resolvedPath = await fs.realpath(manifestPath)
     if (!isPathInside(await fs.realpath(workspaceRoot), resolvedPath)) throw new Error('The assignment manifest is outside the workspace.')
     const pathIdentity = await fs.stat(resolvedPath, { bigint: true })
-    if (!isSameFile(handleIdentity, pathIdentity)) throw new Error('The assignment manifest changed while checking its revision.')
+    if (!isSameFileIdentity(handleIdentity, pathIdentity)) throw new Error('The assignment manifest changed while checking its revision.')
     const payload = await readHandleBounded(handle, maxAssignmentBytes)
     const finalHandleIdentity = await handle.stat({ bigint: true })
     const finalResolvedPath = await fs.realpath(manifestPath)
     const finalPathIdentity = await fs.stat(finalResolvedPath, { bigint: true })
     if (
       finalResolvedPath !== resolvedPath ||
-      !isSameFile(handleIdentity, finalHandleIdentity) ||
-      !isSameFile(handleIdentity, finalPathIdentity)
+      !isSameFileIdentity(handleIdentity, finalHandleIdentity) ||
+      !isSameFileIdentity(handleIdentity, finalPathIdentity)
     ) {
       throw new Error('The assignment manifest changed while checking its revision.')
     }

@@ -10,6 +10,7 @@ import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
+import { MasteryRepository } from './mastery/repository'
 import { registerWorkspaceHandlers } from './workspace'
 import { IPC_CHANNELS } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
@@ -19,7 +20,10 @@ const trustedWebContents = new Set<number>()
 const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
-const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
+const understandingRepository = new UnderstandingRepository(understandingStore)
+const understanding = new UnderstandingController(understandingRepository)
+const masteryStore = new Store({ name: 'mastery-state' })
+const masteryRepository = new MasteryRepository(masteryStore, Object.values(understandingRepository.read().mastery))
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 
 if (process.defaultApp) {

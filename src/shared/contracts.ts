@@ -432,6 +432,58 @@ export type ConceptMasterySummary = {
   status: MasteryStatus
 }
 
+export type MasteryEvidenceSource =
+  | 'prerequisite_quiz' | 'change_understanding' | 'review' | 'challenge'
+  | 'assignment' | 'classroom_assessment' | 'teacher_assessment' | 'test_out' | 'legacy_import'
+
+export type MasteryEvidenceFormat = UnderstandingQuestionType | 'challenge' | 'teacher_review' | 'legacy_summary'
+
+export type MasteryEvidence = {
+  id: string
+  dedupeKey: string
+  conceptId: string
+  source: MasteryEvidenceSource
+  assessmentId: string
+  sessionId?: string
+  questionId: string
+  independenceGroup: string
+  attempt: number
+  score: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: MasteryEvidenceFormat
+  occurredAt: string
+  criticalMisconception?: boolean
+  misconceptionSummary?: string
+  correctiveExplanation?: string
+  assignmentId?: string
+  classroomId?: string
+}
+
+export type MasteryScorePoint = { at: string; mastery: number; confidence: number; evidenceId: string }
+
+export type ConceptMastery = ConceptMasterySummary & {
+  correctEvidence: number
+  incorrectEvidence: number
+  firstAssessedAt: string | null
+  lastAssessedAt: string | null
+  lastCorrectAt: string | null
+  lastIncorrectAt: string | null
+  consecutiveSuccesses: number
+  consecutiveFailures: number
+  difficultyDistribution: Record<'easy' | 'medium' | 'hard', number>
+  evidenceSources: MasteryEvidenceSource[]
+  evidenceIds: string[]
+  scoreHistory: MasteryScorePoint[]
+  canonicalVersion: number
+  reasons: string[]
+}
+
+export type MasteryProfile = {
+  evidence: Record<string, MasteryEvidence>
+  concepts: Record<string, ConceptMastery>
+  dedupeKeys: Record<string, string>
+}
+
 export type ChangeUnderstandingPreparation = {
   changeId: string
   fingerprint: string

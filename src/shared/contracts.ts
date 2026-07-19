@@ -402,6 +402,36 @@ export type KnowledgeMastery = {
   evidenceQuizIds: string[]
 }
 
+export type ConceptDomain =
+  | 'javascript' | 'typescript' | 'react' | 'node' | 'electron' | 'express' | 'nextjs'
+  | 'sql' | 'nosql' | 'authentication' | 'algorithms' | 'data-structures' | 'networking'
+  | 'concurrency' | 'testing' | 'git' | 'docker' | 'system-design' | 'electron-apis'
+  | 'ipc' | 'filesystems' | 'security' | 'memory-management' | 'custom'
+
+export type ConceptDepth = 'foundation' | 'intermediate' | 'advanced'
+export type MasteryStatus = 'unassessed' | 'learning' | 'weak' | 'developing' | 'proficient' | 'strong' | 'review_due'
+
+export type ConceptDefinition = {
+  id: string
+  name: string
+  description: string
+  domain: ConceptDomain
+  depth: ConceptDepth
+  prerequisiteIds: string[]
+  requiredMastery: number
+  aliases: string[]
+  active: boolean
+  deprecated: boolean
+  version: number
+}
+
+export type ConceptMasterySummary = {
+  conceptId: string
+  mastery: number
+  confidence: number
+  status: MasteryStatus
+}
+
 export type ChangeUnderstandingPreparation = {
   changeId: string
   fingerprint: string

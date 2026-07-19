@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
-import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, ClassroomMasterySnapshot, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
 
@@ -21,6 +21,7 @@ type ClassroomPortalProps = {
   onAddStudent: (classroomId: string, email: string) => void
   onCopyInvite: (inviteLink: string) => void
   onCreate: (request: ClassroomCreateRequest) => void
+  onUpdateClassroom: (request: ClassroomUpdateRequest) => void
   onJoin: (invite: string) => void
   onLeaveClassroom: (classroomId: string) => void
   onAuthorAssignment: (classroom: Classroom) => void
@@ -155,8 +156,25 @@ function PeopleTab(props: ClassroomPortalProps & { classroom: Classroom }): Reac
 
 function ClassroomSettings(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
   const classroom = props.classroom
+  const [name, setName] = useState(classroom.name)
+  const [description, setDescription] = useState(classroom.description)
+
+  useEffect(() => {
+    setName(classroom.name)
+    setDescription(classroom.description)
+  }, [classroom.id, classroom.name, classroom.description])
+
   return <div className="portal-settings">
     <div className="portal-section-heading"><div><span>Teacher controls</span><h2>Classroom settings</h2></div></div>
+    <form className="portal-settings-card portal-details-form" onSubmit={(event) => {
+      event.preventDefault()
+      props.onUpdateClassroom({ classroomId: classroom.id, name, description })
+    }}>
+      <div><BookOpenCheck size={18} /><div><h3>Classroom details</h3><p>Update the name and description shown to everyone in this classroom.</p></div></div>
+      <label><span>Name</span><input maxLength={120} onChange={(event) => setName(event.target.value)} required value={name} /></label>
+      <label><span>Description</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} value={description} /></label>
+      <button disabled={props.busy || !name.trim() || (name.trim() === classroom.name && description.trim() === classroom.description)} type="submit">Save changes</button>
+    </form>
     <section className="portal-settings-card"><div><Link2 size={18} /><div><h3>Student invitation</h3><p>Share this invitation with students, or replace it to invalidate the previous link.</p></div></div>{classroom.inviteLink ? <><code>{classroom.inviteLink}</code><div><button onClick={() => props.onCopyInvite(classroom.inviteLink!)} type="button"><Clipboard size={13} /> Copy invitation</button><button disabled={props.busy} onClick={() => props.onRotateInvite(classroom.id)} type="button"><RotateCw size={13} /> Replace link</button></div></> : <p className="portal-settings-unavailable">Invitation data is unavailable. Refresh the classroom and try again.</p>}</section>
   </div>
 }

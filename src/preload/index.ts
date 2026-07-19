@@ -108,6 +108,7 @@ const desktopApi: DesktopApi = {
   signOut: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignOut),
   listClassrooms: () => ipcRenderer.invoke(IPC_CHANNELS.cloudListClassrooms),
   createClassroom: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudCreateClassroom, request),
+  updateClassroom: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudUpdateClassroom, request),
   joinClassroom: (invite) => ipcRenderer.invoke(IPC_CHANNELS.cloudJoinClassroom, invite),
   rotateClassroomInvite: (classroomId) => ipcRenderer.invoke(IPC_CHANNELS.cloudRotateInvite, classroomId),
   addClassroomStudent: (classroomId, email) => ipcRenderer.invoke(IPC_CHANNELS.cloudAddStudent, classroomId, email),

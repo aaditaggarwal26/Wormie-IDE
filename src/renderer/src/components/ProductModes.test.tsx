@@ -47,6 +47,7 @@ describe('authenticated product modes', () => {
       onAddStudent={action}
       onCopyInvite={action}
       onCreate={action}
+      onUpdateClassroom={action}
       onJoin={action}
       onLeaveClassroom={action}
       onAuthorAssignment={action}
@@ -84,6 +85,7 @@ describe('authenticated product modes', () => {
       onBack={action}
       onCopyInvite={action}
       onCreate={action}
+      onUpdateClassroom={action}
       onJoin={action}
       onLeaveClassroom={action}
       onOpenAssignment={action}
@@ -103,5 +105,18 @@ describe('authenticated product modes', () => {
     expect(renderPortal(classroom)).toContain('Add student')
     expect(renderPortal({ ...classroom, role: 'student' })).not.toContain('Add student')
     expect(renderPortal({ ...classroom, role: 'student' })).toContain('Leave classroom')
+  })
+
+  it('shows editable classroom details only in teacher settings', () => {
+    const markup = renderToStaticMarkup(<ClassroomPortal
+      actionVersion={0} assignment={null} busy={false} classrooms={[classroom]} error={null} mastery={null} masteryBusy={false}
+      onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
+      onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
+      onRotateInvite={action} onSelectClassroom={action} onSelectTab={action} onSignOut={action} onUpdateClassroom={action}
+      selectedClassroomId={classroom.id} selectedTab="settings" user={{ id: 'teacher-1', email: 'teacher@example.com' }} workspace={null}
+    />)
+
+    expect(markup).toContain('Classroom details')
+    expect(markup).toContain('Save changes')
   })
 })

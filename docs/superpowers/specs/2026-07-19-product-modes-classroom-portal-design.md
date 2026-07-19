@@ -42,6 +42,8 @@ Roster changes use security-definer database functions:
 
 Invite links remain the primary addition flow. Direct email addition is an explicit teacher action, not a searchable user directory.
 
+Teacher classroom detail edits use a narrow `cloud:update-classroom` IPC request. The main process validates the UUID, bounded name, bounded description, and rejects unknown fields. Supabase's existing owner-only classroom update policy authorizes the change, and the handler requires one returned row so an unauthorized update cannot appear successful.
+
 ## Classroom-scoped mastery
 
 Local understanding data migrates from schema version 1 to schema version 2. Settings, active gates, and the audit trail retain their existing storage. Completed history and concept mastery gain separate classroom/student maps keyed by both classroom ID and authenticated student ID. Existing global history and mastery remain global and are not copied into a classroom.

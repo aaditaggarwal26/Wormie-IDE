@@ -541,6 +541,15 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const updateClassroomMutation = useMutation({
+    mutationFn: window.desktop.updateClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const classroomMasteryMutation = useMutation({
     mutationFn: window.desktop.listClassroomMastery,
     onSuccess: (result) => {
@@ -907,6 +916,7 @@ export default function App(): React.JSX.Element {
   const classroomBusy =
     classroomListMutation.isPending ||
     createClassroomMutation.isPending ||
+    updateClassroomMutation.isPending ||
     joinClassroomMutation.isPending ||
     rotateInviteMutation.isPending ||
     addClassroomStudentMutation.isPending ||
@@ -1012,6 +1022,7 @@ export default function App(): React.JSX.Element {
             .catch((error) => setCloudError(errorMessage(error)))
         }}
         onCreate={(request) => createClassroomMutation.mutate(request)}
+        onUpdateClassroom={(request) => updateClassroomMutation.mutate(request)}
         onJoin={(invite) => joinClassroomMutation.mutate(invite)}
         onAddStudent={(classroomId, email) => addClassroomStudentMutation.mutate({ classroomId, email })}
         onAuthorAssignment={authorClassroomAssignment}

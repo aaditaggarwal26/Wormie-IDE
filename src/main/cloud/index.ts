@@ -9,6 +9,7 @@ import {
   type Classroom,
   type ClassroomAssignmentContext,
   type ClassroomCreateRequest,
+  type ClassroomUpdateRequest,
   type ClassroomOpenAssignmentResult,
   type ClassroomMasterySnapshot,
   type ClassroomPublishRequest,
@@ -24,6 +25,7 @@ import { inviteCodeFrom } from './invite'
 import { authCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 import { MasterySyncQueue, type MasterySyncEvent } from './masterySync'
+import { classroomUpdateSchema } from './classroomDetails'
 import type { UnderstandingCompletion } from '../understanding/gate'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
@@ -364,6 +366,19 @@ export function registerCloudHandlers(
     await requireUser()
     const { error } = await client.rpc('rotate_classroom_invite', { target_classroom_id: id })
     if (error) throw cleanError(error, 'Could not replace the classroom invitation.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudUpdateClassroom, async (event, input: ClassroomUpdateRequest): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const request = classroomUpdateSchema.parse(input)
+    await requireUser()
+    const { error } = await client.from('classrooms')
+      .update({ name: request.name, description: request.description })
+      .eq('id', request.classroomId)
+      .select('id')
+      .single()
+    if (error) throw cleanError(error, 'Could not update the classroom. Only its teacher can change these details.')
     return listClassrooms()
   })
 

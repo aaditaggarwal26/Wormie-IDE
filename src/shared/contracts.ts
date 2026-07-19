@@ -69,6 +69,7 @@ export const IPC_CHANNELS = {
   cloudSignOut: 'cloud:sign-out',
   cloudListClassrooms: 'cloud:list-classrooms',
   cloudCreateClassroom: 'cloud:create-classroom',
+  cloudUpdateClassroom: 'cloud:update-classroom',
   cloudJoinClassroom: 'cloud:join-classroom',
   cloudRotateInvite: 'cloud:rotate-invite',
   cloudAddStudent: 'cloud:add-student',
@@ -810,6 +811,10 @@ export type ClassroomCreateRequest = {
   description: string
 }
 
+export type ClassroomUpdateRequest = ClassroomCreateRequest & {
+  classroomId: string
+}
+
 export type ClassroomPublishRequest = {
   classroomId: string
   workspaceRoot: string
@@ -941,6 +946,7 @@ export type DesktopApi = {
   signOut: () => Promise<void>
   listClassrooms: () => Promise<Classroom[]>
   createClassroom: (request: ClassroomCreateRequest) => Promise<Classroom[]>
+  updateClassroom: (request: ClassroomUpdateRequest) => Promise<Classroom[]>
   joinClassroom: (invite: string) => Promise<Classroom[]>
   rotateClassroomInvite: (classroomId: string) => Promise<Classroom[]>
   addClassroomStudent: (classroomId: string, email: string) => Promise<Classroom[]>

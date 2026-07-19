@@ -8,6 +8,7 @@ import {
   IPC_CHANNELS,
   type Classroom,
   type ClassroomCreateRequest,
+  type ClassroomMasterySummary,
   type ClassroomOpenAssignmentResult,
   type ClassroomPublishRequest,
   type CloudAuthCredentials,
@@ -18,6 +19,8 @@ import { createAssignmentPackage, importAssignmentPackage } from '../assignments
 import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
 import { inviteCodeFrom } from './invite'
 import { SecureAuthStorage } from './secureAuthStorage'
+import type { MasteryRepository } from '../mastery/repository'
+import { MasterySyncCoordinator } from '../mastery/sync'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
 const credentialsSchema = z.object({
@@ -45,6 +48,17 @@ const assignmentRowSchema = z.object({
   published_at: z.string(), published_by: z.uuid()
 })
 const downloadableAssignmentSchema = z.object({ id: z.uuid(), title: z.string(), package_path: z.string(), package_sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+const masterySummaryRowSchema = z.object({
+  classroom_id: z.uuid(),
+  user_id: z.uuid(),
+  display_name: z.string(),
+  assessed_concepts: z.number().int().min(0),
+  overall_mastery: z.number().nullable(),
+  review_due_concepts: z.number().int().min(0),
+  weak_concepts: z.array(z.object({ conceptId: z.string(), name: z.string(), mastery: z.number() })).default([]),
+  strong_concepts: z.array(z.object({ conceptId: z.string(), name: z.string(), mastery: z.number() })).default([]),
+  updated_at: z.string()
+})
 
 function cleanError(error: unknown, fallback: string): Error {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -92,7 +106,8 @@ export function registerCloudHandlers(
   getWorkspaceRoot: () => string | null,
   setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
-  takePendingInvite: () => string | null
+  takePendingInvite: () => string | null,
+  masteryRepository?: MasteryRepository
 ): void {
   const client = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
@@ -102,6 +117,7 @@ export function registerCloudHandlers(
       storage: new SecureAuthStorage()
     }
   })
+  const masterySync = masteryRepository ? new MasterySyncCoordinator(masteryRepository, client as never) : null
 
   function assertTrusted(event: IpcMainInvokeEvent): void {
     if (!isTrustedSender(event)) throw new Error('Cloud access was denied for this window.')
@@ -183,6 +199,7 @@ export function registerCloudHandlers(
     assertTrusted(event)
     const { data, error } = await client.auth.getSession()
     if (error) throw cleanError(error, 'Could not restore your account session.')
+    if (data.session?.user) await masterySync?.syncUser(data.session.user)
     return authState(data.session?.user ?? null)
   })
 
@@ -200,6 +217,7 @@ export function registerCloudHandlers(
       options: { data: { display_name: credentials.email.split('@')[0] } }
     })
     if (error) throw authError(error, 'sign-up')
+    if (data.session?.user) await masterySync?.syncUser(data.session.user)
     return authState(data.session?.user ?? null, Boolean(data.user && !data.session))
   })
 
@@ -208,6 +226,7 @@ export function registerCloudHandlers(
     const credentials = credentialsSchema.parse(input)
     const { data, error } = await client.auth.signInWithPassword(credentials)
     if (error) throw authError(error, 'sign-in')
+    await masterySync?.syncUser(data.user)
     return authState(data.user)
   })
 
@@ -219,7 +238,29 @@ export function registerCloudHandlers(
 
   ipcMain.handle(IPC_CHANNELS.cloudListClassrooms, async (event): Promise<Classroom[]> => {
     assertTrusted(event)
+    const user = await requireUser()
+    await masterySync?.syncUser(user)
     return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudClassroomMasterySummaries, async (event, classroomId: string): Promise<ClassroomMasterySummary[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const user = await requireUser()
+    await masterySync?.syncUser(user)
+    const result = await client.from('classroom_mastery_summaries').select('classroom_id,user_id,display_name,assessed_concepts,overall_mastery,review_due_concepts,weak_concepts,strong_concepts,updated_at').eq('classroom_id', id)
+    if (result.error) throw cleanError(result.error, 'Could not load classroom mastery summaries.')
+    return z.array(masterySummaryRowSchema).parse(result.data ?? []).map((row) => ({
+      classroomId: row.classroom_id,
+      userId: row.user_id,
+      displayName: row.display_name,
+      assessedConcepts: row.assessed_concepts,
+      overallMastery: row.overall_mastery,
+      reviewDueConcepts: row.review_due_concepts,
+      weakConcepts: row.weak_concepts,
+      strongConcepts: row.strong_concepts,
+      updatedAt: row.updated_at
+    }))
   })
 
   ipcMain.handle(IPC_CHANNELS.cloudCreateClassroom, async (event, input: ClassroomCreateRequest): Promise<Classroom[]> => {

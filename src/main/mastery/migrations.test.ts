@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateMasteryState } from './migrations'
+import { MASTERY_SCHEMA_VERSION, migrateMasteryState } from './migrations'
 
 const NOW = '2026-07-19T12:00:00.000Z'
 
@@ -18,7 +18,7 @@ describe('mastery migrations', () => {
 
   it('normalizes corrupt restored records instead of shallowly trusting them', () => {
     const migrated = migrateMasteryState({ schemaVersion: 1, profile: { evidence: { bad: { id: 12 } }, concepts: null } }, [], NOW)
-    expect(migrated.schemaVersion).toBe(1)
+    expect(migrated.schemaVersion).toBe(MASTERY_SCHEMA_VERSION)
     expect(migrated.profile.evidence).toEqual({})
     expect(migrated.profile.concepts).toEqual({})
   })

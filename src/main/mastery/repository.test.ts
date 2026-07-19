@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MASTERY_SCHEMA_VERSION } from './migrations'
 import { createEmptyMasteryState, MasteryRepository } from './repository'
 
 class MemoryStorage {
@@ -20,6 +21,6 @@ describe('MasteryRepository', () => {
     const read = repository.read()
     read.deviceId = 'mutated'
     expect(repository.read().deviceId).not.toBe('mutated')
-    expect(createEmptyMasteryState('device-test').schemaVersion).toBe(1)
+    expect(createEmptyMasteryState('device-test').schemaVersion).toBe(MASTERY_SCHEMA_VERSION)
   })
 })

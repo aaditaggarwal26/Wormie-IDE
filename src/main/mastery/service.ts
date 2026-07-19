@@ -263,7 +263,12 @@ export class MasteryService {
   updateGoal(id: string, update: Partial<Pick<LearningGoal, 'title' | 'target' | 'status'>>): LearningGoal { const state = this.repository.read(); const goal = state.goals[id]; if (!goal) throw new Error('Learning goal not found.'); const next = { ...goal, ...update, title: update.title?.trim() || goal.title, target: update.target ? Math.max(1, Math.min(1_000_000, Math.round(update.target))) : goal.target, updatedAt: this.clock() }; this.repository.update((value) => ({ ...value, goals: { ...value.goals, [id]: next } })); return next }
   deleteGoal(id: string): void { this.repository.update((state) => { const goals = { ...state.goals }; delete goals[id]; return { ...state, goals } }) }
   getGamification() { return this.repository.read().gamification }
-  getSyncStatus() { return { state: 'local-only' as const, pending: 0, lastSyncedAt: null } }
+  getSyncStatus() {
+    const sync = this.repository.read().sync
+    if (!sync.accountUserId) return { state: sync.pending ? 'offline' as const : 'local-only' as const, pending: sync.pending ? 1 : 0, lastSyncedAt: sync.lastSyncedAt, ...(sync.lastError ? { error: sync.lastError } : {}) }
+    if (sync.lastError) return { state: 'error' as const, pending: sync.pending ? 1 : 0, lastSyncedAt: sync.lastSyncedAt, error: sync.lastError }
+    return { state: sync.pending ? 'offline' as const : 'synced' as const, pending: sync.pending ? 1 : 0, lastSyncedAt: sync.lastSyncedAt }
+  }
 
   private conceptView(conceptId: string, mastery?: ConceptMastery, review?: import('../../shared/contracts').ReviewState): MasteryConceptView {
     const definition = resolveConcept(conceptId)

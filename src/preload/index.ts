@@ -101,7 +101,8 @@ const desktopApi: DesktopApi = {
   rotateClassroomInvite: (classroomId) => ipcRenderer.invoke(IPC_CHANNELS.cloudRotateInvite, classroomId),
   copyClassroomInvite: (inviteLink) => ipcRenderer.invoke(IPC_CHANNELS.cloudCopyInvite, inviteLink),
   publishAssignment: (request) => ipcRenderer.invoke(IPC_CHANNELS.cloudPublishAssignment, request),
-  openClassroomAssignment: (assignmentId) => ipcRenderer.invoke(IPC_CHANNELS.cloudOpenAssignment, assignmentId)
+  openClassroomAssignment: (assignmentId) => ipcRenderer.invoke(IPC_CHANNELS.cloudOpenAssignment, assignmentId),
+  listClassroomMasterySummaries: (classroomId) => ipcRenderer.invoke(IPC_CHANNELS.cloudClassroomMasterySummaries, classroomId)
 }
 
 contextBridge.exposeInMainWorld('desktop', desktopApi)

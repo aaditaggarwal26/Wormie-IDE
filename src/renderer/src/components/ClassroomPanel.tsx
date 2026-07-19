@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, BookOpenCheck, Clipboard, DoorOpen, Download, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserRoundPlus, UsersRound } from 'lucide-react'
-import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import { ArrowLeft, BookOpenCheck, Clipboard, DoorOpen, Download, GraduationCap, Gauge, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserRoundPlus, UsersRound } from 'lucide-react'
+import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, ClassroomMasterySummary, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 
 type ClassroomPanelProps = {
   actionVersion: number
@@ -26,6 +26,9 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [invite, setInvite] = useState('')
+  const [masterySummaries, setMasterySummaries] = useState<ClassroomMasterySummary[]>([])
+  const [masteryError, setMasteryError] = useState<string | null>(null)
+  const [masteryLoading, setMasteryLoading] = useState(false)
   const selected = useMemo(() => props.classrooms.find((classroom) => classroom.id === selectedId) ?? props.classrooms[0] ?? null, [props.classrooms, selectedId])
 
   useEffect(() => {
@@ -40,6 +43,22 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
     setDescription('')
     setInvite('')
   }, [props.actionVersion])
+
+  useEffect(() => {
+    if (!selected || selected.role !== 'teacher') {
+      setMasterySummaries([])
+      setMasteryError(null)
+      return
+    }
+    let cancelled = false
+    setMasteryLoading(true)
+    setMasteryError(null)
+    void window.desktop.listClassroomMasterySummaries(selected.id)
+      .then((summaries) => { if (!cancelled) setMasterySummaries(summaries) })
+      .catch((error) => { if (!cancelled) setMasteryError(error instanceof Error ? error.message : 'Could not load mastery summaries.') })
+      .finally(() => { if (!cancelled) setMasteryLoading(false) })
+    return () => { cancelled = true }
+  }, [selected?.id, selected?.role, props.actionVersion])
 
   const closeForm = () => {
     setForm(null)
@@ -86,6 +105,20 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
           {selected.role === 'teacher' && selected.inviteLink && <section className="classroom-invite"><div><Link2 size={14} /><b>Student invite</b></div><code>{selected.inviteLink}</code><div><button onClick={() => props.onCopyInvite(selected.inviteLink!)} type="button"><Clipboard size={12} /> Copy</button><button disabled={props.busy} onClick={() => props.onRotateInvite(selected.id)} type="button"><RotateCw size={12} /> Replace</button></div></section>}
 
           {selected.role === 'teacher' && <button className="classroom-publish" disabled={props.busy || !props.workspace || !props.assignment?.manifest || props.assignment.role === 'student'} onClick={() => props.onPublish(selected.id)} type="button"><Send size={13} /> {props.assignment?.manifest ? `Publish ${props.assignment.manifest.title}` : 'Open a teacher assignment to publish'}</button>}
+
+          {selected.role === 'teacher' && <section className="classroom-section mastery-classroom-section">
+            <div className="classroom-section-title"><span>Mastery</span><b>{masterySummaries.length}</b></div>
+            {masteryError && <p className="classroom-section-empty">{masteryError}</p>}
+            {masteryLoading && <p className="classroom-section-empty">Loading mastery summaries...</p>}
+            {!masteryLoading && !masteryError && masterySummaries.length === 0 && <p className="classroom-section-empty">Student mastery summaries appear after learners sync their profile.</p>}
+            <div className="classroom-mastery-list">
+              {masterySummaries.map((summary) => <article key={summary.userId}>
+                <span><Gauge size={13} /><b>{summary.displayName}</b><small>{summary.assessedConcepts} concepts / {summary.reviewDueConcepts} due</small></span>
+                <strong>{summary.overallMastery == null ? '--' : `${Math.round(summary.overallMastery)}%`}</strong>
+                <div>{summary.weakConcepts.slice(0, 2).map((concept) => <em key={concept.conceptId}>{concept.name} {concept.mastery}%</em>)}</div>
+              </article>)}
+            </div>
+          </section>}
 
           <section className="classroom-section"><div className="classroom-section-title"><span>Assignments</span><b>{selected.assignments.length}</b></div>{selected.assignments.length === 0 ? <p className="classroom-section-empty">Published work will appear here automatically.</p> : <div className="classroom-assignment-list">{selected.assignments.map((assignment) => <article key={assignment.id}><span><b>{assignment.title}</b><time>{new Date(assignment.publishedAt).toLocaleDateString()}</time></span><button disabled={props.busy} onClick={() => props.onOpenAssignment(assignment.id)} title="Download and open assignment" type="button">{selected.role === 'student' ? <Download size={13} /> : <DoorOpen size={13} />}</button></article>)}</div>}</section>
 

@@ -5,7 +5,7 @@ import type { MasteryState } from './repository'
 import { createDefaultPersonalization } from './personalization'
 import { createEmptyGamification } from './gamification'
 
-export const MASTERY_SCHEMA_VERSION = 1
+export const MASTERY_SCHEMA_VERSION = 2
 const sources = new Set(['prerequisite_quiz', 'change_understanding', 'review', 'challenge', 'assignment', 'classroom_assessment', 'teacher_assessment', 'test_out', 'legacy_import'])
 const formats = new Set(['multiple_choice', 'multiple_select', 'true_false', 'predict_behavior', 'spot_the_bug', 'short_answer', 'code_ordering', 'challenge', 'teacher_review', 'legacy_summary'])
 
@@ -41,7 +41,9 @@ function restoreProfile(value: unknown, now: string): MasteryProfile {
 }
 
 export function migrateMasteryState(raw: unknown, legacy: KnowledgeMastery[] = [], now = new Date().toISOString(), deviceId = 'device-local'): MasteryState {
-  const candidate = raw && typeof raw === 'object' ? raw as { deviceId?: unknown; profile?: unknown; reviews?: unknown; misconceptions?: unknown; personalization?: unknown; goals?: unknown; gamification?: unknown } : {}
+  const candidate = raw && typeof raw === 'object' ? raw as { deviceId?: unknown; updatedAt?: unknown; profile?: unknown; reviews?: unknown; misconceptions?: unknown; personalization?: unknown; goals?: unknown; gamification?: unknown; sync?: unknown } : {}
+  const rawSync = candidate.sync && typeof candidate.sync === 'object' ? candidate.sync as { accountUserId?: unknown; revision?: unknown; remoteUpdatedAt?: unknown; lastSyncedAt?: unknown; pending?: unknown; lastError?: unknown } : {}
+  const isoOrNull = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
   let profile = restoreProfile(candidate.profile, now)
   for (const item of legacy) {
     if (!item || typeof item !== 'object') continue
@@ -68,11 +70,20 @@ export function migrateMasteryState(raw: unknown, legacy: KnowledgeMastery[] = [
   return {
     schemaVersion: MASTERY_SCHEMA_VERSION,
     deviceId: typeof candidate.deviceId === 'string' && candidate.deviceId.length <= 200 ? candidate.deviceId : deviceId,
+    updatedAt: isoOrNull(candidate.updatedAt) ?? now,
     profile,
     reviews: objectOrEmpty(candidate.reviews),
     misconceptions: objectOrEmpty(candidate.misconceptions),
     personalization,
     goals: objectOrEmpty(candidate.goals),
-    gamification
+    gamification,
+    sync: {
+      accountUserId: typeof rawSync.accountUserId === 'string' && rawSync.accountUserId.length <= 200 ? rawSync.accountUserId : null,
+      revision: Math.max(0, Math.min(1_000_000_000, Math.round(Number(rawSync.revision) || 0))),
+      remoteUpdatedAt: isoOrNull(rawSync.remoteUpdatedAt),
+      lastSyncedAt: isoOrNull(rawSync.lastSyncedAt),
+      pending: Boolean(rawSync.pending),
+      ...(typeof rawSync.lastError === 'string' && rawSync.lastError ? { lastError: rawSync.lastError.slice(0, 500) } : {})
+    }
   }
 }

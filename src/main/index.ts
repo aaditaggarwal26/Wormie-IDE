@@ -142,7 +142,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
-    registerCloudHandlers(workspace.getWorkspaceRoot, workspace.setWorkspace, isTrustedSender, takePendingClassroomInvite)
+    registerCloudHandlers(workspace.getWorkspaceRoot, workspace.setWorkspace, isTrustedSender, takePendingClassroomInvite, masteryRepository)
     createWindow()
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

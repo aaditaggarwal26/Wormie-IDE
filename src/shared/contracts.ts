@@ -78,7 +78,8 @@ export const IPC_CHANNELS = {
   cloudRotateInvite: 'cloud:rotate-invite',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
-  cloudOpenAssignment: 'cloud:open-assignment'
+  cloudOpenAssignment: 'cloud:open-assignment',
+  cloudClassroomMasterySummaries: 'cloud:classroom-mastery-summaries'
 } as const
 
 export type FileTreeNode = {
@@ -676,6 +677,18 @@ export type ReviewResult = { sessionId: string; score: number; passed: boolean; 
 export type LearningGoalInput = Pick<LearningGoal, 'id' | 'title' | 'type' | 'target'> & Partial<Pick<LearningGoal, 'conceptId' | 'domain'>>
 export type MasterySyncStatus = { state: 'local-only' | 'offline' | 'syncing' | 'synced' | 'error'; pending: number; lastSyncedAt: string | null; error?: string }
 
+export type ClassroomMasterySummary = {
+  classroomId: string
+  userId: string
+  displayName: string
+  assessedConcepts: number
+  overallMastery: number | null
+  reviewDueConcepts: number
+  weakConcepts: Array<{ conceptId: string; name: string; mastery: number }>
+  strongConcepts: Array<{ conceptId: string; name: string; mastery: number }>
+  updatedAt: string
+}
+
 export type ChangeUnderstandingPreparation = {
   changeId: string
   fingerprint: string
@@ -1045,4 +1058,5 @@ export type DesktopApi = {
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>
+  listClassroomMasterySummaries: (classroomId: string) => Promise<ClassroomMasterySummary[]>
 }

@@ -135,6 +135,7 @@ describe('workspace coding agent', () => {
     const session = { codexThreadId: null }
     const sessions: unknown[] = []
     const deltas: (string | undefined)[] = []
+    const imageBatches: (string[] | undefined)[] = []
     let disposed = 0
     const model = {
       createSession: () => session,
@@ -148,22 +149,30 @@ describe('workspace coding agent', () => {
         schema: ZodType<T>,
         _signal: AbortSignal,
         _onProtocolEvent?: (method: string, detail: string) => void,
-        options?: { session?: typeof session; deltaPrompt?: string }
+        options?: { session?: typeof session; deltaPrompt?: string; imagePaths?: string[] }
       ): Promise<T> {
         sessions.push(options?.session)
         deltas.push(options?.deltaPrompt)
+        imageBatches.push(options?.imagePaths)
         return schema.parse(actions.shift())
       }
     }
 
     try {
-      await runWorkspaceAgent({ rootPath, request: 'Enable the value.', model, signal: new AbortController().signal })
+      await runWorkspaceAgent({
+        rootPath,
+        request: 'Enable the value.',
+        imagePaths: ['/tmp/screenshot.png'],
+        model,
+        signal: new AbortController().signal
+      })
       expect(sessions).toEqual([session, session, session])
       expect(deltas[0]).toBeUndefined()
       expect(deltas[1]).toContain('Step 1 value.ts')
       expect(deltas[1]).not.toContain('Workspace manifest')
       expect(deltas[2]).toContain('updated')
       expect(deltas[2]).not.toContain('Step 1 value.ts')
+      expect(imageBatches).toEqual([['/tmp/screenshot.png'], undefined, undefined])
       expect(disposed).toBe(1)
     } finally {
       await fs.rm(rootPath, { recursive: true, force: true })

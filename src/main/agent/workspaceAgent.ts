@@ -65,6 +65,7 @@ export type WorkspaceAgentProposal = {
 type RunWorkspaceAgentOptions = {
   rootPath: string
   request: string
+  imagePaths?: string[]
   model: Model
   signal: AbortSignal
   onProtocolEvent?: (method: string, detail: string) => void
@@ -612,13 +613,19 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
 Choose the next single action.`
       : undefined
     sentObservationCount = observations.length
+    // Screenshots ride along on the first turn only: reused threads keep them
+    // in context, and fresh-thread fallbacks resend the full prompt anyway.
+    const imagePaths = stepNumber === 1 && options.imagePaths?.length ? options.imagePaths : undefined
+    const stepOptions = session || imagePaths
+      ? { ...(session ? { session, deltaPrompt } : {}), ...(imagePaths ? { imagePaths } : {}) }
+      : undefined
     const step = await options.model.generateStructured(
       'workspace-step',
       prompt,
       workspaceAgentStepSchema,
       options.signal,
       options.onProtocolEvent,
-      session ? { session, deltaPrompt } : undefined
+      stepOptions
     )
     options.onActivity?.(actionLabel(step.action), step.note)
     const actionKey = JSON.stringify(step.action)

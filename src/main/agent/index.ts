@@ -95,6 +95,37 @@ function validateModel(model: string, provider: AgentConfig['provider']): string
   return trimmed
 }
 
+const attachmentExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp'])
+const maxAttachmentBytes = 10 * 1024 * 1024
+
+async function validateImageAttachments(rawPaths: unknown): Promise<string[]> {
+  if (rawPaths === undefined || rawPaths === null) return []
+  if (!Array.isArray(rawPaths) || rawPaths.length > 4) throw new Error('Attach up to 4 screenshots.')
+  const validated: string[] = []
+  for (const rawPath of rawPaths) {
+    if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath) || rawPath.includes('\0')) {
+      throw new Error('An attached screenshot path is invalid.')
+    }
+    if (!attachmentExtensions.has(path.extname(rawPath).toLowerCase())) {
+      throw new Error('Attachments must be PNG, JPEG, GIF, or WebP images.')
+    }
+    const resolved = await fs.realpath(rawPath).catch(() => null)
+    if (!resolved) throw new Error('An attached screenshot no longer exists.')
+    const stats = await fs.stat(resolved)
+    if (!stats.isFile()) throw new Error('An attached screenshot path is invalid.')
+    if (stats.size > maxAttachmentBytes) throw new Error('Each attached screenshot must be under 10 MB.')
+    if (!validated.includes(resolved)) validated.push(resolved)
+  }
+  return validated
+}
+
+async function existingImagePaths(imagePaths: string[]): Promise<string[]> {
+  const checks = await Promise.all(imagePaths.map(async (imagePath) =>
+    (await fs.access(imagePath).then(() => true, () => false)) ? imagePath : null
+  ))
+  return checks.filter((imagePath): imagePath is string => imagePath !== null)
+}
+
 function validateRelativeChangePath(rootPath: string, relativePath: string): string {
   if (
     typeof relativePath !== 'string' ||
@@ -308,6 +339,8 @@ export function registerAgentHandlers(
 
   ipcMain.handle(IPC_CHANNELS.agentConnectCodexAccount, () => codexRuntime.connectChatGpt((url) => shell.openExternal(url)))
 
+  ipcMain.handle(IPC_CHANNELS.agentListCodexModels, () => codexRuntime.listModels())
+
   ipcMain.handle(IPC_CHANNELS.agentSetPassingScore, (_event, rawScore: number): number => {
     if (!Number.isInteger(rawScore) || rawScore < 60 || rawScore > 100) throw new Error('Passing score must be between 60 and 100.')
     store.set('learningPassingScore', rawScore)
@@ -360,27 +393,33 @@ export function registerAgentHandlers(
     if (!intent || intent.length > maxRequestLength) throw new Error('Describe the change in 1 to 4,000 characters.')
     const assignmentPolicy = await currentAssignmentPolicy(rootPath)
     const passingScore = assignmentPolicy.passingScore
+    const imagePaths = await validateImageAttachments(request.imagePaths)
     const contextRequest: LearningRequest = {
       runId,
       request: intent,
       activePath: typeof request.activePath === 'string' ? request.activePath : null,
       openPaths: Array.isArray(request.openPaths)
         ? request.openPaths.filter((filePath): filePath is string => typeof filePath === 'string').slice(0, 6)
-        : []
+        : [],
+      imagePaths
     }
     emitPhase(event.sender, runId, 'context', 'Gathering workspace context', 'active')
     const context = await buildWorkspaceContext(rootPath, contextRequest)
     emitPhase(event.sender, runId, 'context', 'Workspace context ready', 'completed', `${contextRequest.openPaths?.length ?? 0} open files considered`)
     emitPhase(event.sender, runId, 'learning', 'Preparing the learning plan', 'active')
+    const attachmentNote = imagePaths.length
+      ? `\n\nThe user attached ${imagePaths.length} screenshot${imagePaths.length === 1 ? '' : 's'} to this request. Use them as visual context.`
+      : ''
     const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'learning',
       `Analyze this requested change and teach only the prerequisite concepts. Do not provide implementation code yet.
 Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test applied understanding, not trivia.
 
-<user-request>\n${intent}\n</user-request>\n\n${context}`,
+<user-request>\n${intent}\n</user-request>${attachmentNote}\n\n${context}`,
       learningDraftSchema,
       signal,
-      onProtocolEvent
+      onProtocolEvent,
+      imagePaths.length ? { imagePaths } : undefined
     ), { sender: event.sender, runId })
     emitPhase(event.sender, runId, 'validation', 'Structured learning plan validated', 'completed')
 
@@ -458,9 +497,11 @@ Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test a
     await assertSessionPolicy(session, rootPath, true)
     const runId = session.publicSession.runId
     emitPhase(event.sender, runId, 'proposal', 'Preparing proposed files', 'active')
+    const proposalImages = await existingImagePaths(session.contextRequest.imagePaths ?? [])
     const draft = await runModel((gateway, signal, onProtocolEvent) => runWorkspaceAgent({
       rootPath,
       request: session.publicSession.request,
+      imagePaths: proposalImages,
       model: gateway,
       signal,
       onProtocolEvent,

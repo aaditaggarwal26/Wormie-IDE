@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'framer-motion'
 import {
   AlertTriangle,
   Activity,
@@ -190,7 +189,7 @@ export function TutorPane(): React.JSX.Element {
   return (
     <aside className="tutor-pane">
       <div className="tutor-heading">
-        <h2>Wormie</h2>
+        <h2>Chat</h2>
         <div className="tutor-heading-actions">
           <button
             aria-label="Activity"
@@ -208,56 +207,23 @@ export function TutorPane(): React.JSX.Element {
         </div>
       </div>
 
-      <AnimatePresence initial={false}>
-        {activityOpen && (
-          <motion.div
-            animate={{ height: 'auto', opacity: 1 }}
-            className="agent-activity-shell"
-            exit={{ height: 0, opacity: 0 }}
-            initial={{ height: 0, opacity: 0 }}
-          >
-            <AgentActivity
-              canOpenProposed={Boolean(proposal)}
-              onOpenAppliedFile={openAppliedFile}
-              onOpenProposedFile={openProposedFile}
-              state={activityState}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {activityOpen && (
+        <div className="agent-activity-shell">
+          <AgentActivity
+            canOpenProposed={Boolean(proposal)}
+            onOpenAppliedFile={openAppliedFile}
+            onOpenProposedFile={openProposedFile}
+            state={activityState}
+          />
+        </div>
+      )}
 
       <div className="tutor-scroll">
         {!session && (
-          <motion.div animate={{ opacity: 1 }} initial={{ opacity: 0 }}>
-            <div className="agent-composer">
-              <textarea
-                aria-label="Describe a coding change"
-                disabled={busy}
-                maxLength={4000}
-                onChange={(event) => setRequest(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-                  event.preventDefault()
-                  startLearning()
-                }}
-                placeholder="Describe a change"
-                rows={1}
-                value={request}
-              />
-              <div className="composer-meta">
-                <span>{workspace ? `${documents.length} file${documents.length === 1 ? '' : 's'} open` : 'No workspace'}</span>
-                <button
-                  disabled={!workspace || !request.trim() || dirtyDocuments.length > 0 || busy}
-                  onClick={startLearning}
-                  title={dirtyDocuments.length > 0 ? 'Save open changes before starting' : 'Start learning plan'}
-                  type="button"
-                >
-                  {learningMutation.isPending ? <LoaderCircle className="spin" size={14} /> : <Send size={14} />}
-                </button>
-              </div>
-              {dirtyDocuments.length > 0 && <p className="agent-warning"><AlertTriangle size={11} /> Save open changes so the agent sees the current code.</p>}
-            </div>
-          </motion.div>
+          <div className="agent-empty">
+            <FileCode2 size={16} />
+            <span>Ask about your code</span>
+          </div>
         )}
 
         {session && !proposal && (
@@ -331,7 +297,7 @@ export function TutorPane(): React.JSX.Element {
         )}
 
         {proposal && (
-          <motion.div animate={{ opacity: 1, y: 0 }} className="proposal-view" initial={{ opacity: 0, y: 8 }}>
+          <div className="proposal-view">
             <div className="session-toolbar">
               <span>Review before applying</span>
               <button onClick={reset} type="button"><RotateCcw size={12} /> New request</button>
@@ -397,13 +363,44 @@ export function TutorPane(): React.JSX.Element {
                     ? 'Apply reviewed changes'
                     : 'Pass understanding check to apply'}
             </button>
-          </motion.div>
+          </div>
         )}
 
-        <AnimatePresence>
-          {error && <motion.div animate={{ opacity: 1 }} className="agent-error" exit={{ opacity: 0 }} initial={{ opacity: 0 }}><AlertTriangle size={13} /><span>{error}</span></motion.div>}
-        </AnimatePresence>
+        {error && <div className="agent-error"><AlertTriangle size={13} /><span>{error}</span></div>}
       </div>
+
+      {!session && (
+        <div className="agent-composer-shell">
+          <div className="agent-composer">
+            <textarea
+              aria-label="Describe a coding change"
+              disabled={busy}
+              maxLength={4000}
+              onChange={(event) => setRequest(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                startLearning()
+              }}
+              placeholder="Ask Wormie"
+              rows={1}
+              value={request}
+            />
+            <div className="composer-meta">
+              <span>{workspace ? `${documents.length} open file${documents.length === 1 ? '' : 's'}` : 'Open a folder'}</span>
+              <button
+                disabled={!workspace || !request.trim() || dirtyDocuments.length > 0 || busy}
+                onClick={startLearning}
+                title={dirtyDocuments.length > 0 ? 'Save open changes before starting' : 'Send'}
+                type="button"
+              >
+                {learningMutation.isPending ? <LoaderCircle className="spin" size={14} /> : <Send size={14} />}
+              </button>
+            </div>
+            {dirtyDocuments.length > 0 && <p className="agent-warning"><AlertTriangle size={11} /> Save open changes first.</p>}
+          </div>
+        </div>
+      )}
 
       <div className="unlock-bar" data-unlocked={Boolean(quizResult?.passed)}>
         {busy ? <Square size={12} /> : quizResult?.passed ? <UnlockKeyhole size={14} /> : <LockKeyhole size={14} />}

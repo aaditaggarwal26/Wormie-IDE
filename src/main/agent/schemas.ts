@@ -75,6 +75,13 @@ export const workspaceAgentStepSchema = z.object({
       newText: z.string().max(100_000)
     }),
     z.object({
+      type: z.literal('edit_lines'),
+      relativePath: workspacePath,
+      startLine: z.number().int().positive().max(1_000_000),
+      endLine: z.number().int().positive().max(1_000_000),
+      newText: z.string().max(100_000)
+    }),
+    z.object({
       type: z.literal('create_file'),
       relativePath: workspacePath,
       content: z.string().min(1).max(500_000)

@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { isLoopbackUrl, schemaSummary, validateBaseUrl } from './provider'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CodexAppServer } from './codexAppServer'
+import { isLoopbackUrl, ModelGateway, schemaSummary, validateBaseUrl } from './provider'
+import { remediationDraftSchema } from './schemas'
 
 describe('validateBaseUrl', () => {
   it('accepts HTTPS providers and strips the trailing slash', () => {
@@ -15,6 +17,52 @@ describe('validateBaseUrl', () => {
   it('rejects embedded credentials and query parameters', () => {
     expect(() => validateBaseUrl('https://user:pass@api.example.com/v1')).toThrow(/credentials/)
     expect(() => validateBaseUrl('https://api.example.com/v1?key=secret')).toThrow(/query/)
+  })
+})
+
+describe('structured output fallback', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('falls back to prose-shape prompting when the provider rejects json_schema', async () => {
+    const requestBodies: string[] = []
+    vi.stubGlobal('fetch', async (_url: unknown, init?: { body?: unknown }) => {
+      const body = typeof init?.body === 'string' ? init.body : ''
+      requestBodies.push(body)
+      if (body.includes('response_format')) {
+        return new Response(JSON.stringify({ error: { message: 'response_format is not supported' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+      return new Response(JSON.stringify({
+        id: 'test', object: 'chat.completion', created: 0, model: 'test-model',
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: '{"lesson":"Practice smaller edits."}' },
+          finish_reason: 'stop'
+        }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+
+    const gateway = new ModelGateway({
+      provider: 'openai-compatible',
+      model: 'test-model',
+      baseUrl: 'http://127.0.0.1:9/v1',
+      hasApiKey: false,
+      keyStorage: 'none',
+      passingScore: 80
+    }, null, {} as CodexAppServer)
+
+    const result = await gateway.generateStructured(
+      'remediation',
+      'Write a short remediation lesson.',
+      remediationDraftSchema,
+      new AbortController().signal
+    )
+    expect(result).toEqual({ lesson: 'Practice smaller edits.' })
+    expect(requestBodies.some((body) => body.includes('response_format'))).toBe(true)
+    expect(requestBodies.length).toBeGreaterThan(1)
   })
 })
 

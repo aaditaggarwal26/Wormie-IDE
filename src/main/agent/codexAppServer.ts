@@ -5,6 +5,14 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { z, type ZodType } from 'zod'
 import { CodexTurnCapture } from './codexTurnCapture'
+import { sanitizeStructuredOutputSchema, stripNullProperties } from './structuredOutputSchema'
+
+export type CodexSession = { codexThreadId: string | null }
+
+export type CodexGenerateOptions = {
+  session?: CodexSession
+  deltaPrompt?: string
+}
 
 export type CodexAccountStatus = {
   available: boolean
@@ -135,6 +143,12 @@ function safeEnvironment(codexHome: string): NodeJS.ProcessEnv {
   return env
 }
 
+export function isAuthTurnError(message: string): boolean {
+  return /\b40[13]\b|unauthoriz|forbidden|token.*expired|expired.*token|invalid[_ ]?token|re-?authenticat|not.*logged.*in/i.test(message)
+}
+
+const reconnectMessage = 'Your ChatGPT session expired. Reconnect your ChatGPT account in Settings.'
+
 function cleanProtocolError(error: unknown): Error {
   if (!(error instanceof Error)) return new Error('The Codex runtime failed.')
   const message = error.message.replace(/[\r\n]+/g, ' ').trim()
@@ -223,7 +237,8 @@ export class CodexAppServer {
     schema: ZodType<T>,
     model: string,
     signal: AbortSignal,
-    onProtocolEvent?: (method: string, detail: string) => void
+    onProtocolEvent?: (method: string, detail: string) => void,
+    options?: CodexGenerateOptions
   ): Promise<T> {
     await this.ensureStarted()
     const account = await this.getAccountStatus()
@@ -231,6 +246,70 @@ export class CodexAppServer {
       throw new Error('Connect a ChatGPT Codex account in Settings before starting the tutor.')
     }
 
+    try {
+      return await this.runStructuredTurn(prompt, schema, model, signal, onProtocolEvent, options)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (signal.aborted || !isAuthTurnError(message)) throw error
+      if (options?.session) options.session.codexThreadId = null
+      if (!(await this.refreshAccount())) throw new Error(reconnectMessage)
+      try {
+        return await this.runStructuredTurn(prompt, schema, model, signal, onProtocolEvent, options)
+      } catch (retryError) {
+        const retryMessage = retryError instanceof Error ? retryError.message : ''
+        if (!signal.aborted && isAuthTurnError(retryMessage)) throw new Error(reconnectMessage)
+        throw retryError
+      }
+    }
+  }
+
+  async disposeSession(session: CodexSession): Promise<void> {
+    const threadId = session.codexThreadId
+    session.codexThreadId = null
+    if (!threadId) return
+    await this.request('thread/unsubscribe', { threadId }).catch(() => undefined)
+  }
+
+  private async refreshAccount(): Promise<boolean> {
+    try {
+      const response = await this.request<AccountReadResponse>('account/read', { refreshToken: true })
+      return !!response.account
+    } catch {
+      return false
+    }
+  }
+
+  private async runStructuredTurn<T>(
+    prompt: string,
+    schema: ZodType<T>,
+    model: string,
+    signal: AbortSignal,
+    onProtocolEvent?: (method: string, detail: string) => void,
+    options?: CodexGenerateOptions
+  ): Promise<T> {
+    const session = options?.session
+    const reusedThreadId = session?.codexThreadId ?? null
+    if (session && reusedThreadId && options?.deltaPrompt) {
+      try {
+        return await this.runTurnOnThread(reusedThreadId, options.deltaPrompt, schema, signal, onProtocolEvent)
+      } catch (error) {
+        if (signal.aborted) throw error
+        // The thread may have been lost to a runtime restart; retry once on
+        // a fresh thread with the full self-contained prompt.
+        session.codexThreadId = null
+      }
+    }
+
+    const threadId = await this.startThread(model)
+    if (session) session.codexThreadId = threadId
+    try {
+      return await this.runTurnOnThread(threadId, prompt, schema, signal, onProtocolEvent)
+    } finally {
+      if (!session) void this.request('thread/unsubscribe', { threadId }).catch(() => undefined)
+    }
+  }
+
+  private async startThread(model: string): Promise<string> {
     const runtimeDirectory = path.join(this.codexHome, 'runtime')
     const thread = await this.request<ThreadStartResponse>('thread/start', {
       model: model || null,
@@ -246,21 +325,30 @@ export class CodexAppServer {
       ].join(' '),
       config: restrictedThreadConfig
     })
+    return thread.thread.id
+  }
 
-    const capture = new CodexTurnCapture(thread.thread.id, onProtocolEvent)
+  private async runTurnOnThread<T>(
+    threadId: string,
+    turnPrompt: string,
+    schema: ZodType<T>,
+    signal: AbortSignal,
+    onProtocolEvent?: (method: string, detail: string) => void
+  ): Promise<T> {
+    const capture = new CodexTurnCapture(threadId, onProtocolEvent)
     const methods = ['item/started', 'item/completed', 'item/agentMessage/delta', 'turn/completed']
     const unsubscribers = methods.map((method) => this.subscribeNotification(method, (params) => capture.accept(method, params)))
     let turn: TurnStartResponse | null = null
     const abort = () => {
-      if (turn) void this.request('turn/interrupt', { threadId: thread.thread.id, turnId: turn.turn.id }).catch(() => undefined)
+      if (turn) void this.request('turn/interrupt', { threadId, turnId: turn.turn.id }).catch(() => undefined)
     }
     try {
       turn = await this.request<TurnStartResponse>('turn/start', {
-        threadId: thread.thread.id,
-        input: [{ type: 'text', text: prompt, text_elements: [] }],
+        threadId,
+        input: [{ type: 'text', text: turnPrompt, text_elements: [] }],
         approvalPolicy: 'never',
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
-        outputSchema: z.toJSONSchema(schema)
+        outputSchema: sanitizeStructuredOutputSchema(z.toJSONSchema(schema))
       })
       signal.addEventListener('abort', abort, { once: true })
       const completed = await capture.waitForCompletion(turn.turn.id, signal)
@@ -269,12 +357,11 @@ export class CodexAppServer {
       }
       const finalMessage = capture.outputFor(turn.turn.id)
       if (!finalMessage) throw new Error('Codex completed without an agent-message output event.')
-      return schema.parse(JSON.parse(finalMessage))
+      return schema.parse(stripNullProperties(JSON.parse(finalMessage)))
     } finally {
       signal.removeEventListener('abort', abort)
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       capture.dispose()
-      void this.request('thread/unsubscribe', { threadId: thread.thread.id }).catch(() => undefined)
     }
   }
 

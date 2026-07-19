@@ -136,6 +136,13 @@ export function AgentDiffReview({
         onMount={(editor) => {
           editorRef.current = editor
           const modified = editor.getModifiedEditor()
+          // Match both models to the file's real line endings so the diff and
+          // the reviewed content never silently flip CRLF files to LF.
+          const eol = file.originalContent.includes('\r\n')
+            ? monaco.editor.EndOfLineSequence.CRLF
+            : monaco.editor.EndOfLineSequence.LF
+          editor.getOriginalEditor().getModel()?.setEOL(eol)
+          modified.getModel()?.setEOL(eol)
           const disposables = [
             editor.onDidUpdateDiff(() => {
               syncChanges()

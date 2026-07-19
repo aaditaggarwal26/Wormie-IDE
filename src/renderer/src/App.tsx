@@ -1150,8 +1150,6 @@ function SettingsSidebar(): React.JSX.Element {
               onClick={() => codexStatusMutation.mutate()}
               type="button"
             >Refresh account status</button>
-            <p>Uses your ChatGPT plan's Codex allowance through the official bundled runtime. It does not turn your ChatGPT login into an API key.</p>
-            <p>Wormie runs Codex in an isolated, read-only profile with tools, browsing, MCP, and shell access disabled.</p>
           </>
         ) : (
           <>

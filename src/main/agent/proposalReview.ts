@@ -1,5 +1,11 @@
 import type { ReviewedProposalFile } from '../../shared/contracts'
-import { isReviewedEditSelection, type ResolvedProposalTextEdit } from './proposalEdits'
+import {
+  convertEol,
+  detectEol,
+  isReviewedEditSelection,
+  isReviewedEditSelectionEolTolerant,
+  type ResolvedProposalTextEdit
+} from './proposalEdits'
 
 export type ReviewableProposalChange = {
   relativePath: string
@@ -47,15 +53,25 @@ export function resolveReviewedChanges<T extends ReviewableProposalChange>(
     if (typeof review.content !== 'string' || review.content.length > maxFileCharacters || review.content.includes('\0')) {
       throw new Error(`The reviewed content for ${review.relativePath} is invalid.`)
     }
-    const validSelection = change.action === 'create'
-      ? review.content === '' || review.content === change.content
-      : change.beforeContent !== null && change.surgicalEdits !== null &&
-        isReviewedEditSelection(change.beforeContent, review.content, change.surgicalEdits)
+    let reviewedContent = review.content
+    let validSelection = false
+    if (change.action === 'create') {
+      validSelection = review.content === '' || review.content === change.content
+    } else if (change.beforeContent !== null && change.surgicalEdits !== null) {
+      if (isReviewedEditSelection(change.beforeContent, review.content, change.surgicalEdits)) {
+        validSelection = true
+      } else if (isReviewedEditSelectionEolTolerant(change.beforeContent, review.content, change.surgicalEdits)) {
+        // The review round-tripped through an EOL-normalizing editor; restore
+        // the file's original line-ending convention before applying.
+        validSelection = true
+        reviewedContent = convertEol(review.content, detectEol(change.beforeContent))
+      }
+    }
     if (!validSelection) throw new Error(`The reviewed content for ${review.relativePath} is not part of this proposal.`)
 
     return {
       ...change,
-      reviewedContent: review.content,
+      reviewedContent,
       keptBlocks: validateBlockCount(review.keptBlocks),
       undoneBlocks: validateBlockCount(review.undoneBlocks)
     }

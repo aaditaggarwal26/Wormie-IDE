@@ -113,6 +113,7 @@ export default function App(): React.JSX.Element {
   const [cloudAuth, setCloudAuth] = useState<CloudAuthState | null>(null)
   const [cloudAuthLoaded, setCloudAuthLoaded] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
+  const [resetEmailSent, setResetEmailSent] = useState(false)
   const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
@@ -427,6 +428,30 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const googleAuthMutation = useMutation({
+    mutationFn: window.desktop.signInWithGoogle,
+    onMutate: () => setCloudError(null),
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const passwordResetMutation = useMutation({
+    mutationFn: window.desktop.requestPasswordReset,
+    onSuccess: () => {
+      setCloudError(null)
+      setResetEmailSent(true)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const updatePasswordMutation = useMutation({
+    mutationFn: window.desktop.updatePassword,
+    onSuccess: (result) => {
+      setCloudAuth(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const classroomListMutation = useMutation({
     mutationFn: window.desktop.listClassrooms,
     onSuccess: (result) => {
@@ -526,6 +551,14 @@ export default function App(): React.JSX.Element {
       setAssignmentStudioOpen(true)
     })
   }, [loadAssignment, workspace])
+
+  useEffect(() => {
+    return window.desktop.onCloudAuthChanged((update) => {
+      if (update.auth) setCloudAuth(update.auth)
+      setCloudError(update.error)
+      setCloudAuthLoaded(true)
+    })
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -667,13 +700,19 @@ export default function App(): React.JSX.Element {
     openClassroomAssignmentMutation.isPending ||
     signOutMutation.isPending
 
-  if (!cloudAuthLoaded || !cloudAuth?.user) {
+  if (!cloudAuthLoaded || !cloudAuth?.user || cloudAuth.passwordResetRequired) {
     return <AuthScreen
-      busy={authMutation.isPending}
+      busy={authMutation.isPending || googleAuthMutation.isPending || passwordResetMutation.isPending || updatePasswordMutation.isPending}
       confirmationRequired={Boolean(cloudAuth?.emailConfirmationRequired)}
       error={cloudError}
+      googleBusy={googleAuthMutation.isPending}
       loading={!cloudAuthLoaded}
+      onGoogleSignIn={() => googleAuthMutation.mutate()}
+      onRequestPasswordReset={(email) => passwordResetMutation.mutate(email)}
       onSubmit={(mode, credentials) => authMutation.mutate({ mode, credentials })}
+      onUpdatePassword={(password) => updatePasswordMutation.mutate(password)}
+      passwordResetRequired={Boolean(cloudAuth?.passwordResetRequired)}
+      resetEmailSent={resetEmailSent}
     />
   }
 

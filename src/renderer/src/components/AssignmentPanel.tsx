@@ -56,9 +56,8 @@ export function AssignmentPanel(props: AssignmentPanelProps): React.JSX.Element 
       {!workspace && (
         <div className="assignment-empty">
           <div className="assignment-seal"><FolderInput size={18} /></div>
-          <span className="assignment-overline">Student handoff</span>
-          <h3>Open or import an assignment.</h3>
-          <p>A Wormie package creates an integrity-checked local copy. Packages are not cryptographically signed.</p>
+          <h3>Open an assignment</h3>
+          <p>Packages are local and unsigned.</p>
           <button className="assignment-create-button" disabled={props.importing} onClick={props.onImport} type="button"><FolderInput size={14} /> {props.importing ? 'Importing...' : 'Import package'}</button>
         </div>
       )}
@@ -78,9 +77,7 @@ export function AssignmentPanel(props: AssignmentPanelProps): React.JSX.Element 
       {workspace && !busy && !error && !manifest && (
         <div className="assignment-empty">
           <div className="assignment-seal"><Braces size={18} /></div>
-          <span className="assignment-overline">Teacher workspace</span>
-          <h3>Turn this project into an assignment.</h3>
-          <p>Write the brief, point students to unfinished code, and set the AI learning rules.</p>
+          <h3>No assignment</h3>
           <button className="assignment-create-button" onClick={props.onEdit} type="button"><Plus size={14} /> Create assignment</button>
         </div>
       )}
@@ -111,7 +108,7 @@ function TeacherView({ assignment, exporting, openingSubmission, onEdit, onExpor
       <div className="assignment-list-heading"><span>Student work</span><b>{manifest.tasks.length}</b></div>
       {manifest.tasks.map((task, index) => <div className="assignment-task-row" key={task.id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{task.title}</strong><code>{task.filePath}</code></div><em>{task.kind}</em></div>)}
     </div>
-    <section className="assignment-publish-card"><FileJson2 size={17} /><div><strong>Ready to distribute</strong><p>Export a self-contained local JSON package or commit the manifest with the starter repository.</p></div></section>
+    <section className="assignment-publish-card"><FileJson2 size={17} /><div><strong>Ready to distribute</strong><p>Export the package or commit the manifest.</p></div></section>
     <div className="assignment-panel-actions"><button onClick={onEdit} type="button"><PencilLine size={13} /> Edit</button><button onClick={onReveal} type="button"><Eye size={13} /> Reveal</button><button disabled={exporting} onClick={onExport} type="button"><PackageOpen size={13} /> {exporting ? 'Exporting' : 'Export'}</button></div>
     <button className="assignment-open-submission" disabled={openingSubmission} onClick={onOpenSubmission} type="button"><Upload size={13} /> {openingSubmission ? 'Opening...' : 'Open student submission'}</button>
     {reviewedSubmission && <SubmissionReview submission={reviewedSubmission} />}

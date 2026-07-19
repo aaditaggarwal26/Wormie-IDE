@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isReviewedEditSelection, materializeProposalEdits } from './proposalEdits'
+import { isReviewedEditSelection, materializeProposalEdits, materializeResolvedProposalEdits } from './proposalEdits'
 import { proposalDraftSchema } from './schemas'
 
 describe('surgical proposal edits', () => {
@@ -14,6 +14,19 @@ describe('surgical proposal edits', () => {
     expect(result).toMatchObject({ additions: 2, deletions: 2 })
     expect(result.patch).not.toContain('header')
     expect(result.patch).not.toContain('middle')
+    expect(result.patch).not.toContain('footer')
+  })
+
+  it('collapses a whole-file replacement to the smallest unique edit', () => {
+    const original = 'header\nconst enabled = false\nfooter\n'
+    const result = materializeProposalEdits(original, [{
+      oldText: original,
+      newText: 'header\nconst enabled = true\nfooter\n'
+    }], 'src/config.ts')
+
+    expect(result.content).toBe('header\nconst enabled = true\nfooter\n')
+    expect(result.edits).toEqual([{ oldText: 'fals', newText: 'tru', start: 23, end: 27 }])
+    expect(result.patch).not.toContain('header')
     expect(result.patch).not.toContain('footer')
   })
 
@@ -87,5 +100,17 @@ describe('surgical proposal edits', () => {
       ...base,
       changes: [{ relativePath: 'a.ts', action: 'update', content: 'whole file', explanation: 'Replace it' }]
     }).success).toBe(false)
+  })
+
+  it('materializes trusted offset edits without expanding them into file replacements', () => {
+    const original = 'first\nunchanged middle\nlast\n'
+    const result = materializeResolvedProposalEdits(original, [
+      { start: 0, end: 5, oldText: 'first', newText: 'FIRST' },
+      { start: 23, end: 27, oldText: 'last', newText: 'LAST' }
+    ], 'a.ts')
+
+    expect(result.content).toBe('FIRST\nunchanged middle\nLAST\n')
+    expect(result.edits).toHaveLength(2)
+    expect(result.patch).not.toContain('unchanged middle')
   })
 })

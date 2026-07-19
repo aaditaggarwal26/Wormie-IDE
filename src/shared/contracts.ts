@@ -67,10 +67,14 @@ export const IPC_CHANNELS = {
   assignmentSubmit: 'assignment:submit',
   assignmentOpenSubmission: 'assignment:open-submission',
   cloudGetAuth: 'cloud:get-auth',
+  cloudAuthChanged: 'cloud:auth-changed',
   cloudGetPendingInvite: 'cloud:get-pending-invite',
   cloudInviteReceived: 'cloud:invite-received',
   cloudSignUp: 'cloud:sign-up',
   cloudSignIn: 'cloud:sign-in',
+  cloudRequestPasswordReset: 'cloud:request-password-reset',
+  cloudUpdatePassword: 'cloud:update-password',
+  cloudSignInWithGoogle: 'cloud:sign-in-with-google',
   cloudSignOut: 'cloud:sign-out',
   cloudListClassrooms: 'cloud:list-classrooms',
   cloudCreateClassroom: 'cloud:create-classroom',
@@ -911,6 +915,12 @@ export type CloudUser = {
 export type CloudAuthState = {
   user: CloudUser | null
   emailConfirmationRequired?: boolean
+  passwordResetRequired?: boolean
+}
+
+export type CloudAuthUpdate = {
+  auth: CloudAuthState | null
+  error: string | null
 }
 
 export type CloudAuthCredentials = {
@@ -1046,10 +1056,14 @@ export type DesktopApi = {
   submitAssignment: (request: AssignmentSubmitRequest) => Promise<AssignmentSubmissionExportResult | null>
   openAssignmentSubmission: (workspaceRoot: string) => Promise<AssignmentSubmission | null>
   getCloudAuth: () => Promise<CloudAuthState>
+  onCloudAuthChanged: (callback: (update: CloudAuthUpdate) => void) => () => void
   getPendingClassroomInvite: () => Promise<string | null>
   onClassroomInvite: (callback: (inviteLink: string) => void) => () => void
   signUp: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
   signIn: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
+  requestPasswordReset: (email: string) => Promise<void>
+  updatePassword: (password: string) => Promise<CloudAuthState>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   listClassrooms: () => Promise<Classroom[]>
   createClassroom: (request: ClassroomCreateRequest) => Promise<Classroom[]>

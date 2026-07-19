@@ -80,7 +80,6 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
         else props.onJoin(invite)
       }}>
         <button className="classroom-back" onClick={closeForm} type="button"><ArrowLeft size={12} /> Back</button>
-        <span className="classroom-overline">{form === 'create' ? 'New learning space' : 'Enter a classroom'}</span>
         <h3>{form === 'create' ? 'Create classroom' : 'Join with an invite'}</h3>
         {form === 'create' ? <>
           <label><span>Name</span><input autoFocus maxLength={120} onChange={(event) => setName(event.target.value)} placeholder="Mobile App Studio" required value={name} /></label>
@@ -93,14 +92,14 @@ export function ClassroomPanel(props: ClassroomPanelProps): React.JSX.Element {
         <div className="classroom-actions"><button onClick={() => setForm('create')} type="button"><Plus size={13} /> Create</button><button onClick={() => setForm('join')} type="button"><UserRoundPlus size={13} /> Join</button></div>
 
         {props.busy && !props.classrooms.length && <div className="classroom-loading">Opening your classrooms...</div>}
-        {!props.busy && !props.classrooms.length && <section className="classroom-empty"><div><GraduationCap size={19} /></div><span className="classroom-overline">No classrooms yet</span><h3>Teach here. Learn here.</h3><p>Create a room for your students, or join one using a teacher's invite.</p></section>}
+        {!props.busy && !props.classrooms.length && <p className="classroom-empty">No classrooms</p>}
 
         {props.classrooms.length > 0 && <div className="classroom-list" aria-label="Your classrooms">
           {props.classrooms.map((classroom) => <button data-active={selected?.id === classroom.id} key={classroom.id} onClick={() => setSelectedId(classroom.id)} type="button"><span>{classroom.name.slice(0, 2).toUpperCase()}</span><div><b>{classroom.name}</b><small>{classroom.role === 'teacher' ? 'Teaching' : 'Student'} / {classroom.assignments.length} assignment{classroom.assignments.length === 1 ? '' : 's'}</small></div></button>)}
         </div>}
 
         {selected && <div className="classroom-detail">
-          <section className="classroom-hero"><span className="classroom-overline">{selected.role === 'teacher' ? 'Teacher classroom' : 'Joined classroom'}</span><h3>{selected.name}</h3><p>{selected.description || 'No classroom description yet.'}</p><div><span><UsersRound size={12} /> {selected.members.length}</span><span><BookOpenCheck size={12} /> {selected.assignments.length}</span></div></section>
+          <section className="classroom-hero"><h3>{selected.name}</h3>{selected.description && <p>{selected.description}</p>}<div><span><UsersRound size={12} /> {selected.members.length}</span><span><BookOpenCheck size={12} /> {selected.assignments.length}</span></div></section>
 
           {selected.role === 'teacher' && selected.inviteLink && <section className="classroom-invite"><div><Link2 size={14} /><b>Student invite</b></div><code>{selected.inviteLink}</code><div><button onClick={() => props.onCopyInvite(selected.inviteLink!)} type="button"><Clipboard size={12} /> Copy</button><button disabled={props.busy} onClick={() => props.onRotateInvite(selected.id)} type="button"><RotateCw size={12} /> Replace</button></div></section>}
 

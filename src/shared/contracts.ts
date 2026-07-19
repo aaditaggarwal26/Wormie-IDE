@@ -23,6 +23,7 @@ export const IPC_CHANNELS = {
   agentSetPassingScore: 'agent:set-passing-score',
   agentGetCodexAccount: 'agent:get-codex-account',
   agentConnectCodexAccount: 'agent:connect-codex-account',
+  agentListCodexModels: 'agent:list-codex-models',
   agentStartLearning: 'agent:start-learning',
   agentSubmitQuiz: 'agent:submit-quiz',
   agentGenerateProposal: 'agent:generate-proposal',
@@ -192,11 +193,18 @@ export type CodexAccountStatus = {
   error?: string
 }
 
+export type CodexModelOption = {
+  id: string
+  displayName: string
+  description: string
+}
+
 export type LearningRequest = {
   runId: string
   request: string
   activePath?: string | null
   openPaths?: string[]
+  imagePaths?: string[]
 }
 
 export type ConceptLesson = {
@@ -726,6 +734,8 @@ export type DesktopApi = {
   setAgentPassingScore: (score: number) => Promise<number>
   getCodexAccount: () => Promise<CodexAccountStatus>
   connectCodexAccount: () => Promise<CodexAccountStatus>
+  listCodexModels: () => Promise<CodexModelOption[]>
+  pathForFile: (file: File) => string
   startLearning: (request: LearningRequest) => Promise<LearningSession>
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
   generateProposal: (sessionId: string) => Promise<CodeProposal>

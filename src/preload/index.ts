@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import {
   IPC_CHANNELS,
   type AgentActivityEvent,
@@ -42,6 +42,8 @@ const desktopApi: DesktopApi = {
   setAgentPassingScore: (score) => ipcRenderer.invoke(IPC_CHANNELS.agentSetPassingScore, score),
   getCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentGetCodexAccount),
   connectCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentConnectCodexAccount),
+  listCodexModels: () => ipcRenderer.invoke(IPC_CHANNELS.agentListCodexModels),
+  pathForFile: (file) => webUtils.getPathForFile(file),
   startLearning: (request) => ipcRenderer.invoke(IPC_CHANNELS.agentStartLearning, request),
   submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),
   generateProposal: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.agentGenerateProposal, sessionId),

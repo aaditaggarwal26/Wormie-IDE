@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { FolderGit2, GitBranch, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { FolderGit2, GitBranch, LoaderCircle, RefreshCw, ScanSearch, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { UnderstandingQuiz } from '@/components/UnderstandingQuiz'
 import { resolveSourcePath } from '@/components/understandingQuizModel'
 import { useWorkbench } from '@/store/workbench'
@@ -146,7 +146,7 @@ export function SourceControlPanel({
             <label htmlFor="commit-message">Commit message</label>
             <textarea id="commit-message" maxLength={2000} onChange={(event) => setMessage(event.target.value)} placeholder="Describe the staged change…" value={message} />
             {!analysis && <button className="commit-primary" disabled={stagedCount === 0 || analyzeMutation.isPending} onClick={() => analyzeMutation.mutate(false)} type="button">
-              {analyzeMutation.isPending ? <LoaderCircle className="spin" size={12} /> : <ShieldCheck size={12} />} Analyze {stagedCount} staged file{stagedCount === 1 ? '' : 's'}
+              {analyzeMutation.isPending ? <LoaderCircle className="spin" size={12} /> : <ScanSearch size={12} />} Analyze {stagedCount} staged file{stagedCount === 1 ? '' : 's'}
             </button>}
             {analysis && <UnderstandingQuiz
               preparation={analysis}

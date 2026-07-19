@@ -12,6 +12,13 @@ export type CodexSession = { codexThreadId: string | null }
 export type CodexGenerateOptions = {
   session?: CodexSession
   deltaPrompt?: string
+  imagePaths?: string[]
+}
+
+export type CodexModelOption = {
+  id: string
+  displayName: string
+  description: string
 }
 
 export type CodexAccountStatus = {
@@ -60,6 +67,10 @@ type LoginCompletedNotification = {
 
 type ThreadStartResponse = {
   thread: { id: string }
+}
+
+type ModelListResponse = {
+  data: Array<{ id?: string; displayName?: string; description?: string; hidden?: boolean }>
 }
 
 type TurnStartResponse = {
@@ -232,6 +243,18 @@ export class CodexAppServer {
     return status
   }
 
+  async listModels(): Promise<CodexModelOption[]> {
+    await this.ensureStarted()
+    const response = await this.request<ModelListResponse>('model/list', {})
+    return (response.data ?? [])
+      .filter((model) => typeof model.id === 'string' && model.id && model.hidden !== true)
+      .map((model) => ({
+        id: model.id as string,
+        displayName: model.displayName || (model.id as string),
+        description: model.description ?? ''
+      }))
+  }
+
   async generateStructured<T>(
     prompt: string,
     schema: ZodType<T>,
@@ -288,10 +311,11 @@ export class CodexAppServer {
     options?: CodexGenerateOptions
   ): Promise<T> {
     const session = options?.session
+    const imagePaths = options?.imagePaths
     const reusedThreadId = session?.codexThreadId ?? null
     if (session && reusedThreadId && options?.deltaPrompt) {
       try {
-        return await this.runTurnOnThread(reusedThreadId, options.deltaPrompt, schema, signal, onProtocolEvent)
+        return await this.runTurnOnThread(reusedThreadId, options.deltaPrompt, schema, signal, onProtocolEvent, imagePaths)
       } catch (error) {
         if (signal.aborted) throw error
         // The thread may have been lost to a runtime restart; retry once on
@@ -303,7 +327,7 @@ export class CodexAppServer {
     const threadId = await this.startThread(model)
     if (session) session.codexThreadId = threadId
     try {
-      return await this.runTurnOnThread(threadId, prompt, schema, signal, onProtocolEvent)
+      return await this.runTurnOnThread(threadId, prompt, schema, signal, onProtocolEvent, imagePaths)
     } finally {
       if (!session) void this.request('thread/unsubscribe', { threadId }).catch(() => undefined)
     }
@@ -333,7 +357,8 @@ export class CodexAppServer {
     turnPrompt: string,
     schema: ZodType<T>,
     signal: AbortSignal,
-    onProtocolEvent?: (method: string, detail: string) => void
+    onProtocolEvent?: (method: string, detail: string) => void,
+    imagePaths?: string[]
   ): Promise<T> {
     const capture = new CodexTurnCapture(threadId, onProtocolEvent)
     const methods = ['item/started', 'item/completed', 'item/agentMessage/delta', 'turn/completed']
@@ -345,7 +370,10 @@ export class CodexAppServer {
     try {
       turn = await this.request<TurnStartResponse>('turn/start', {
         threadId,
-        input: [{ type: 'text', text: turnPrompt, text_elements: [] }],
+        input: [
+          { type: 'text', text: turnPrompt, text_elements: [] },
+          ...(imagePaths ?? []).map((imagePath) => ({ type: 'localImage', path: imagePath }))
+        ],
         approvalPolicy: 'never',
         sandboxPolicy: { type: 'readOnly', networkAccess: false },
         outputSchema: sanitizeStructuredOutputSchema(z.toJSONSchema(schema))

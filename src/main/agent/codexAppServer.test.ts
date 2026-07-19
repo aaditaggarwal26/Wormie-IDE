@@ -48,6 +48,10 @@ describe('Codex app-server integration', () => {
       expect(status.available, status.error).toBe(true)
       expect(typeof status.connected).toBe('boolean')
 
+      const models = await runtime.listModels()
+      expect(models.length).toBeGreaterThan(0)
+      expect(models[0]).toMatchObject({ id: expect.any(String), displayName: expect.any(String) })
+
       const config = await fs.readFile(path.join(codexHome, 'config.toml'), 'utf8')
       expect(config).toContain('approval_policy = "never"')
       expect(config).toContain('sandbox_mode = "read-only"')

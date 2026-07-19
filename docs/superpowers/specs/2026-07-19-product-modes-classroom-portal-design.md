@@ -44,7 +44,7 @@ Invite links remain the primary addition flow. Direct email addition is an expli
 
 ## Classroom-scoped mastery
 
-Local understanding data migrates from schema version 1 to schema version 2. Settings remain global, while gates, history, mastery, and audit events are stored in named scopes. Existing data migrates into `global`; classroom work uses `classroom:<uuid>`.
+Local understanding data migrates from schema version 1 to schema version 2. Settings, active gates, and the audit trail retain their existing storage. Completed history and concept mastery gain separate classroom/student maps keyed by both classroom ID and authenticated student ID. Existing global history and mastery remain global and are not copied into a classroom.
 
 Sandbox IDE always selects `global`. Opening a classroom assignment selects its classroom scope after membership and assignment access have been validated in the main process. Returning to Sandbox selects `global`.
 
@@ -53,9 +53,9 @@ Supabase receives two additive tables:
 - `classroom_mastery`: the current concept snapshot per classroom and student.
 - `classroom_mastery_events`: bounded completed quiz evidence, optionally linked to a published assignment.
 
-Students can select and write only their own rows while they are classroom members. Classroom owners can read student rows in their classrooms. Users outside the classroom have no access. The desktop never uses a service-role key.
+Students can select only their own rows while they remain classroom members. Classroom owners can read student rows in their classrooms, including retained history after a student leaves. Users outside the classroom have no access. Direct table writes are revoked; authenticated students record their own results through a security-definer function that validates student identity, current membership, assignment ownership, bounded input, and idempotency. The desktop never uses a service-role key.
 
-After a classroom-scoped understanding result changes local history, the main process attempts to synchronize the trusted local overview. A failed network sync does not roll back the quiz or gate. The failure is retained as a bounded pending synchronization entry and retried when classroom data is refreshed.
+After a classroom-scoped understanding result changes local history, the main process attempts to synchronize the result. A failed network sync does not roll back the quiz or gate. The failure is retained as a bounded pending synchronization entry and retried when classroom data is refreshed. The result is graded in the Electron main process and authenticated to the student's account, but it remains client-originated evidence. A server-side grading authority would be required to make results resistant to a deliberately modified desktop client.
 
 ## Assignment launch
 

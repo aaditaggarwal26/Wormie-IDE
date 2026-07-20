@@ -1,22 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'framer-motion'
-import { BookOpenText, Command, FolderOpen, Gauge, GraduationCap, Search, Settings2 } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+import { ArrowLeft, Code2, Search, Settings2 } from 'lucide-react'
 import { ActivityRail } from '@/components/ActivityRail'
 import { AuthScreen } from '@/components/AuthScreen'
 import { AssignmentPanel } from '@/components/AssignmentPanel'
 import { AssignmentStudio } from '@/components/AssignmentStudio'
 import { BottomPanel } from '@/components/BottomPanel'
-import { ClassroomPanel } from '@/components/ClassroomPanel'
+import { CommandPalette } from '@/components/CommandPalette'
+import { ClassroomPortal } from '@/components/ClassroomPortal'
 import { EditorPane } from '@/components/EditorPane'
+import { DirtyFilesDialog } from '@/components/DirtyFilesDialog'
+import { ExternalChangeReview } from '@/components/ExternalChangeReview'
 import { Explorer } from '@/components/Explorer'
+import { GoToLine } from '@/components/GoToLine'
+import { OutlinePanel } from '@/components/OutlinePanel'
 import { PanelResizeHandle } from '@/components/PanelResizeHandle'
 import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { TutorPane } from '@/components/TutorPane'
-import { QuizHistory } from '@/components/QuizHistory'
+import { QuickOpen } from '@/components/QuickOpen'
+import { WormieLauncher } from '@/components/WormieLauncher'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
+import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
+import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
+import { dirtyDocuments } from '@/editing/editingPolicy'
+import { useSafeEditing } from '@/editing/useSafeEditing'
+import { isTypeScriptProjectFile } from '@/typescript/projectFiles'
 import { useWorkbench } from '@/store/workbench'
+import { useApplicationNavigation } from '@/navigation/applicationMode'
 import type {
   AgentConfig,
   AgentConfigUpdate,
@@ -29,6 +41,7 @@ import type {
   AssignmentTaskProgressUpdate,
   AssignmentWorkspaceState,
   Classroom,
+  ClassroomMasterySnapshot,
   CloudAuthCredentials,
   CloudAuthState,
   CodexAccountStatus,
@@ -66,6 +79,7 @@ type PanelLayout = {
 }
 
 const PANEL_LAYOUT_STORAGE_KEY = 'wormie.panel-layout.v1'
+const RECENT_ITEMS_STORAGE_KEY = 'wormie.recent-items.v1'
 const PANEL_HANDLE_SIZE = 5
 const ACTIVITY_RAIL_WIDTH = 50
 const CENTER_MIN_WIDTH = 360
@@ -104,7 +118,8 @@ function loadPanelLayout(): PanelLayout {
 }
 
 export default function App(): React.JSX.Element {
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [activePicker, setActivePicker] = useState<'commands' | 'files' | 'line' | null>(null)
+  const [recentItems, setRecentItems] = useState<RecentItems>(() => parseRecentItems(window.localStorage.getItem(RECENT_ITEMS_STORAGE_KEY)))
   const [assignmentStudioOpen, setAssignmentStudioOpen] = useState(false)
   const [assignmentRecovering, setAssignmentRecovering] = useState(false)
   const [assignmentState, setAssignmentState] = useState<AssignmentWorkspaceState | null>(null)
@@ -118,6 +133,7 @@ export default function App(): React.JSX.Element {
   const [resetEmailSent, setResetEmailSent] = useState(false)
   const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [classroomMastery, setClassroomMastery] = useState<ClassroomMasterySnapshot | null>(null)
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
@@ -143,6 +159,35 @@ export default function App(): React.JSX.Element {
   const setActivity = useWorkbench((state) => state.setActivity)
   const setBottomView = useWorkbench((state) => state.setBottomView)
   const addOutput = useWorkbench((state) => state.addOutput)
+  const revealDocumentLine = useWorkbench((state) => state.revealDocumentLine)
+  const closedPaths = useWorkbench((state) => state.closedPaths)
+  const removeClosedPath = useWorkbench((state) => state.removeClosedPath)
+  const safeEditing = useSafeEditing()
+  const applicationMode = useApplicationNavigation((state) => state.mode)
+  const showLauncher = useApplicationNavigation((state) => state.showLauncher)
+  const leaveCurrentIde = useApplicationNavigation((state) => state.leaveIde)
+  const openSandbox = useApplicationNavigation((state) => state.openSandbox)
+  const openClassrooms = useApplicationNavigation((state) => state.openClassrooms)
+  const beginModeTransition = useApplicationNavigation((state) => state.beginTransition)
+  const openAssignmentMode = useApplicationNavigation((state) => state.openAssignment)
+  const isCurrentModeTransition = useApplicationNavigation((state) => state.isCurrentTransition)
+  const resetApplicationNavigation = useApplicationNavigation((state) => state.reset)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RECENT_ITEMS_STORAGE_KEY, JSON.stringify(recentItems))
+    } catch {
+      // Recent navigation remains available for the current session.
+    }
+  }, [recentItems])
+
+  const rememberFile = useCallback((filePath: string) => {
+    setRecentItems((current) => ({ ...current, files: pushRecentItem(current.files, filePath) }))
+  }, [])
+
+  const rememberCommand = useCallback((commandId: string) => {
+    setRecentItems((current) => ({ ...current, commands: pushRecentItem(current.commands, commandId) }))
+  }, [])
 
   useEffect(() => {
     try {
@@ -189,7 +234,7 @@ export default function App(): React.JSX.Element {
     observer.observe(workbench)
     observer.observe(centerStack)
     return () => observer.disconnect()
-  }, [cloudAuth?.user?.id, cloudAuthLoaded])
+  }, [applicationMode.kind, cloudAuth?.user?.id, cloudAuthLoaded])
 
   const resizeLeftPanel = useCallback((delta: number) => {
     setPanelLayout((current) => {
@@ -242,7 +287,7 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const workspaceMutation = useMutation({
-    mutationFn: window.desktop.openWorkspace,
+    mutationFn: () => window.desktop.openWorkspace(),
     onSuccess: (result) => {
       if (result) setWorkspace(result)
     },
@@ -250,8 +295,16 @@ export default function App(): React.JSX.Element {
   })
 
   const fileMutation = useMutation({
-    mutationFn: ({ filePath }: { filePath: string; line?: number }) => window.desktop.readFile(filePath),
-    onSuccess: (file, variables) => openDocument(file, variables.line),
+    mutationFn: async ({ filePath, line }: { filePath: string; line?: number }) => {
+      const workspaceRoot = useWorkbench.getState().workspace?.rootPath ?? null
+      const file = await window.desktop.readFile(filePath)
+      return { file, line, workspaceRoot }
+    },
+    onSuccess: ({ file, line, workspaceRoot }) => {
+      if (!workspaceRoot || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return
+      openDocument(file, line)
+      rememberFile(file.path)
+    },
     onError: (error) => addOutput(`Could not open file: ${errorMessage(error)}`)
   })
 
@@ -297,11 +350,6 @@ export default function App(): React.JSX.Element {
     onError: (error) => addOutput(`Could not delete entry: ${errorMessage(error)}`)
   })
 
-  const searchMutation = useMutation({
-    mutationFn: window.desktop.searchWorkspace,
-    onError: (error) => addOutput(`Could not search workspace: ${errorMessage(error)}`)
-  })
-
   const gitMutation = useMutation({
     mutationFn: window.desktop.getGitStatus,
     onMutate: () => setGitError(null),
@@ -334,13 +382,16 @@ export default function App(): React.JSX.Element {
       if (state.proposalReview?.files.some((file) => file.absolutePath === activeDocument.path)) {
         throw new Error('Keep or undo every AI change block before saving this file.')
       }
-      await window.desktop.writeFile(activeDocument.path, activeDocument.content)
-      return activeDocument.path
+      return window.desktop.writeFile({
+        filePath: activeDocument.path,
+        content: activeDocument.content,
+        expectedFingerprint: activeDocument.fingerprint
+      })
     },
-    onSuccess: (filePath) => {
-      if (!filePath) return
-      markSaved(filePath)
-      if (filePath === assignmentState?.manifestPath && workspace) void loadAssignment(workspace.rootPath)
+    onSuccess: (result) => {
+      if (!result) return
+      markSaved(result.path, result.fingerprint)
+      if (result.path === assignmentState?.manifestPath && workspace) void loadAssignment(workspace.rootPath)
     },
     onError: (error) => addOutput(`Could not save file: ${errorMessage(error)}`)
   })
@@ -498,6 +549,54 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const updateClassroomMutation = useMutation({
+    mutationFn: window.desktop.updateClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const classroomMasteryMutation = useMutation({
+    mutationFn: window.desktop.listClassroomMastery,
+    onSuccess: (result) => {
+      const mode = useApplicationNavigation.getState().mode
+      if (mode.kind === 'classrooms' && mode.classroomId === result.classroomId) setClassroomMastery(result)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const addClassroomStudentMutation = useMutation({
+    mutationFn: ({ classroomId, email }: { classroomId: string; email: string }) => window.desktop.addClassroomStudent(classroomId, email),
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const removeClassroomStudentMutation = useMutation({
+    mutationFn: ({ classroomId, userId }: { classroomId: string; userId: string }) => window.desktop.removeClassroomStudent(classroomId, userId),
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const leaveClassroomMutation = useMutation({
+    mutationFn: window.desktop.leaveClassroom,
+    onSuccess: (result) => {
+      setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
+      setCloudError(null)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const publishAssignmentMutation = useMutation({
     mutationFn: window.desktop.publishAssignment,
     onSuccess: (result) => {
@@ -509,22 +608,74 @@ export default function App(): React.JSX.Element {
   })
 
   const openClassroomAssignmentMutation = useMutation({
-    mutationFn: window.desktop.openClassroomAssignment,
-    onSuccess: (result) => {
-      if (!result) return
+    mutationFn: async ({ assignmentId, classroom, transitionId }: { assignmentId: string; classroom: Classroom; transitionId: number }) => ({
+      assignmentId,
+      classroom,
+      result: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.openClassroomAssignment(assignmentId)),
+      transitionId
+    }),
+    onSuccess: async ({ result, transitionId }) => {
+      if (!result) {
+        if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        return
+      }
+      if (!isCurrentModeTransition(transitionId)) return
+      if (!isCurrentModeTransition(transitionId)) {
+        const currentMode = useApplicationNavigation.getState().mode
+        await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
+        return
+      }
+      if (!openAssignmentMode(transitionId, result.context)) return
       setWorkspace(result.workspace)
       setActivity('assignments')
       addOutput(`Opened classroom assignment ${result.assignmentTitle}.`)
     },
-    onError: (error) => setCloudError(errorMessage(error))
+    onError: async (error, variables) => {
+      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      setCloudError(errorMessage(error))
+    }
+  })
+
+  const authorClassroomAssignmentMutation = useMutation({
+    mutationFn: async ({ classroom, transitionId }: { classroom: Classroom; transitionId: number }) => ({
+      context: await window.desktop.setWorkspacePurpose('assignment').then(() => window.desktop.beginClassroomAssignmentAuthoring(classroom.id)),
+      result: await window.desktop.openWorkspace('assignment'),
+      transitionId
+    }),
+    onSuccess: async ({ context, result, transitionId }) => {
+      if (!result) {
+        if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        return
+      }
+      if (!isCurrentModeTransition(transitionId)) return
+      if (!isCurrentModeTransition(transitionId)) {
+        const currentMode = useApplicationNavigation.getState().mode
+        await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
+        return
+      }
+      if (!openAssignmentMode(transitionId, context)) return
+      setWorkspace(result)
+      setActivity('assignments')
+      addOutput(`Opened ${result.name} for assignment authoring.`)
+    },
+    onError: async (error, variables) => {
+      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      setCloudError(errorMessage(error))
+    }
   })
 
   const signOutMutation = useMutation({
     mutationFn: window.desktop.signOut,
+    onMutate: () => {
+      beginModeTransition()
+      void window.desktop.setWorkspacePurpose('sandbox')
+    },
     onSuccess: () => {
       setCloudAuth({ user: null })
       setClassrooms([])
       setCloudError(null)
+      resetApplicationNavigation()
+      void window.desktop.setWorkspacePurpose('sandbox')
     },
     onError: (error) => setCloudError(errorMessage(error))
   })
@@ -559,6 +710,87 @@ export default function App(): React.JSX.Element {
       setAssignmentStudioOpen(true)
     })
   }, [loadAssignment, workspace])
+
+  const focusWorkbenchTarget = useCallback((nextActivity: 'explorer' | 'search', target: 'explorer' | 'search') => {
+    setActivity(nextActivity)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-workbench-focus="${target}"]`)?.focus()
+    }))
+  }, [setActivity])
+
+  const commandContext = useMemo<WorkbenchCommandContext>(() => ({
+    hasWorkspace: Boolean(workspace),
+    hasActiveFile: Boolean(activePath),
+    hasDirtyFiles: dirtyDocuments(documents).length > 0,
+    hasClosedEditor: closedPaths.length > 0,
+    hasMultipleEditors: documents.length > 1,
+    hasTypeScriptFile: documents.some((document) => document.path === activePath && isTypeScriptProjectFile(document.path)),
+    openFolder: () => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate()),
+    save: () => saveMutation.mutate(),
+    saveAll: () => {
+      void safeEditing.saveDocumentPaths(useWorkbench.getState().documents.map((document) => document.path))
+        .catch((error) => addOutput(`Could not save all files: ${errorMessage(error)}`))
+    },
+    closeOthers: () => {
+      if (!activePath) return
+      const paths = useWorkbench.getState().documents.filter((document) => document.path !== activePath).map((document) => document.path)
+      safeEditing.requestDirtyAction(paths, () => paths.forEach((filePath) => useWorkbench.getState().closeDocument(filePath)))
+    },
+    closeSaved: () => {
+      useWorkbench.getState().documents
+        .filter((document) => document.content === document.savedContent)
+        .forEach((document) => useWorkbench.getState().closeDocument(document.path))
+    },
+    reopenClosedEditor: () => {
+      const filePath = useWorkbench.getState().closedPaths[0]
+      if (!filePath) return
+      removeClosedPath(filePath)
+      fileMutation.mutate({ filePath })
+    },
+    openQuickOpen: () => setActivePicker('files'),
+    openCommandPalette: () => setActivePicker('commands'),
+    openSearch: () => focusWorkbenchTarget('search', 'search'),
+    openGoToLine: () => setActivePicker('line'),
+    revealActiveFile: () => {
+      if (!activePath) return
+      setActivity('explorer')
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[data-entry-path][data-selected="true"]')?.focus()
+      }))
+    },
+    copyAbsolutePath: () => {
+      if (!activePath) return
+      void window.desktop.copyWorkspacePath(activePath, 'absolute')
+        .then(() => addOutput('Copied the absolute file path.'))
+        .catch((error) => addOutput(`Could not copy file path: ${errorMessage(error)}`))
+    },
+    copyRelativePath: () => {
+      if (!activePath) return
+      void window.desktop.copyWorkspacePath(activePath, 'relative')
+        .then(() => addOutput('Copied the relative file path.'))
+        .catch((error) => addOutput(`Could not copy file path: ${errorMessage(error)}`))
+    },
+    focusExplorer: () => focusWorkbenchTarget('explorer', 'explorer'),
+    focusSearch: () => focusWorkbenchTarget('search', 'search'),
+    focusTutor: () => document.querySelector<HTMLElement>('[data-workbench-focus="tutor"]')?.focus(),
+    openSettings: () => setActivity('settings'),
+    focusTerminal: () => setBottomView('terminal'),
+    runEditorAction: (actionId) => window.dispatchEvent(new CustomEvent('wormie:editor-action', { detail: actionId })),
+    renameSymbol: () => window.dispatchEvent(new Event('wormie:rename-symbol'))
+  }), [
+    activePath,
+    addOutput,
+    closedPaths,
+    documents,
+    focusWorkbenchTarget,
+    removeClosedPath,
+    safeEditing,
+    saveMutation,
+    setActivity,
+    setBottomView,
+    workspace,
+    workspaceMutation
+  ])
 
   useEffect(() => {
     return window.desktop.onCloudAuthChanged((update) => {
@@ -601,13 +833,19 @@ export default function App(): React.JSX.Element {
     if (!cloudAuth?.user || !pendingClassroomInvite || joinClassroomMutation.isPending) return
     const inviteLink = pendingClassroomInvite
     setPendingClassroomInvite(null)
-    setActivity('classrooms')
+    openClassrooms()
     joinClassroomMutation.mutate(inviteLink)
-  }, [cloudAuth?.user?.id, pendingClassroomInvite, joinClassroomMutation.isPending, setActivity])
+  }, [cloudAuth?.user?.id, pendingClassroomInvite, joinClassroomMutation.isPending, openClassrooms])
 
   useEffect(() => {
     if (cloudAuth?.user) classroomListMutation.mutate()
   }, [cloudAuth?.user?.id])
+
+  useEffect(() => {
+    if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'mastery' || !applicationMode.classroomId) return
+    setClassroomMastery(null)
+    classroomMasteryMutation.mutate(applicationMode.classroomId)
+  }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
 
   useEffect(() => {
     if (restored.current) return
@@ -618,6 +856,7 @@ export default function App(): React.JSX.Element {
   }, [setWorkspace])
 
   useEffect(() => {
+    if (applicationMode.kind !== 'assignment') return
     setAssignmentState(null)
     setAssignmentError(null)
     setAssignmentProgressError(null)
@@ -626,21 +865,20 @@ export default function App(): React.JSX.Element {
     if (!workspace) return
 
     void loadAssignment(workspace.rootPath)
-  }, [loadAssignment, workspace?.rootPath])
+  }, [applicationMode.kind, loadAssignment, workspace?.rootPath])
 
   useEffect(() => {
     if (activity === 'sourceControl' && workspace) gitMutation.mutate()
-    if (activity === 'classrooms' && cloudAuth?.user) classroomListMutation.mutate()
-    if (activity === 'assignments' && workspace) {
+    if (activity === 'assignments' && workspace && applicationMode.kind === 'assignment') {
       if (assignmentOpenLoad.current) assignmentOpenLoad.current = false
       else void loadAssignment(workspace.rootPath)
     }
-  }, [activity, workspace?.rootPath])
+  }, [activity, applicationMode.kind, workspace?.rootPath])
 
   useEffect(() => {
     const refreshOnFocus = () => {
       const current = useWorkbench.getState().workspace
-      if (current && useWorkbench.getState().activity === 'assignments' && !assignmentStudioOpen) {
+      if (current && useApplicationNavigation.getState().mode.kind === 'assignment' && useWorkbench.getState().activity === 'assignments' && !assignmentStudioOpen) {
         void loadAssignment(current.rootPath)
       }
     }
@@ -649,36 +887,20 @@ export default function App(): React.JSX.Element {
   }, [assignmentStudioOpen, loadAssignment])
 
   useEffect(() => {
+    if (applicationMode.kind !== 'sandbox' && applicationMode.kind !== 'assignment') return
     const handleShortcut = (event: KeyboardEvent) => {
       if (assignmentStudioOpen) return
-      const modifier = window.desktop.platform === 'darwin' ? event.metaKey : event.ctrlKey
-      if (!modifier) return
-
-      if (event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        setCommandPaletteOpen((value) => !value)
-      }
-      if (event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault()
-        setActivity('search')
-      }
-      if (event.key === '`') {
-        event.preventDefault()
-        setBottomView('terminal')
-      }
-      if (event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        saveMutation.mutate()
-      }
-      if (event.key.toLowerCase() === 'o') {
-        event.preventDefault()
-        workspaceMutation.mutate()
-      }
+      const command = workbenchCommandRegistry.findByKeyboard(event, window.desktop.platform, commandContext)
+      if (!command) return
+      event.preventDefault()
+      void workbenchCommandRegistry.invoke(command.id, commandContext)
+        .then((invoked) => { if (invoked) rememberCommand(command.id) })
+        .catch((error) => addOutput(`Could not run ${command.title}: ${errorMessage(error)}`))
     }
 
-    window.addEventListener('keydown', handleShortcut)
-    return () => window.removeEventListener('keydown', handleShortcut)
-  }, [assignmentStudioOpen, saveMutation, setActivity, setBottomView, workspaceMutation])
+    window.addEventListener('keydown', handleShortcut, true)
+    return () => window.removeEventListener('keydown', handleShortcut, true)
+  }, [addOutput, applicationMode.kind, assignmentStudioOpen, commandContext, rememberCommand])
 
   const explorerBusy =
     workspaceMutation.isPending ||
@@ -693,20 +915,72 @@ export default function App(): React.JSX.Element {
   )
 
   useEffect(() => {
-    if (!workspace || documents.length > 0 || automaticallyOpenedWorkspace.current === workspace.rootPath) return
+    if ((applicationMode.kind !== 'sandbox' && applicationMode.kind !== 'assignment') || !workspace || safeEditing.recoveryReadyRoot !== workspace.rootPath || documents.length > 0 || automaticallyOpenedWorkspace.current === workspace.rootPath) return
     automaticallyOpenedWorkspace.current = workspace.rootPath
     const initialFile = findSuggestedFile(workspace.entries)
     if (initialFile) fileMutation.mutate({ filePath: initialFile.path })
-  }, [workspace?.rootPath])
+  }, [applicationMode.kind, documents.length, safeEditing.recoveryReadyRoot, workspace?.rootPath])
 
   const classroomBusy =
     classroomListMutation.isPending ||
     createClassroomMutation.isPending ||
+    updateClassroomMutation.isPending ||
     joinClassroomMutation.isPending ||
     rotateInviteMutation.isPending ||
+    addClassroomStudentMutation.isPending ||
+    removeClassroomStudentMutation.isPending ||
+    leaveClassroomMutation.isPending ||
     publishAssignmentMutation.isPending ||
     openClassroomAssignmentMutation.isPending ||
+    authorClassroomAssignmentMutation.isPending ||
     signOutMutation.isPending
+
+  const enterSandbox = () => {
+    void window.desktop.setWorkspacePurpose('sandbox').then(() => {
+      setActivity('explorer')
+      openSandbox()
+    }).catch((error) => setCloudError(errorMessage(error)))
+  }
+
+  const returnToLauncher = () => {
+    void window.desktop.setWorkspacePurpose('sandbox').then(showLauncher).catch((error) => setCloudError(errorMessage(error)))
+  }
+
+  const navigateClassrooms = (classroomId: string | null = null, tab = applicationMode.kind === 'classrooms' ? applicationMode.tab : 'assignments' as const) => {
+    void window.desktop.setWorkspacePurpose('sandbox').then(() => openClassrooms(classroomId, tab)).catch((error) => setCloudError(errorMessage(error)))
+  }
+
+  const leaveIde = () => {
+    safeEditing.runWorkspaceChangingAction(() => {
+      setActivePicker(null)
+      void window.desktop.setWorkspacePurpose('sandbox').then(leaveCurrentIde).catch((error) => addOutput(`Could not leave the IDE: ${errorMessage(error)}`))
+    })
+  }
+
+  const openClassroomAssignment = (classroom: Classroom, assignmentId: string) => {
+    safeEditing.runWorkspaceChangingAction(() => {
+      const transitionId = beginModeTransition()
+      openClassroomAssignmentMutation.mutate({ assignmentId, classroom, transitionId })
+    })
+  }
+
+  const authorClassroomAssignment = (classroom: Classroom) => {
+    safeEditing.runWorkspaceChangingAction(() => {
+      const transitionId = beginModeTransition()
+      authorClassroomAssignmentMutation.mutate({ classroom, transitionId })
+    })
+  }
+
+  const dirtyDialog = safeEditing.dirtyDialog ? (
+    <DirtyFilesDialog
+      busy={safeEditing.dirtyDialog.busy}
+      error={safeEditing.dirtyDialog.error}
+      fileNames={safeEditing.dirtyDialog.paths.map((filePath) => filePath.split(/[\\/]/).at(-1) ?? filePath)}
+      onCancel={safeEditing.dirtyDialog.cancel}
+      onDiscard={safeEditing.dirtyDialog.discard}
+      onSave={safeEditing.dirtyDialog.save}
+    />
+  ) : null
 
   if (!cloudAuthLoaded || !cloudAuth?.user || cloudAuth.passwordResetRequired) {
     return <AuthScreen
@@ -725,15 +999,75 @@ export default function App(): React.JSX.Element {
     />
   }
 
+  if (applicationMode.kind === 'launcher') {
+    return <>
+      <WormieLauncher
+        enrolledCount={classrooms.filter((classroom) => classroom.role === 'student').length}
+        onOpenClassrooms={() => navigateClassrooms()}
+        onOpenSandbox={enterSandbox}
+        onSignOut={() => signOutMutation.mutate()}
+        teachingCount={classrooms.filter((classroom) => classroom.role === 'teacher').length}
+        user={cloudAuth.user}
+        workspace={workspace}
+      />
+      {dirtyDialog}
+    </>
+  }
+
+  if (applicationMode.kind === 'classrooms') {
+    return <>
+      <ClassroomPortal
+        actionVersion={classroomActionVersion}
+        assignment={assignmentState}
+        busy={classroomBusy}
+        mastery={classroomMastery}
+        masteryBusy={classroomMasteryMutation.isPending}
+        classrooms={classrooms}
+        error={cloudError}
+        onBack={returnToLauncher}
+        onCopyInvite={(inviteLink) => {
+          void window.desktop.copyClassroomInvite(inviteLink)
+            .then(() => addOutput('Copied the classroom invitation.'))
+            .catch((error) => setCloudError(errorMessage(error)))
+        }}
+        onCreate={(request) => createClassroomMutation.mutate(request)}
+        onUpdateClassroom={(request) => updateClassroomMutation.mutate(request)}
+        onJoin={(invite) => joinClassroomMutation.mutate(invite)}
+        onAddStudent={(classroomId, email) => addClassroomStudentMutation.mutate({ classroomId, email })}
+        onAuthorAssignment={authorClassroomAssignment}
+        onOpenAssignment={openClassroomAssignment}
+        onPublish={(classroomId) => {
+          if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
+        }}
+        onRefresh={() => {
+          classroomListMutation.mutate()
+          if (applicationMode.tab === 'mastery' && applicationMode.classroomId) classroomMasteryMutation.mutate(applicationMode.classroomId)
+        }}
+        onRemoveStudent={(classroomId, userId) => removeClassroomStudentMutation.mutate({ classroomId, userId })}
+        onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
+        onLeaveClassroom={(classroomId) => leaveClassroomMutation.mutate(classroomId)}
+        onSelectClassroom={(classroomId) => navigateClassrooms(classroomId, applicationMode.tab)}
+        onSelectTab={(tab) => navigateClassrooms(applicationMode.classroomId, tab)}
+        onSignOut={() => signOutMutation.mutate()}
+        selectedClassroomId={applicationMode.classroomId}
+        selectedTab={applicationMode.tab}
+        user={cloudAuth.user}
+        workspace={workspace}
+      />
+      {dirtyDialog}
+    </>
+  }
+
   return (
     <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
-        <div className="titlebar-brand"><span>Wormie</span></div>
-        <button className="command-trigger" onClick={() => setCommandPaletteOpen(true)} type="button">
+        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
+        <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
           <Search size={13} />
           <span>Search commands</span>
-          <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} K</kbd>
+          <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} Shift P</kbd>
         </button>
+        <div className="titlebar-workspace">{applicationMode.kind === 'assignment' ? <><span>{applicationMode.context.role}</span>{applicationMode.context.classroomName} / {assignmentState?.manifest?.title ?? applicationMode.context.assignmentTitle}</> : null}</div>
       </header>
 
       <div
@@ -745,14 +1079,15 @@ export default function App(): React.JSX.Element {
           '--right-panel-width': `${panelLayout.right}px`
         } as CSSProperties}
       >
-        <ActivityRail />
+        <ActivityRail assignmentMode={applicationMode.kind === 'assignment'} />
         {activity === 'explorer' && (
           <Explorer
+            activePath={activePath}
             busy={explorerBusy}
             onCreate={(parentPath, name, type) => createMutation.mutate({ parentPath, name, type })}
             onDelete={(entryPath) => deleteMutation.mutate(entryPath)}
             onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
-            onOpenWorkspace={() => workspaceMutation.mutate()}
+            onOpenWorkspace={() => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate())}
             onRefresh={() => workspace && refreshMutation.mutate(workspace.rootPath)}
             onRename={(entryPath, name) => renameMutation.mutate({ entryPath, name })}
             workspace={workspace}
@@ -760,13 +1095,11 @@ export default function App(): React.JSX.Element {
         )}
         {activity === 'search' && (
           <SearchPanel
-            busy={searchMutation.isPending}
             onOpenFile={(filePath, line) => fileMutation.mutate({ filePath, line })}
-            onSearch={(query) => searchMutation.mutate(query)}
-            results={searchMutation.data ?? []}
             workspace={workspace}
           />
         )}
+        {activity === 'outline' && <OutlinePanel />}
         {activity === 'sourceControl' && (
           <SourceControlPanel
             busy={gitMutation.isPending || gitTrustMutation.isPending}
@@ -779,33 +1112,7 @@ export default function App(): React.JSX.Element {
             workspace={workspace}
           />
         )}
-        {activity === 'classrooms' && (
-          <ClassroomPanel
-            actionVersion={classroomActionVersion}
-            assignment={assignmentState}
-            busy={classroomBusy}
-            classrooms={classrooms}
-            error={cloudError}
-            onCopyInvite={(inviteLink) => {
-              void window.desktop.copyClassroomInvite(inviteLink)
-                .then(() => addOutput('Copied the classroom invitation.'))
-                .catch((error) => setCloudError(errorMessage(error)))
-            }}
-            onCreate={(request) => createClassroomMutation.mutate(request)}
-            onJoin={(invite) => joinClassroomMutation.mutate(invite)}
-            onOpenAssignment={(assignmentId) => openClassroomAssignmentMutation.mutate(assignmentId)}
-            onPublish={(classroomId) => {
-              if (!workspace) return
-              publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
-            }}
-            onRefresh={() => classroomListMutation.mutate()}
-            onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
-            onSignOut={() => signOutMutation.mutate()}
-            user={cloudAuth.user}
-            workspace={workspace}
-          />
-        )}
-        {activity === 'assignments' && (
+        {applicationMode.kind === 'assignment' && activity === 'assignments' && (
           <AssignmentPanel
             assignment={assignmentState}
             busy={assignmentLoading}
@@ -816,7 +1123,7 @@ export default function App(): React.JSX.Element {
             openingSubmission={openSubmissionMutation.isPending}
             onEdit={() => openAssignmentStudio(false)}
             onExport={() => exportAssignmentMutation.mutate()}
-            onImport={() => importAssignmentMutation.mutate()}
+            onImport={() => safeEditing.runWorkspaceChangingAction(() => importAssignmentMutation.mutate())}
             onOpenTask={(task) => {
               if (!workspace) return
               const separator = window.desktop.platform === 'win32' ? '\\' : '/'
@@ -876,7 +1183,6 @@ export default function App(): React.JSX.Element {
             workspace={workspace}
           />
         )}
-        {activity === 'learning' && <LearningSidebar />}
         {activity === 'settings' && <SettingsSidebar />}
 
         <PanelResizeHandle
@@ -896,8 +1202,11 @@ export default function App(): React.JSX.Element {
         >
           <EditorPane
             hasWorkspace={Boolean(workspace)}
+            onCloseDocument={safeEditing.closeEditorSafely}
+            onEditorBlur={safeEditing.onEditorBlur}
+            onOpenFile={(filePath, line) => fileMutation.mutate({ filePath, line })}
             onOpenSuggestedFile={() => suggestedFile && fileMutation.mutate({ filePath: suggestedFile.path })}
-            onOpenWorkspace={() => workspaceMutation.mutate()}
+            onOpenWorkspace={() => safeEditing.runWorkspaceChangingAction(() => workspaceMutation.mutate())}
             onSave={() => saveMutation.mutate()}
             openingFile={fileMutation.isPending}
             saving={saveMutation.isPending}
@@ -927,55 +1236,50 @@ export default function App(): React.JSX.Element {
       </div>
 
       <footer className="statusbar" inert={assignmentStudioOpen ? true : undefined}>
-        <span className="status-mode"><BookOpenText size={12} /> Learning mode</span>
+        <span className="status-mode"><Code2 size={12} /> {applicationMode.kind === 'assignment' ? 'Assignment mode' : 'Sandbox mode'}</span>
         <span className="status-open-files">{documents.length} open {documents.length === 1 ? 'file' : 'files'}</span>
         <span className="status-spacer" />
         <span>UTF-8</span>
         <span>Ln {cursorLine}, Col {cursorColumn}</span>
       </footer>
 
-      <AnimatePresence>
-        {commandPaletteOpen && (
-          <motion.div
-            animate={{ opacity: 1 }}
-            className="command-backdrop"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-            onMouseDown={() => setCommandPaletteOpen(false)}
-          >
-            <motion.div
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="command-palette"
-              exit={{ opacity: 0, scale: 0.98, y: -8 }}
-              initial={{ opacity: 0, scale: 0.98, y: -8 }}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <div className="command-input"><Command size={16} /><span>Choose a workbench action</span></div>
-              <button onClick={() => { setCommandPaletteOpen(false); workspaceMutation.mutate() }} type="button">
-                <FolderOpen size={15} /><span>Open folder</span><kbd>Ctrl O</kbd>
-              </button>
-              <button disabled={!activePath} onClick={() => { setCommandPaletteOpen(false); saveMutation.mutate() }} type="button">
-                <Gauge size={15} /><span>Save active file</span><kbd>Ctrl S</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('search') }} type="button">
-                <Search size={15} /><span>Search project</span><kbd>Ctrl Shift F</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setBottomView('terminal') }} type="button">
-                <Command size={15} /><span>Focus terminal</span><kbd>Ctrl `</kbd>
-              </button>
-              <button disabled={!workspace} onClick={() => { setCommandPaletteOpen(false); setActivity('assignments'); openAssignmentStudio(false) }} type="button">
-                <BookOpenText size={15} /><span>{assignmentState?.manifest ? 'Edit assignment' : 'Create assignment'}</span>
-              </button>
-              <button onClick={() => { setCommandPaletteOpen(false); setActivity('classrooms') }} type="button">
-                <GraduationCap size={15} /><span>Open classrooms</span>
-              </button>
-              <button onClick={() => { setCommandPaletteOpen(false); importAssignmentMutation.mutate() }} type="button">
-                <FolderOpen size={15} /><span>Import assignment package</span>
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {activePicker === 'commands' && (
+        <CommandPalette
+          context={commandContext}
+          onClose={() => setActivePicker(null)}
+          onRecentCommand={rememberCommand}
+          platform={window.desktop.platform}
+          recentCommands={recentItems.commands}
+        />
+      )}
+      {activePicker === 'files' && workspace && (
+        <QuickOpen
+          onClose={() => setActivePicker(null)}
+          onOpenFile={(filePath) => fileMutation.mutate({ filePath })}
+          onRecentFile={rememberFile}
+          recentFiles={recentItems.files}
+          workspace={workspace}
+        />
+      )}
+      {activePicker === 'line' && activePath && (
+        <GoToLine
+          currentLine={cursorLine}
+          onClose={() => setActivePicker(null)}
+          onGo={(line) => revealDocumentLine(activePath, line)}
+        />
+      )}
+
+      {dirtyDialog}
+
+      {safeEditing.externalConflict && (
+        <ExternalChangeReview
+          change={safeEditing.externalConflict.change}
+          document={safeEditing.externalConflict.document}
+          onCloseEditor={safeEditing.externalConflict.closeEditor}
+          onKeepLocal={safeEditing.externalConflict.keepLocal}
+          onReload={safeEditing.externalConflict.reload}
+        />
+      )}
 
       <AnimatePresence>
         {assignmentStudioOpen && workspace && (
@@ -1002,19 +1306,12 @@ export default function App(): React.JSX.Element {
   )
 }
 
-function LearningSidebar(): React.JSX.Element {
-  return (
-    <aside className="side-panel info-panel">
-      <div className="panel-heading"><span>Knowledge</span><BookOpenText size={15} /></div>
-      <QuizHistory compact />
-    </aside>
-  )
-}
-
 function SettingsSidebar(): React.JSX.Element {
   const passingScore = useWorkbench((state) => state.passingScore)
   const setPassingScore = useWorkbench((state) => state.setPassingScore)
   const addOutput = useWorkbench((state) => state.addOutput)
+  const autosave = useWorkbench((state) => state.autosave)
+  const setAutosave = useWorkbench((state) => state.setAutosave)
   const [provider, setProvider] = useState<AgentProvider>('openai-compatible')
   const [model, setModel] = useState('gpt-5.4-mini')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
@@ -1134,6 +1431,34 @@ function SettingsSidebar(): React.JSX.Element {
           value={passingScore}
         />
         <p>Code generation unlocks after this threshold.</p>
+      </div>
+      <div className="settings-block autosave-settings">
+        <div className="settings-title"><span>Autosave</span><b>{autosave.mode === 'off' ? 'Off' : 'Enabled'}</b></div>
+        <label className="field-label" htmlFor="autosave-mode">Save files</label>
+        <select
+          id="autosave-mode"
+          onChange={(event) => setAutosave({ ...autosave, mode: event.target.value as typeof autosave.mode })}
+          value={autosave.mode}
+        >
+          <option value="off">Off</option>
+          <option value="afterDelay">After a delay</option>
+          <option value="onFocusChange">When the editor loses focus</option>
+        </select>
+        {autosave.mode === 'afterDelay' && (
+          <>
+            <label className="field-label" htmlFor="autosave-delay">Delay in milliseconds</label>
+            <input
+              id="autosave-delay"
+              max="10000"
+              min="250"
+              onChange={(event) => setAutosave({ ...autosave, delayMs: Math.min(10_000, Math.max(250, Number(event.target.value) || 1000)) })}
+              step="250"
+              type="number"
+              value={autosave.delayMs}
+            />
+          </>
+        )}
+        <p>AI proposal-review files are never autosaved.</p>
       </div>
       <div className="settings-block ai-settings">
         <div className="settings-title"><span>AI provider</span><b>{connectionLabel}</b></div>

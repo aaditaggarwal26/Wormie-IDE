@@ -7,19 +7,26 @@ import { z } from 'zod'
 import {
   IPC_CHANNELS,
   type Classroom,
+  type ClassroomAssignmentContext,
   type ClassroomCreateRequest,
+  type ClassroomUpdateRequest,
   type ClassroomOpenAssignmentResult,
+  type ClassroomMasterySnapshot,
   type ClassroomPublishRequest,
   type CloudAuthCredentials,
   type CloudAuthState,
   type CloudAuthUpdate,
-  type WorkspaceSnapshot
+  type WorkspaceSnapshot,
+  type WorkspacePurpose
 } from '../../shared/contracts'
 import { createAssignmentPackage, importAssignmentPackage } from '../assignments/package'
 import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
 import { inviteCodeFrom } from './invite'
 import { authCallback, authCallbackUrl, authTokensFromLink, passwordResetCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
+import { MasterySyncQueue, type MasterySyncEvent } from './masterySync'
+import { classroomUpdateSchema } from './classroomDetails'
+import type { UnderstandingCompletion } from '../understanding/gate'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
 const credentialsSchema = z.object({
@@ -42,19 +49,29 @@ const classroomRowSchema = z.object({
 const memberRowSchema = z.object({
   classroom_id: z.uuid(), user_id: z.uuid(), role: z.enum(['teacher', 'student']), joined_at: z.string()
 })
+const visibleMemberRowSchema = memberRowSchema.extend({
+  email: z.string().email().nullable(),
+  display_name: z.string()
+})
 const inviteRowSchema = z.object({ classroom_id: z.uuid(), code: z.string().regex(/^[a-f0-9]{32}$/) })
 const profileRowSchema = z.object({ id: z.uuid(), display_name: z.string() })
 const assignmentRowSchema = z.object({
   id: z.uuid(), classroom_id: z.uuid(), local_assignment_id: z.uuid(), title: z.string(), summary: z.string(),
   published_at: z.string(), published_by: z.uuid()
 })
-const downloadableAssignmentSchema = z.object({ id: z.uuid(), title: z.string(), package_path: z.string(), package_sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+const downloadableAssignmentSchema = z.object({ id: z.uuid(), classroom_id: z.uuid(), title: z.string(), package_path: z.string(), package_sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+const masteryRowSchema = z.object({ classroom_id: z.uuid(), student_id: z.uuid(), concept_id: z.string(), concept_name: z.string(), mastery: z.number(), attempts: z.number(), correct: z.number(), updated_at: z.string() })
+const masteryEventRowSchema = z.object({ student_id: z.uuid(), assignment_id: z.uuid().nullable(), quiz_id: z.uuid(), attempt: z.number(), score: z.number(), passed: z.boolean(), title: z.string(), completed_at: z.string() })
 
 function cleanError(error: unknown, fallback: string): Error {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
     return new Error(error.message)
   }
   return new Error(fallback)
+}
+
+function isMissingRosterRpc(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error.code === 'PGRST202' || error.code === '42883'))
 }
 
 function authError(error: unknown, action: 'sign-in' | 'sign-up'): Error {
@@ -95,11 +112,14 @@ function samePath(left: string, right: string): boolean {
 
 export function registerCloudHandlers(
   getWorkspaceRoot: () => string | null,
-  setWorkspace: (rootPath: string) => Promise<WorkspaceSnapshot>,
+  setWorkspace: (rootPath: string, isCurrent?: () => boolean) => Promise<WorkspaceSnapshot>,
+  getWorkspacePurpose: () => WorkspacePurpose,
+  setAssignmentContext: (context: (ClassroomAssignmentContext & { userId: string }) | null) => void,
+  masteryQueue: MasterySyncQueue,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
   takePendingInvite: () => string | null,
   notifyAuthChanged: (update: CloudAuthUpdate) => void
-): { handleAuthCallback: (callback: AuthCallback) => Promise<void> } {
+): { handleAuthCallback: (callback: AuthCallback) => Promise<void>; recordUnderstandingCompletion: (completion: UnderstandingCompletion) => void } {
   const client = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
       autoRefreshToken: true,
@@ -163,13 +183,48 @@ export function registerCloudHandlers(
     return { id: data.user.id, email: data.user.email }
   }
 
+  async function sendMasteryEvent(event: MasterySyncEvent): Promise<void> {
+    const user = await requireUser()
+    if (user.id !== event.studentId) throw new Error('The mastery event belongs to a different account.')
+    const { error } = await client.rpc('record_classroom_mastery_event', { event_payload: event })
+    if (error) throw cleanError(error, 'Could not synchronize classroom mastery.')
+  }
+
+  function recordUnderstandingCompletion(completion: UnderstandingCompletion): void {
+    const conceptIds = new Set(completion.quiz.concepts.map((concept) => concept.id))
+    masteryQueue.enqueue({
+      eventKey: `${completion.scope.classroomId}:${completion.scope.userId}:${completion.quiz.id}:${completion.result.attempt}`,
+      classroomId: completion.scope.classroomId,
+      studentId: completion.scope.userId,
+      assignmentId: completion.scope.assignmentId,
+      quizId: completion.quiz.id,
+      attempt: completion.result.attempt,
+      score: completion.result.score,
+      passed: completion.result.passed,
+      source: completion.quiz.source,
+      title: completion.quiz.title,
+      completedAt: completion.completedAt,
+      concepts: completion.mastery.filter((concept) => conceptIds.has(concept.conceptId)).map((concept) => ({
+        conceptId: concept.conceptId,
+        name: concept.name,
+        mastery: concept.mastery,
+        attempts: concept.attempts,
+        correct: concept.correct,
+        updatedAt: concept.updatedAt
+      }))
+    })
+    void masteryQueue.flush(sendMasteryEvent)
+  }
+
   async function listClassrooms(): Promise<Classroom[]> {
     const currentUser = await requireUser()
-    const [classroomsResult, membersResult, invitesResult, assignmentsResult] = await Promise.all([
+    await masteryQueue.flush(sendMasteryEvent)
+    const [classroomsResult, membersResult, invitesResult, assignmentsResult, visibleMembersResult] = await Promise.all([
       client.from('classrooms').select('id,name,description,owner_id,created_at').order('created_at'),
       client.from('classroom_members').select('classroom_id,user_id,role,joined_at'),
       client.from('classroom_invites').select('classroom_id,code').is('revoked_at', null),
-      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,published_by').order('published_at', { ascending: false })
+      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,published_by').order('published_at', { ascending: false }),
+      client.rpc('list_visible_classroom_members')
     ])
     for (const result of [classroomsResult, membersResult, invitesResult, assignmentsResult]) {
       if (result.error) throw cleanError(result.error, 'Could not load classrooms.')
@@ -179,9 +234,15 @@ export function registerCloudHandlers(
     const memberRows = z.array(memberRowSchema).parse(membersResult.data ?? [])
     const inviteRows = z.array(inviteRowSchema).parse(invitesResult.data ?? [])
     const assignmentRows = z.array(assignmentRowSchema).parse(assignmentsResult.data ?? [])
+    if (visibleMembersResult.error && !isMissingRosterRpc(visibleMembersResult.error)) {
+      throw cleanError(visibleMembersResult.error, 'Could not load classroom members.')
+    }
+    const visibleMemberRows = visibleMembersResult.error
+      ? null
+      : z.array(visibleMemberRowSchema).parse(visibleMembersResult.data ?? [])
     const userIds = [...new Set(memberRows.map((member) => member.user_id))]
     let profileRows: z.infer<typeof profileRowSchema>[] = []
-    if (userIds.length > 0) {
+    if (!visibleMemberRows && userIds.length > 0) {
       const profilesResult = await client.from('profiles').select('id,display_name').in('id', userIds)
       if (profilesResult.error) throw cleanError(profilesResult.error, 'Could not load classroom members.')
       profileRows = z.array(profileRowSchema).parse(profilesResult.data ?? [])
@@ -190,18 +251,21 @@ export function registerCloudHandlers(
     const invites = new Map(inviteRows.map((invite) => [invite.classroom_id, invite.code]))
 
     return classroomRows.map((classroom) => {
-      const members = memberRows
-        .filter((member) => member.classroom_id === classroom.id)
-        .map((member) => {
-          const profile = profiles.get(member.user_id)
-          return {
-            userId: member.user_id,
-            email: member.user_id === currentUser.id ? currentUser.email : null,
-            displayName: profile?.display_name ?? 'Wormie user',
-            role: member.role,
-            joinedAt: member.joined_at
-          }
-        })
+      const members = (visibleMemberRows
+        ? visibleMemberRows.filter((member) => member.classroom_id === classroom.id).map((member) => ({
+          userId: member.user_id,
+          email: member.email,
+          displayName: member.display_name,
+          role: member.role,
+          joinedAt: member.joined_at
+        }))
+        : memberRows.filter((member) => member.classroom_id === classroom.id).map((member) => ({
+          userId: member.user_id,
+          email: member.user_id === currentUser.id ? currentUser.email : null,
+          displayName: profiles.get(member.user_id)?.display_name ?? 'Wormie user',
+          role: member.role,
+          joinedAt: member.joined_at
+        })))
         .sort((left, right) => left.role.localeCompare(right.role) || left.displayName.localeCompare(right.displayName))
       const role = memberRows.find((member) => member.classroom_id === classroom.id && member.user_id === currentUser.id)?.role ?? 'student'
       const code = invites.get(classroom.id) ?? null
@@ -332,6 +396,7 @@ export function registerCloudHandlers(
 
   ipcMain.handle(IPC_CHANNELS.cloudListClassrooms, async (event): Promise<Classroom[]> => {
     assertTrusted(event)
+    await requireUser()
     return listClassrooms()
   })
 
@@ -362,6 +427,113 @@ export function registerCloudHandlers(
     const { error } = await client.rpc('rotate_classroom_invite', { target_classroom_id: id })
     if (error) throw cleanError(error, 'Could not replace the classroom invitation.')
     return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudUpdateClassroom, async (event, input: ClassroomUpdateRequest): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const request = classroomUpdateSchema.parse(input)
+    await requireUser()
+    const { error } = await client.from('classrooms')
+      .update({ name: request.name, description: request.description })
+      .eq('id', request.classroomId)
+      .select('id')
+      .single()
+    if (error) throw cleanError(error, 'Could not update the classroom. Only its teacher can change these details.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudAddStudent, async (event, classroomId: string, email: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const normalizedEmail = emailSchema.parse(email)
+    await requireUser()
+    const { data, error } = await client.rpc('add_classroom_student_by_email', {
+      student_email: normalizedEmail,
+      target_classroom_id: id
+    })
+    if (error) throw cleanError(error, 'Could not add the student.')
+    if (data !== true) throw new Error('No eligible account could be added. Check the email or send an invitation instead.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudRemoveStudent, async (event, classroomId: string, userId: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const studentId = z.uuid().parse(userId)
+    await requireUser()
+    const { data, error } = await client.rpc('remove_classroom_student', {
+      student_user_id: studentId,
+      target_classroom_id: id
+    })
+    if (error) throw cleanError(error, 'Could not remove the student.')
+    if (data !== true) throw new Error('The student is no longer enrolled in this classroom.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudLeaveClassroom, async (event, classroomId: string): Promise<Classroom[]> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    await requireUser()
+    const { data, error } = await client.rpc('leave_classroom', { target_classroom_id: id })
+    if (error) throw cleanError(error, 'Could not leave the classroom.')
+    if (data !== true) throw new Error('Only enrolled students can leave this classroom.')
+    return listClassrooms()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudBeginAssignmentAuthoring, async (event, classroomId: string): Promise<ClassroomAssignmentContext> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    const user = await requireUser()
+    const classroomResult = await client.from('classrooms').select('id,name,owner_id').eq('id', id).single()
+    if (classroomResult.error) throw cleanError(classroomResult.error, 'Could not open the classroom for assignment authoring.')
+    const classroom = z.object({ id: z.uuid(), name: z.string(), owner_id: z.uuid() }).parse(classroomResult.data)
+    if (classroom.owner_id !== user.id) throw new Error('Only the classroom teacher can author assignments.')
+    if (getWorkspacePurpose() !== 'assignment') throw new Error('The assignment authoring request is no longer active.')
+    const context: ClassroomAssignmentContext = {
+      classroomId: classroom.id,
+      classroomName: classroom.name,
+      assignmentId: null,
+      assignmentTitle: 'Assignment authoring',
+      role: 'teacher'
+    }
+    setAssignmentContext({ ...context, userId: user.id })
+    return context
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudListClassroomMastery, async (event, classroomId: string): Promise<ClassroomMasterySnapshot> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    await requireUser()
+    await masteryQueue.flush(sendMasteryEvent)
+    const [masteryResult, eventsResult] = await Promise.all([
+      client.from('classroom_mastery').select('classroom_id,student_id,concept_id,concept_name,mastery,attempts,correct,updated_at').eq('classroom_id', id).order('updated_at', { ascending: false }),
+      client.from('classroom_mastery_events').select('student_id,assignment_id,quiz_id,attempt,score,passed,title,completed_at').eq('classroom_id', id).order('completed_at', { ascending: false }).limit(100)
+    ])
+    if (masteryResult.error) throw cleanError(masteryResult.error, 'Could not load classroom mastery.')
+    if (eventsResult.error) throw cleanError(eventsResult.error, 'Could not load classroom mastery activity.')
+    return {
+      classroomId: id,
+      concepts: z.array(masteryRowSchema).parse(masteryResult.data ?? []).map((row) => ({
+        studentId: row.student_id,
+        conceptId: row.concept_id,
+        conceptName: row.concept_name,
+        mastery: row.mastery,
+        attempts: row.attempts,
+        correct: row.correct,
+        updatedAt: row.updated_at
+      })),
+      events: z.array(masteryEventRowSchema).parse(eventsResult.data ?? []).map((row) => ({
+        studentId: row.student_id,
+        assignmentId: row.assignment_id,
+        quizId: row.quiz_id,
+        attempt: row.attempt,
+        score: row.score,
+        passed: row.passed,
+        title: row.title,
+        completedAt: row.completed_at
+      })),
+      pendingSyncCount: masteryQueue.pendingCount(id)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.cloudCopyInvite, (event, inviteLink: string): void => {
@@ -411,7 +583,7 @@ export function registerCloudHandlers(
     assertTrusted(event)
     const id = z.uuid().parse(assignmentId)
     await requireUser()
-    const assignmentResult = await client.from('classroom_assignments').select('id,title,package_path,package_sha256').eq('id', id).single()
+    const assignmentResult = await client.from('classroom_assignments').select('id,classroom_id,title,package_path,package_sha256').eq('id', id).single()
     if (assignmentResult.error) throw cleanError(assignmentResult.error, 'Could not find the assignment.')
     const assignment = downloadableAssignmentSchema.parse(assignmentResult.data)
     const destination = await dialog.showOpenDialog({
@@ -433,15 +605,32 @@ export function registerCloudHandlers(
       }
       await fs.writeFile(temporaryPath, packageBuffer, { flag: 'wx' })
       const imported = await importAssignmentPackage(temporaryPath, destination.filePaths[0])
-      return {
-        workspace: await setWorkspace(imported.rootPath),
+      const user = await requireUser()
+      const classroomResult = await client.from('classrooms').select('id,name,owner_id').eq('id', assignment.classroom_id).single()
+      if (classroomResult.error) throw cleanError(classroomResult.error, 'Could not verify assignment access.')
+      const classroom = z.object({ id: z.uuid(), name: z.string(), owner_id: z.uuid() }).parse(classroomResult.data)
+      if (getWorkspacePurpose() !== 'assignment') throw new Error('The assignment request is no longer active.')
+      const context: ClassroomAssignmentContext = {
+        classroomId: classroom.id,
+        classroomName: classroom.name,
+        assignmentId: assignment.id,
         assignmentTitle: imported.assignmentTitle,
-        fileCount: imported.fileCount
+        role: classroom.owner_id === user.id ? 'teacher' : 'student'
+      }
+      setAssignmentContext({ ...context, userId: user.id })
+      return {
+        workspace: await setWorkspace(imported.rootPath, () => getWorkspacePurpose() === 'assignment'),
+        assignmentTitle: imported.assignmentTitle,
+        fileCount: imported.fileCount,
+        context
       }
     } finally {
       await fs.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
   })
 
-  return { handleAuthCallback: processAuthCallback }
+  return {
+    recordUnderstandingCompletion,
+    handleAuthCallback: processAuthCallback
+  }
 }

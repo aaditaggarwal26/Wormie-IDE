@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
 import { registerAgentHandlers } from './agent'
 import { registerAssignmentHandlers } from './assignments'
@@ -10,9 +10,16 @@ import type { AppPreferences } from './preferences'
 import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
+import { registerEditorRecoveryHandlers } from './editorRecovery'
+import { MasteryRepository } from './mastery/repository'
+import { MasteryService } from './mastery/service'
+import { KnowledgeGraph } from './mastery/graph'
+import { canonicalConcepts } from './mastery/catalog'
+import { registerMasteryIpc } from './mastery/ipc'
 import { registerWorkspaceHandlers } from './workspace'
-import { IPC_CHANNELS, type CloudAuthUpdate } from '../shared/contracts'
+import { IPC_CHANNELS, type ClassroomAssignmentContext, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
+import { MasterySyncQueue } from './cloud/masterySync'
 import {
   authCallback,
   authCallbackFromArguments,
@@ -25,10 +32,30 @@ const rendererFilePath = path.join(__dirname, '../renderer/index.html')
 const devIconPath = path.join(__dirname, '../../build/icon.png')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
-const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore))
+const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
+const masterySyncStore = new Store<{ queue?: unknown }>({ name: 'mastery-sync' })
+const masterySyncQueue = new MasterySyncQueue(masterySyncStore)
+let workspacePurpose: WorkspacePurpose = 'sandbox'
+let activeAssignmentContext: (ClassroomAssignmentContext & { userId: string }) | null = null
+const understandingRepository = new UnderstandingRepository(understandingStore)
+const masteryStore = new Store({ name: 'mastery-state' })
+const masteryRepository = new MasteryRepository(masteryStore, Object.values(understandingRepository.read().mastery))
+const mastery = new MasteryService(masteryRepository, new KnowledgeGraph(canonicalConcepts))
+const understanding = new UnderstandingController(understandingRepository, mastery, () => {
+  if (!activeAssignmentContext || activeAssignmentContext.role !== 'student') return null
+  return {
+    classroomId: activeAssignmentContext.classroomId,
+    assignmentId: activeAssignmentContext.assignmentId,
+    userId: activeAssignmentContext.userId
+  }
+})
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 let pendingAuthCallback = authCallbackFromArguments(process.argv)
 let handleAuthCallback: ((callback: AuthCallback) => Promise<void>) | null = null
+const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
+  trustedWebContents.has(event.sender.id) &&
+  event.senderFrame === event.sender.mainFrame &&
+  isTrustedRendererUrl(event.senderFrame.url)
 
 for (const protocol of ['wormie', 'wormie-ide']) {
   if (process.defaultApp) {
@@ -121,6 +148,19 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    const response = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: 'Unsaved work',
+      message: 'Quit Wormie with unsaved work?',
+      detail: 'Choose Cancel to return to the editor and save. Recent eligible editor text may also be available for recovery.',
+      buttons: ['Quit without saving', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    })
+    if (response === 0) event.preventDefault()
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -132,12 +172,15 @@ function createWindow(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  const workspace = registerWorkspaceHandlers(store)
+  const workspace = registerWorkspaceHandlers(store, isTrustedSender, () => workspacePurpose)
+  ipcMain.handle(IPC_CHANNELS.workspaceSetPurpose, (event, purpose: unknown): void => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted renderer request.')
+    if (purpose !== 'sandbox' && purpose !== 'assignment') throw new Error('Invalid workspace purpose.')
+    workspacePurpose = purpose
+    if (purpose === 'sandbox') activeAssignmentContext = null
+  })
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
-  const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
-    trustedWebContents.has(event.sender.id) &&
-    event.senderFrame === event.sender.mainFrame &&
-    isTrustedRendererUrl(event.senderFrame.url)
+  registerEditorRecoveryHandlers(editorRecoveryStore, workspace.getWorkspaceRoot, isTrustedSender)
   registerAssignmentHandlers(
     store,
     progressStorageRoot,
@@ -145,10 +188,11 @@ if (!app.requestSingleInstanceLock()) {
     workspace.setWorkspace,
     isTrustedSender
   )
-  understanding.registerIpc()
+  understanding.registerIpc(isTrustedSender)
+  registerMasteryIpc(mastery, isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, understanding, progressStorageRoot)
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot, mastery)
 
   app.on('second-instance', (_event, commandLine) => {
     const callback = authCallbackFromArguments(commandLine)
@@ -166,10 +210,14 @@ if (!app.requestSingleInstanceLock()) {
     const cloud = registerCloudHandlers(
       workspace.getWorkspaceRoot,
       workspace.setWorkspace,
+      () => workspacePurpose,
+      (context) => { activeAssignmentContext = context },
+      masterySyncQueue,
       isTrustedSender,
       takePendingClassroomInvite,
       notifyCloudAuthChanged
     )
+    understanding.setCompletionListener(cloud.recordUnderstandingCompletion)
     handleAuthCallback = cloud.handleAuthCallback
     createWindow()
     if (pendingAuthCallback) {

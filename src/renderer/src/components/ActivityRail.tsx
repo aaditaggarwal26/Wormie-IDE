@@ -1,18 +1,19 @@
-import { BookOpenText, ClipboardCheck, FolderTree, GitBranch, GraduationCap, Search, Settings2 } from 'lucide-react'
+import { Braces, ClipboardCheck, FolderTree, GitBranch, Search, Settings2 } from 'lucide-react'
 import { useWorkbench } from '@/store/workbench'
+import { activityIdsForMode, type IdeActivityId } from './activityItems'
 
-const activities = [
-  { id: 'explorer' as const, label: 'Explorer', icon: FolderTree },
-  { id: 'search' as const, label: 'Search', icon: Search },
-  { id: 'sourceControl' as const, label: 'Source Control', icon: GitBranch },
-  { id: 'classrooms' as const, label: 'Classrooms', icon: GraduationCap },
-  { id: 'assignments' as const, label: 'Assignments', icon: ClipboardCheck },
-  { id: 'learning' as const, label: 'Knowledge', icon: BookOpenText }
-]
+const activityDefinitions: Record<IdeActivityId, { id: IdeActivityId; label: string; icon: typeof FolderTree }> = {
+  explorer: { id: 'explorer', label: 'Explorer', icon: FolderTree },
+  search: { id: 'search', label: 'Search', icon: Search },
+  outline: { id: 'outline', label: 'Outline', icon: Braces },
+  sourceControl: { id: 'sourceControl', label: 'Source Control', icon: GitBranch },
+  assignments: { id: 'assignments', label: 'Assignment', icon: ClipboardCheck }
+}
 
-export function ActivityRail(): React.JSX.Element {
+export function ActivityRail({ assignmentMode }: { assignmentMode: boolean }): React.JSX.Element {
   const activity = useWorkbench((state) => state.activity)
   const setActivity = useWorkbench((state) => state.setActivity)
+  const activities = activityIdsForMode(assignmentMode).map((id) => activityDefinitions[id])
 
   return (
     <nav className="activity-rail" aria-label="Workbench views">

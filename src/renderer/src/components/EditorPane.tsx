@@ -9,6 +9,10 @@ import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 import { useWorkbench } from '@/store/workbench'
 import { AgentDiffReview } from '@/components/AgentDiffReview'
+import { SafeRenameDialog } from '@/components/SafeRenameDialog'
+import { useTypeScriptProject } from '@/typescript/useTypeScriptProject'
+import { useSafeRename } from '@/typescript/useSafeRename'
+import { fileUriToPath, isWorkspaceFilePath, workspacePathToFileUri } from '@/typescript/fileUri'
 
 const monacoScope = self as typeof self & { MonacoEnvironment: monaco.Environment }
 
@@ -23,6 +27,7 @@ monacoScope.MonacoEnvironment = {
 }
 
 loader.config({ monaco })
+let languageFeaturesConfigured = false
 
 type EditorPaneProps = {
   hasWorkspace: boolean
@@ -32,9 +37,53 @@ type EditorPaneProps = {
   onOpenSuggestedFile: () => void
   onOpenWorkspace: () => void
   onSave: () => void
+  onCloseDocument: (filePath: string) => void
+  onEditorBlur: (filePath: string) => void
+  onOpenFile: (filePath: string, line: number) => void
 }
 
-const configureEditor: BeforeMount = (monaco) => {
+export const configureEditor: BeforeMount = (monaco) => {
+  if (!languageFeaturesConfigured) {
+    languageFeaturesConfigured = true
+    const compilerOptions: monaco.languages.typescript.CompilerOptions = {
+      allowJs: true,
+      allowNonTsExtensions: true,
+      allowSyntheticDefaultImports: true,
+      esModuleInterop: true,
+      jsx: monaco.languages.typescript.JsxEmit.ReactJSX,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      noEmit: true,
+      resolveJsonModule: true,
+      target: monaco.languages.typescript.ScriptTarget.ESNext
+    }
+    const inlayHints: monaco.languages.typescript.InlayHintsOptions = {
+      includeInlayEnumMemberValueHints: true,
+      includeInlayFunctionLikeReturnTypeHints: true,
+      includeInlayParameterNameHints: 'literals',
+      includeInlayParameterNameHintsWhenArgumentMatchesName: false,
+      includeInlayVariableTypeHints: false
+    }
+    for (const defaults of [monaco.languages.typescript.typescriptDefaults, monaco.languages.typescript.javascriptDefaults]) {
+      defaults.setCompilerOptions(compilerOptions)
+      defaults.setDiagnosticsOptions({ noSemanticValidation: false, noSyntaxValidation: false, noSuggestionDiagnostics: false, onlyVisible: false })
+      defaults.setEagerModelSync(true)
+      defaults.setInlayHintsOptions(inlayHints)
+    }
+    for (const language of ['typescript', 'javascript']) {
+      monaco.languages.registerRenameProvider(language, {
+        provideRenameEdits: () => ({ edits: [], rejectReason: 'Use Wormie Safe Rename (F2) to preview workspace edits.' }),
+        resolveRenameLocation: (model, position) => {
+          const word = model.getWordAtPosition(position)
+          return {
+            range: word ? new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn) : new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            text: word?.word ?? '',
+            rejectReason: 'Use Wormie Safe Rename (F2) to preview workspace edits.'
+          }
+        }
+      })
+    }
+  }
   monaco.editor.defineTheme('wormie-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -73,23 +122,42 @@ export function EditorPane({
   suggestedFileName,
   onOpenSuggestedFile,
   onOpenWorkspace,
-  onSave
+  onSave,
+  onCloseDocument,
+  onEditorBlur,
+  onOpenFile
 }: EditorPaneProps): React.JSX.Element {
+  useTypeScriptProject()
   const documents = useWorkbench((state) => state.documents)
   const activePath = useWorkbench((state) => state.activePath)
   const setActivePath = useWorkbench((state) => state.setActivePath)
-  const closeDocument = useWorkbench((state) => state.closeDocument)
   const updateDocument = useWorkbench((state) => state.updateDocument)
   const revealLine = useWorkbench((state) => state.revealLine)
   const consumeRevealLine = useWorkbench((state) => state.consumeRevealLine)
   const setCursorPosition = useWorkbench((state) => state.setCursorPosition)
+  const setDocumentView = useWorkbench((state) => state.setDocumentView)
   const proposalReview = useWorkbench((state) => state.proposalReview)
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const updateProposalReviewFile = useWorkbench((state) => state.updateProposalReviewFile)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
+  const safeRename = useSafeRename(editorRef)
   const activeDocument = documents.find((document) => document.path === activePath)
   const activeReviewFile = proposalReview?.files.find((file) => file.absolutePath === activePath)
+
+  useEffect(() => {
+    const rename = () => { void safeRename.begin() }
+    const runAction = (event: Event) => {
+      const actionId = (event as CustomEvent<string>).detail
+      if (actionId) void editorRef.current?.getAction(actionId)?.run()
+    }
+    window.addEventListener('wormie:rename-symbol', rename)
+    window.addEventListener('wormie:editor-action', runAction)
+    return () => {
+      window.removeEventListener('wormie:rename-symbol', rename)
+      window.removeEventListener('wormie:editor-action', runAction)
+    }
+  }, [safeRename.begin])
 
   useEffect(() => {
     const container = editorContainerRef.current
@@ -125,6 +193,16 @@ export function EditorPane({
     })
   }, [activePath, consumeRevealLine, revealLine])
 
+  useEffect(() => {
+    if (!activePath || activeReviewFile || !editorRef.current) return
+    const view = useWorkbench.getState().documents.find((document) => document.path === activePath)?.view
+    if (!view) return
+    requestAnimationFrame(() => {
+      editorRef.current?.setPosition({ lineNumber: view.line, column: view.column })
+      editorRef.current?.setScrollPosition({ scrollTop: view.scrollTop, scrollLeft: view.scrollLeft })
+    })
+  }, [activePath, activeReviewFile])
+
   if (!activeDocument) {
     return (
       <main className="editor-pane welcome-pane">
@@ -139,7 +217,7 @@ export function EditorPane({
               type="button"
             >
               <FileText size={17} />
-              {openingFile ? 'Opening…' : suggestedFileName ? `Open ${suggestedFileName}` : 'No files found'}
+              {openingFile ? 'Opening...' : suggestedFileName ? `Open ${suggestedFileName}` : 'No files found'}
             </button>
           ) : (
             <button className="welcome-action" onClick={onOpenWorkspace} type="button">
@@ -171,18 +249,26 @@ export function EditorPane({
                 <span>{document.name}</span>
                 {reviewFile ? (
                   <span className="review-dot" title={reviewFile.pendingBlocks === 0 ? 'AI changes reviewed' : 'AI changes pending review'}><Sparkles size={10} /></span>
-                ) : dirty ? (
-                  <span className="dirty-dot" title="Unsaved changes" />
                 ) : (
                   <span
                     className="tab-close"
                     onClick={(event) => {
                       event.stopPropagation()
-                      closeDocument(document.path)
+                      onCloseDocument(document.path)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onCloseDocument(document.path)
                     }}
                     role="button"
                     tabIndex={0}
-                  ><X size={12} /></span>
+                    title={`Close ${document.name}`}
+                  >
+                    {dirty && <span className="dirty-dot" title="Unsaved changes" />}
+                    <X className="tab-close-x" data-dirty={dirty || undefined} size={12} />
+                  </span>
                 )}
               </button>
             )
@@ -221,15 +307,42 @@ export function EditorPane({
             onChange={(value) => updateDocument(activeDocument.path, value ?? '')}
             onMount={(mountedEditor) => {
               editorRef.current = mountedEditor
+              const opener = monaco.editor.registerEditorOpener({
+                openCodeEditor: (_source, resource, selectionOrPosition) => {
+                  const workspaceRoot = useWorkbench.getState().workspace?.rootPath
+                  if (!workspaceRoot || resource.scheme !== 'file') return false
+                  const filePath = fileUriToPath(resource.toString(), window.desktop.platform)
+                  if (!isWorkspaceFilePath(workspaceRoot, filePath, window.desktop.platform)) return false
+                  const line = selectionOrPosition
+                    ? ('startLineNumber' in selectionOrPosition ? selectionOrPosition.startLineNumber : selectionOrPosition.lineNumber)
+                    : 1
+                  onOpenFile(filePath, line)
+                  return true
+                }
+              })
               const container = editorContainerRef.current
               if (container?.clientWidth && container.clientHeight) {
                 mountedEditor.layout({ width: container.clientWidth, height: container.clientHeight })
               }
+              const restoredView = useWorkbench.getState().documents.find((document) => document.path === useWorkbench.getState().activePath)?.view
+              if (restoredView) {
+                mountedEditor.setPosition({ lineNumber: restoredView.line, column: restoredView.column })
+                mountedEditor.setScrollPosition({ scrollTop: restoredView.scrollTop, scrollLeft: restoredView.scrollLeft })
+              }
               mountedEditor.onDidDispose(() => {
+                opener.dispose()
                 if (editorRef.current === mountedEditor) editorRef.current = null
               })
               mountedEditor.onDidChangeCursorPosition(({ position }) => {
                 setCursorPosition(position.lineNumber, position.column)
+              })
+              mountedEditor.onDidScrollChange(({ scrollTop, scrollLeft }) => {
+                const filePath = useWorkbench.getState().activePath
+                if (filePath) setDocumentView(filePath, { scrollTop, scrollLeft })
+              })
+              mountedEditor.onDidBlurEditorText(() => {
+                const filePath = useWorkbench.getState().activePath
+                if (filePath) onEditorBlur(filePath)
               })
             }}
             options={{
@@ -240,19 +353,31 @@ export function EditorPane({
               fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
               fontLigatures: true,
               fontSize: 13,
+              inlayHints: { enabled: 'on' },
               lineHeight: 21,
               minimap: { enabled: true, scale: 0.8 },
               padding: { top: 14 },
               renderLineHighlight: 'all',
+              'semanticHighlighting.enabled': true,
               scrollBeyondLastLine: false,
               smoothScrolling: true
             }}
-            path={activeDocument.path}
+            path={workspacePathToFileUri(activeDocument.path, window.desktop.platform)}
             theme="wormie-dark"
             value={activeDocument.content}
           />
         )}
       </div>
+      {safeRename.state && (
+        <SafeRenameDialog
+          onApply={() => void safeRename.apply()}
+          onClose={safeRename.close}
+          onPreview={(newName) => void safeRename.preview(newName)}
+          onSetNewName={safeRename.setNewName}
+          onToggleFile={safeRename.toggleFile}
+          state={safeRename.state}
+        />
+      )}
     </main>
   )
 }

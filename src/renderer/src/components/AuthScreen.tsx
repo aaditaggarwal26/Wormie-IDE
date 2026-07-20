@@ -63,7 +63,7 @@ export function AuthScreen({ busy, confirmationRequired, error, googleBusy, load
         </form>
 
         {!passwordResetRequired && <>
-          {mode === 'sign-in' && <button className="auth-mode-switch" disabled={busy || loading} onClick={() => onRequestPasswordReset(email)} type="button">Forgot password?</button>}
+          {mode === 'sign-in' && <button className="auth-mode-switch" disabled={busy || loading || !email.trim()} onClick={() => onRequestPasswordReset(email)} type="button">Forgot password?</button>}
           <button className="auth-mode-switch" disabled={busy || loading} onClick={() => setMode((current) => current === 'sign-in' ? 'sign-up' : 'sign-in')} type="button">
             {mode === 'sign-in' ? 'New to Wormie? Create an account' : 'Already have an account? Sign in'}
           </button>

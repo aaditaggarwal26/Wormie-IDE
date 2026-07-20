@@ -32,9 +32,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .app-shell[data-platform="darwin"] .titlebar { padding-right: 80px; padding-left: 80px; }
 .titlebar-brand { display: flex; gap: 7px; align-items: center; min-width: 0; font-size: 11px; letter-spacing: .04em; white-space: nowrap; }
 .titlebar-brand span { color: var(--acid); font-weight: 700; }
+.titlebar-workspace { overflow: hidden; padding-left: 20px; color: #879299; font-size: 11px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .command-trigger { -webkit-app-region: no-drag; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; height: 27px; padding: 0 8px; border: 1px solid #333333; border-radius: 6px; color: #687279; background: #252526; font-size: 11px; text-align: left; transition: border-color .16s, background .16s; }
 .command-trigger:hover { border-color: #3b464b; background: #2a2d2e; }
-.command-trigger kbd, .command-palette kbd { padding: 2px 5px; border: 1px solid #2b3438; border-radius: 4px; color: #778188; background: #1f1f1f; font: 9px "Cascadia Code", monospace; }
+.command-trigger kbd, .command-palette kbd, .workbench-picker kbd { padding: 2px 5px; border: 1px solid #2b3438; border-radius: 4px; color: #778188; background: #1f1f1f; font: 9px "Cascadia Code", monospace; white-space: nowrap; }
 
 .workbench { display: grid; grid-template-columns: 50px var(--left-panel-width) 5px minmax(360px, 1fr) 5px var(--right-panel-width); min-height: 0; overflow: hidden; }
 .activity-rail { display: flex; flex-direction: column; align-items: center; border-right: 1px solid var(--line); background: #181818; }
@@ -98,6 +99,9 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .tab-close { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 3px; }
 .tab-close:hover { background: #293034; }
 .dirty-dot { width: 7px; height: 7px; margin: 4px; border-radius: 50%; background: var(--warm); }
+.tab-close-x[data-dirty] { display: none; }
+.tab-close:hover .dirty-dot, .tab-close:focus .dirty-dot { display: none; }
+.tab-close:hover .tab-close-x, .tab-close:focus .tab-close-x { display: block; }
 .save-button { display: grid; place-items: center; width: 35px; height: 35px; margin-left: auto; border: 0; border-left: 1px solid var(--line); color: #687278; background: #1f1f1f; }
 .save-button:hover { color: var(--acid); background: #2a2d2e; }
 .breadcrumb-bar { display: flex; gap: 16px; align-items: center; padding: 0 13px; overflow: hidden; border-bottom: 1px solid #181e21; color: #626d73; background: #1e1e1e; font-size: 10px; }
@@ -144,6 +148,99 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .tutor-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; height: 36px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); }
 .tutor-heading h2 { position: relative; height: 36px; margin: 0; color: #cccccc; font-size: 11px; font-weight: 600; line-height: 36px; letter-spacing: .04em; text-transform: uppercase; }
 .tutor-heading h2::after { position: absolute; right: 0; bottom: 0; left: 0; height: 1px; background: #3794ff; content: ""; }
+.knowledge-profile { background: #0c1011; }
+.mastery-heading b { display: flex; gap: 5px; align-items: center; color: #71807a; font: 7px "Cascadia Code", Consolas, monospace; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.mastery-heading b svg { color: #92a567; fill: currentColor; }
+.knowledge-scroll { min-height: 0; padding: 11px 10px 18px; overflow: auto; scrollbar-color: #34403b transparent; scrollbar-width: thin; }
+.mastery-loading, .mastery-error, .mastery-empty { display: flex; gap: 7px; align-items: center; margin: 11px; padding: 11px; border: 1px solid #263034; border-radius: 7px; color: #7f8a85; background: #101517; font: 10px/1.45 "Avenir Next", sans-serif; }
+.mastery-error { color: #d0977b; background: #1a1210; border-color: #432c24; }
+.mastery-hero { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 11px; align-items: center; padding: 12px; border: 1px solid #2b3837; border-radius: 8px; background: linear-gradient(145deg, #141b1a, #101415); box-shadow: inset 0 1px #ffffff08; }
+.mastery-hero[data-empty="true"] { border-color: #332f28; background: #121313; }
+.mastery-orbit { position: relative; display: grid; place-items: center; width: 70px; height: 70px; border: 1px solid #3f4b3f; border-radius: 50%; background: radial-gradient(circle, #21291f 0 43%, #101617 45% 100%); }
+.mastery-orbit::before { position: absolute; inset: 6px; border: 1px dashed #69784c; border-radius: 50%; opacity: .7; content: ""; }
+.mastery-orbit span { position: relative; color: #e2edc3; font: 18px Georgia, serif; }
+.mastery-orbit i { position: absolute; right: 7px; bottom: 6px; padding: 1px 4px; border: 1px solid #303a35; border-radius: 4px; color: #92a08f; background: #111617; font: 7px "Cascadia Code", Consolas, monospace; font-style: normal; }
+.mastery-kicker { margin: 0 0 3px; color: var(--warm); font-size: 7px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.mastery-hero h3 { margin: 0; overflow-wrap: anywhere; color: #d3dad5; font-size: 15px; font-weight: 580; letter-spacing: -.01em; }
+.mastery-hero p:last-child { margin: 5px 0 0; color: #7d8983; font: 10px/1.5 "Avenir Next", sans-serif; }
+.mastery-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.mastery-stats div { min-width: 0; padding: 8px; border: 1px solid #263034; border-radius: 7px; background: #101517; }
+.mastery-stats span { display: flex; gap: 5px; align-items: center; color: #738079; font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
+.mastery-stats b { display: block; margin-top: 5px; color: #d1d8d2; font: 16px Georgia, serif; }
+.profile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 10px 0; padding: 3px; border: 1px solid #252e31; border-radius: 7px; background: #0a0d0f; }
+.profile-tabs button { display: flex; gap: 5px; align-items: center; justify-content: center; height: 28px; border: 0; border-radius: 5px; color: #6f7a80; background: transparent; font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.profile-tabs button[data-active="true"] { color: #dce8bd; background: #20281d; }
+.domain-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.domain-map button { position: relative; min-height: 45px; overflow: hidden; padding: 7px; border: 1px solid #263034; border-radius: 7px; color: #aeb8b2; background: #101517; text-align: left; }
+.domain-map button[data-empty="true"] { color: #657077; }
+.domain-map span, .domain-map b { position: relative; z-index: 1; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.domain-map span { font-size: 8px; }
+.domain-map b { margin-top: 6px; color: #d3dcd6; font: 12px "Cascadia Code", Consolas, monospace; font-weight: 600; }
+.domain-map i { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: #9eb866; content: ""; }
+.mastery-controls { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 6px; margin: 10px 0 7px; }
+.mastery-controls div { display: flex; gap: 4px; min-width: 0; }
+.mastery-controls button, .mastery-controls select { min-width: 0; height: 25px; border: 1px solid #283236; border-radius: 5px; color: #77838a; background: #101517; font-size: 8px; }
+.mastery-controls button { flex: 1; padding: 0 4px; }
+.mastery-controls button[data-active="true"] { color: #dce8bd; border-color: #586744; background: #1c2419; }
+.concept-matrix { display: grid; gap: 5px; }
+.concept-matrix > button { display: grid; grid-template-columns: minmax(0, 1fr) 38px auto; gap: 7px; align-items: center; min-height: 42px; padding: 6px 7px; border: 1px solid #273135; border-radius: 7px; color: #aab4ae; background: #101517; text-align: left; }
+.concept-matrix > button[data-active="true"] { border-color: #64733f; background: #182017; }
+.concept-matrix > button[data-status="weak"], .concept-matrix > button[data-status="learning"] { border-left-color: #b7865f; }
+.concept-matrix > button[data-status="review_due"] { border-left-color: var(--acid); }
+.concept-matrix b, .concept-matrix small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.concept-matrix b { font-size: 10px; font-weight: 600; }
+.concept-matrix small { margin-top: 2px; color: #69757b; font-size: 8px; }
+.concept-matrix i { justify-self: end; color: #d3dcd6; font: 10px "Cascadia Code", Consolas, monospace; font-style: normal; }
+.concept-matrix em { padding: 3px 5px; border-radius: 4px; color: #1b2017; background: var(--acid); font-size: 7px; font-style: normal; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.concept-detail, .review-session-card, .goal-panel, .review-panel { display: grid; gap: 7px; margin-top: 10px; }
+.concept-detail, .review-session-card { padding: 9px; border: 1px solid #2b3537; border-radius: 8px; background: #101517; }
+.concept-detail-title { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; color: #d1d8d2; }
+.concept-detail-title span { min-width: 0; }
+.concept-detail-title b, .concept-detail-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.concept-detail-title small { margin-top: 2px; color: #748087; font-size: 8px; text-transform: capitalize; }
+.concept-detail-title button { min-height: 24px; padding: 0 7px; border: 1px solid #303a3f; border-radius: 5px; color: #b9c2bd; background: #151b1d; font-size: 8px; }
+.concept-detail p { margin: 0; color: #8a9690; font: 10px/1.55 "Avenir Next", sans-serif; }
+.concept-detail > small { display: block; color: #6f7a76; font: 9px/1.45 "Avenir Next", sans-serif; }
+.evidence-strip { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 5px; border-top: 1px solid #20282b; }
+.evidence-strip span { display: flex; gap: 4px; align-items: center; padding: 3px 5px; border: 1px solid #2b3437; border-radius: 5px; color: #7b8782; font-size: 7px; text-transform: uppercase; }
+.evidence-strip b { color: var(--acid); }
+.prereq-row { display: flex; gap: 6px; align-items: center; color: #8a9772; font-size: 9px; }
+.sparkline { display: flex; gap: 3px; align-items: end; height: 38px; padding: 7px 6px 3px; border: 1px solid #232c30; border-radius: 6px; background: #0c1011; }
+.sparkline svg { align-self: center; color: #6f7b80; }
+.sparkline i { flex: 1; min-width: 3px; max-height: 28px; border-radius: 2px 2px 0 0; background: linear-gradient(#dce873, #6f8150); }
+.review-row, .goal-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; min-height: 42px; padding: 7px; border: 1px solid #273135; border-radius: 7px; color: #aab4ae; background: #101517; text-align: left; }
+.review-row b, .review-row small, .goal-row b, .goal-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-row small, .goal-row small { margin-top: 2px; color: #707c82; font-size: 8px; }
+.goal-composer { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 6px; }
+.goal-composer input { min-width: 0; height: 31px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 6px; color: #c7cec9; background: #101517; font-size: 10px; }
+.goal-composer button, .goal-row button { display: grid; place-items: center; min-width: 25px; height: 25px; border: 1px solid #56663e; border-radius: 5px; color: #dce8bd; background: #20291c; }
+.goal-row[data-completed="true"] { opacity: .55; }
+.misconception-list { display: grid; gap: 5px; margin-top: 5px; padding-top: 9px; border-top: 1px solid #20282b; }
+.misconception-list p { margin: 0; color: var(--warm); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+.misconception-list span { display: flex; gap: 5px; color: #a88a75; font: 9px/1.45 "Avenir Next", sans-serif; }
+.profile-review-question { display: grid; gap: 5px; margin: 0; padding: 8px; border: 1px solid #273135; border-radius: 7px; }
+.profile-review-question legend { padding: 0 4px; color: #c1cac5; font: 10px/1.45 "Avenir Next", sans-serif; }
+.profile-review-question button { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 7px; align-items: center; min-height: 29px; padding: 5px 6px; border: 1px solid transparent; border-radius: 5px; color: #85908b; background: #0c1011; text-align: left; font: 9px/1.4 "Avenir Next", sans-serif; }
+.profile-review-question button[data-selected="true"] { border-color: #586744; color: #dce8bd; background: #1c2419; }
+.profile-review-question span { display: grid; place-items: center; width: 17px; height: 17px; border: 1px solid #3b464b; border-radius: 4px; font: 8px monospace; }
+
+.classroom-mastery-list { display: grid; gap: 6px; }
+.classroom-mastery-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 9px; padding: 8px; border: 1px solid #273135; border-radius: 7px; background: #101517; }
+.classroom-mastery-list article > span { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: center; min-width: 0; }
+.classroom-mastery-list svg { color: #9eb866; }
+.classroom-mastery-list b, .classroom-mastery-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.classroom-mastery-list b { color: #cdd5d0; font-size: 10px; }
+.classroom-mastery-list small { grid-column: 2; color: #707c82; font-size: 8px; }
+.classroom-mastery-list strong { color: #e0e9c4; font: 12px "Cascadia Code", Consolas, monospace; }
+.classroom-mastery-list div { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+.classroom-mastery-list em { padding: 3px 5px; border: 1px solid #433429; border-radius: 5px; color: #c69471; background: #1b1411; font-size: 7px; font-style: normal; }
+
+.tutor-pane { position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-left: 1px solid var(--line); background: #0d1012; }
+.tutor-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; height: 42px; padding: 0 10px 0 13px; border-bottom: 1px solid var(--line); }
+.tutor-heading h2 { margin: 0; color: #aeb7b2; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.tutor-pane { position: relative; z-index: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-left: 1px solid var(--line); background: #1e1e1e; }
+.tutor-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; height: 36px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); }
+.tutor-heading h2 { position: relative; height: 36px; margin: 0; color: #cccccc; font-size: 11px; font-weight: 600; line-height: 36px; letter-spacing: .04em; text-transform: uppercase; }
 .tutor-heading-actions { display: flex; gap: 7px; align-items: center; }
 .activity-toggle { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 4px; color: #778288; background: transparent; }
 .activity-toggle:hover, .activity-toggle[data-active="true"] { color: #cccccc; background: #2a2d2e; }
@@ -312,9 +409,9 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .ai-settings { border-top: 1px solid var(--line); }
 .settings-title { display: flex; justify-content: space-between; margin-bottom: 13px; color: #b8c0bc; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .settings-title b { color: var(--acid); font-size: 10px; font-weight: 500; }
-.ai-settings .field-label { display: block; margin: 10px 0 5px; color: #8f989f; font-size: 10px; letter-spacing: .04em; }
-.ai-settings input, .ai-settings select { width: 100%; height: 32px; margin: 0; padding: 0 8px; border: 1px solid #3c3c3c; border-radius: 4px; outline: 0; color: #c7c7c7; background: #252526; font: 11px "Cascadia Code", monospace; }
-.ai-settings input:focus, .ai-settings select:focus { border-color: #496b89; }
+.ai-settings .field-label, .autosave-settings .field-label { display: block; margin: 10px 0 5px; color: #8f989f; font-size: 10px; letter-spacing: .04em; }
+.ai-settings input, .ai-settings select, .autosave-settings input, .autosave-settings select { width: 100%; height: 32px; margin: 0; padding: 0 8px; border: 1px solid #3c3c3c; border-radius: 4px; outline: 0; color: #c7c7c7; background: #252526; font: 11px "Cascadia Code", monospace; }
+.ai-settings input:focus, .ai-settings select:focus, .autosave-settings input:focus, .autosave-settings select:focus { border-color: #496b89; }
 .settings-actions { display: flex; gap: 6px; margin-top: 10px; }
 .settings-actions button { flex: 1; min-height: 30px; border: 1px solid #456985; border-radius: 4px; color: #d2d9df; background: #243544; font-size: 10px; }
 .settings-actions button:disabled { opacity: .4; }
@@ -335,12 +432,66 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .status-mode { display: flex; gap: 5px; align-items: center; color: #8fb3d3; }
 .status-spacer { flex: 1; }
 
-.command-backdrop { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: center; padding-top: 75px; background: #02030480; backdrop-filter: blur(3px); }
-.command-palette { width: min(540px, calc(100vw - 40px)); height: fit-content; overflow: hidden; border: 1px solid #394448; border-radius: 10px; background: #121719; box-shadow: 0 24px 90px #000c; }
-.command-input { display: flex; gap: 9px; align-items: center; height: 43px; padding: 0 13px; border-bottom: 1px solid #383838; color: #7e898f; font-size: 12px; }
-.command-palette > button { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; width: calc(100% - 10px); height: 36px; margin: 5px; padding: 0 9px; border: 0; border-radius: 5px; color: #b1bab5; background: transparent; font-size: 11px; text-align: left; }
-.command-palette > button:hover { color: #e1e6e2; background: #263029; }
-.command-palette > button:disabled { opacity: .35; }
+.picker-backdrop { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: center; padding-top: 72px; background: #0203048c; backdrop-filter: blur(3px); }
+.workbench-picker { width: min(610px, calc(100vw - 40px)); max-height: min(560px, calc(100vh - 110px)); overflow: hidden; border: 1px solid #3a4648; border-radius: 9px; background: #111617; box-shadow: 0 28px 100px #000d, 0 0 0 1px #b9cf5520; }
+.picker-input-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 48px; padding: 0 13px; border-bottom: 1px solid #2a3436; color: #8d999b; }
+.picker-input-row input { width: 100%; border: 0; outline: 0; color: #e3e8e4; background: transparent; font: 13px "Cascadia Code", monospace; }
+.picker-input-row input::placeholder { color: #667174; }
+.picker-results { max-height: 455px; overflow: auto; padding: 5px; }
+.picker-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; min-height: 42px; padding: 6px 9px; border: 0; border-radius: 5px; color: #c1cbc5; background: transparent; text-align: left; }
+.picker-result[aria-selected="true"] { color: #f0f3ef; background: #29352b; box-shadow: inset 2px 0 var(--acid); }
+.picker-result[data-disabled] { opacity: .38; }
+.picker-result-copy { display: grid; min-width: 0; gap: 2px; }
+.picker-result-copy strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.picker-result-copy > span { overflow: hidden; color: #7f8c8d; font: 10px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.picker-result mark { color: var(--acid); background: transparent; font-weight: 700; }
+.picker-state { padding: 28px 12px; color: #7d898a; font-size: 11px; text-align: center; }
+.picker-footer { min-height: 29px; padding: 7px 13px; border-top: 1px solid #252e30; color: #6e797b; font: 9px "Cascadia Code", monospace; }
+.modal-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; padding: 28px; background: #020304b8; backdrop-filter: blur(4px); }
+.safety-dialog, .external-change-dialog { width: min(560px, calc(100vw - 40px)); overflow: hidden; border: 1px solid #4a4540; border-radius: 9px; background: #121719; box-shadow: 0 28px 100px #000e; }
+.safety-dialog-heading { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; padding: 18px; border-bottom: 1px solid #302f2b; color: var(--warm); }
+.safety-dialog-heading div, .external-change-copy { display: grid; gap: 4px; }
+.safety-dialog-heading span, .external-change-copy span { color: #8b9694; font: 9px "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.safety-dialog-heading strong, .external-change-copy strong { color: #e3e8e4; font: 18px Georgia, serif; font-weight: 500; }
+.safety-dialog ul { max-height: 180px; overflow: auto; margin: 0; padding: 12px 34px; color: #aeb8b3; font: 10px "Cascadia Code", monospace; }
+.safety-dialog > p { margin: 0; padding: 0 18px 12px; color: #818c89; font-size: 10px; }
+.safety-dialog .form-error { color: #df8f75; }
+.safety-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #293133; }
+.safety-dialog-actions button { display: inline-flex; gap: 6px; align-items: center; min-height: 31px; padding: 0 11px; border: 1px solid #354043; border-radius: 5px; color: #aeb8b3; background: #151b1d; font-size: 10px; }
+.safety-dialog-actions button:hover { border-color: #566164; color: #edf1ee; }
+.safety-dialog-actions .primary-button { border-color: #65713d; color: #e9efbf; background: #2a321c; }
+.external-change-dialog { width: min(980px, calc(100vw - 40px)); }
+.external-change-copy { padding: 16px 18px; border-bottom: 1px solid #293133; }
+.external-change-copy p { margin: 4px 0 0; color: #8d9895; font-size: 11px; line-height: 1.5; }
+.external-diff { height: min(480px, 55vh); }
+.safe-rename-dialog { width: min(820px, calc(100vw - 40px)); }
+.safe-rename-dialog > header { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 0 12px; border-bottom: 1px solid #293133; color: #85926a; }
+.safe-rename-dialog > header div { display: flex; gap: 7px; align-items: center; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+.safe-rename-dialog > header button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 4px; color: #7f8a86; background: transparent; }
+.safe-rename-title-row { display: flex; align-items: end; justify-content: space-between; padding: 16px 18px 11px; }
+.safe-rename-title-row span { color: var(--warm); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.safe-rename-title-row h2 { margin: 4px 0 0; color: #e2e7e3; font: 20px Georgia, serif; font-weight: 500; }
+.safe-rename-title-row > b { color: #9dad6e; font: 9px "Cascadia Code", monospace; }
+.safe-rename-dialog > form { display: grid; gap: 5px; padding: 0 18px 14px; }
+.safe-rename-dialog > form label { color: #89958f; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.safe-rename-dialog > form input { height: 34px; padding: 0 9px; border: 1px solid #374145; border-radius: 5px; outline: 0; color: #dce2de; background: #0e1214; font: 12px "Cascadia Code", monospace; }
+.safe-rename-dialog > form input:focus { border-color: #71804a; }
+.safe-rename-error { max-height: 80px; margin: 0 18px 12px; padding: 8px; overflow: auto; border: 1px solid #654335; border-radius: 5px; color: #d19a7a; background: #211613; font: 9px/1.5 "Cascadia Code", monospace; white-space: pre-wrap; }
+.safe-rename-files { max-height: min(430px, 50vh); overflow: auto; border-top: 1px solid #293133; border-bottom: 1px solid #293133; }
+.safe-rename-files article { border-bottom: 1px solid #232b2e; }
+.safe-rename-files article > label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 34px; padding: 0 12px; color: #aab4af; background: #101517; }
+.safe-rename-files article > label span { overflow: hidden; font: 9px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.safe-rename-files article > label b { color: #89965f; font: 8px "Cascadia Code", monospace; }
+.safe-rename-files input { accent-color: #adbd5e; }
+.safe-rename-occurrence { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 7px; padding: 5px 12px; font: 9px/1.45 "Cascadia Code", monospace; }
+.safe-rename-occurrence > span { grid-row: span 2; color: #69754d; text-align: right; }
+.safe-rename-occurrence del, .safe-rename-occurrence ins { overflow: hidden; padding: 2px 5px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.safe-rename-occurrence del { color: #bf8067; background: #3a1d1850; }
+.safe-rename-occurrence ins { color: #b3c18c; background: #24321d66; }
+.safe-rename-dialog > footer { display: flex; gap: 7px; justify-content: flex-end; padding: 12px 16px; }
+.safe-rename-dialog > footer button { min-height: 31px; padding: 0 11px; border: 1px solid #354043; border-radius: 5px; color: #aeb8b3; background: #151b1d; font-size: 10px; }
+.safe-rename-dialog > footer button.primary { border-color: #65713d; color: #e9efbf; background: #2a321c; }
+.safe-rename-dialog button:disabled { opacity: .45; }
 
 .explorer-heading { gap: 8px; }
 .panel-actions { display: flex; align-items: center; margin-left: auto; }
@@ -351,19 +502,61 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .entry-form { display: flex; gap: 6px; align-items: center; height: 27px; margin: 2px 7px 5px; padding: 0 7px; border: 1px solid #657548; border-radius: 4px; color: var(--warm); background: #252526; }
 .entry-form input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; color: #d4dbd6; background: transparent; font-size: 11px; }
 
-.search-form { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; height: 34px; margin: 10px; padding: 0 8px; border: 1px solid #3c3c3c; border-radius: 6px; color: #68747a; background: #252526; }
-.search-form:focus-within { border-color: #496b89; box-shadow: 0 0 0 1px #496b8944; }
-.search-form input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font-family: "Avenir Next", sans-serif; font-size: 11px; }
-.search-form input::placeholder { color: #59646a; }
-.search-form kbd { padding: 2px 4px; border: 1px solid #2b3438; border-radius: 3px; color: #647076; font: 8px "Cascadia Code", monospace; }
-.search-results { height: calc(100% - 97px); overflow: auto; border-top: 1px solid #2a2d2e; }
+.search-panel { display: flex; flex-direction: column; }
+.search-controls { display: grid; gap: 6px; padding: 9px; }
+.search-query-row { display: grid; grid-template-columns: 27px minmax(0, 1fr); gap: 5px; }
+.search-query-row > button, .search-option-row button, .search-input-wrap button { display: grid; place-items: center; min-width: 27px; height: 30px; padding: 0 5px; border: 1px solid #303a3f; border-radius: 5px; color: #768188; background: #111619; font: 9px "Cascadia Code", monospace; }
+.search-query-row > button:hover, .search-option-row button:hover, .search-query-row button[data-active="true"], .search-option-row button[data-active="true"] { border-color: #667343; color: var(--acid); background: #1b2119; }
+.search-input-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; height: 30px; padding-left: 8px; border: 1px solid #303a3f; border-radius: 5px; color: #68747a; background: #111619; }
+.search-input-wrap:focus-within, .replace-input-row input:focus, .search-globs input:focus { border-color: #687548; box-shadow: 0 0 0 1px #68754844; }
+.search-input-wrap input, .replace-input-row input, .search-globs input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font: 11px "Avenir Next", sans-serif; }
+.search-input-wrap button { min-width: 24px; height: 28px; border: 0; background: transparent; }
+.replace-input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+.replace-input-row input, .search-globs input { height: 30px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 5px; background: #111619; }
+.replace-input-row button, .search-summary button { padding: 0 8px; border: 1px solid #596640; border-radius: 5px; color: #d2ddad; background: #242c1f; font-size: 9px; }
+.replace-input-row button:disabled, .search-summary button:disabled { opacity: .4; }
+.search-option-row { display: flex; gap: 4px; }
+.search-option-row button:last-child { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-globs { color: #717d82; font-size: 9px; }
+.search-globs summary { padding: 3px 1px; cursor: default; }
+.search-globs[open] { display: grid; gap: 5px; }
+.search-results { min-height: 0; flex: 1; overflow: auto; border-top: 1px solid #171d20; }
 .panel-message { padding: 22px 16px; color: #6d787e; font-family: "Avenir Next", sans-serif; font-size: 10px; line-height: 1.55; text-align: center; }
 .panel-message.compact { padding: 16px; }
-.search-result { position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 9px 38px 9px 12px; overflow: hidden; border: 0; border-bottom: 1px solid #2a2d2e; background: transparent; text-align: left; cursor: default; }
-.search-result:hover { background: #161c1e; }
-.result-path { overflow: hidden; color: #b0bab5; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.result-preview { overflow: hidden; color: #6f7b80; font: 9px "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.result-location { position: absolute; right: 8px; top: 10px; color: #67734f; font: 8px "Cascadia Code", monospace; }
+.search-error, .search-error-detail { margin: 8px; padding: 8px; border: 1px solid #654335; border-radius: 5px; color: #d19a7a; background: #211613; font: 10px/1.45 "Avenir Next", sans-serif; }
+.search-error-detail { margin-top: 0; overflow-wrap: anywhere; color: #b9856d; font: 8px/1.45 "Cascadia Code", monospace; }
+.search-summary { display: flex; align-items: center; justify-content: space-between; min-height: 31px; padding: 0 9px; border-bottom: 1px solid #20272a; color: #839088; font-size: 9px; }
+.search-summary button { min-height: 22px; }
+.search-file-group { border-bottom: 1px solid #20272a; }
+.search-file-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; min-height: 31px; padding: 0 6px; background: #101416; }
+.search-file-heading > button { display: flex; gap: 5px; align-items: center; min-width: 0; height: 28px; padding: 0 4px; border: 0; color: #aeb8b3; background: transparent; text-align: left; }
+.search-file-heading > button span { flex: 1; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.search-file-heading > button b { color: #899664; font: 8px "Cascadia Code", monospace; }
+.search-file-heading > button:last-child { display: grid; place-items: center; width: 24px; color: #82905a; }
+.search-file-heading input, .search-match > input { accent-color: #aebd5d; }
+.search-match { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; padding: 2px 6px; }
+.search-match:hover { background: #151a1d; }
+.search-match > input { margin-top: 9px; }
+.search-match-open { position: relative; display: grid; gap: 4px; min-width: 0; padding: 6px 38px 6px 5px; overflow: hidden; border: 0; color: #7d888d; background: transparent; font: 9px "Cascadia Code", monospace; text-align: left; }
+.search-match-open > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-open > b { position: absolute; top: 7px; right: 4px; color: #758052; font-size: 8px; }
+.search-match-open small { display: grid; gap: 2px; min-width: 0; }
+.search-match-open del, .search-match-open ins { overflow: hidden; padding: 2px 4px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.search-match-open del { color: #ba8069; background: #3a1d185c; }
+.search-match-open ins { color: #aebe83; background: #23321d7a; }
+.search-match > button:last-child { display: grid; place-items: center; width: 22px; height: 24px; margin-top: 3px; border: 0; border-radius: 4px; color: #7c8956; background: transparent; }
+.search-match > button:last-child:hover { color: var(--acid); background: #222a1d; }
+
+.outline-panel { display: flex; flex-direction: column; }
+.outline-search { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; align-items: center; height: 31px; margin: 9px; padding: 0 8px; border: 1px solid #303a3f; border-radius: 5px; color: #68747a; background: #111619; }
+.outline-search:focus-within { border-color: #687548; }
+.outline-search input { min-width: 0; border: 0; outline: 0; color: #cbd2ce; background: transparent; font-size: 11px; }
+.outline-symbols { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid #171d20; }
+.outline-symbols > button { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; width: 100%; min-height: 27px; padding-top: 5px; padding-right: 34px; padding-bottom: 5px; border: 0; color: #aeb8b3; background: transparent; text-align: left; }
+.outline-symbols > button:hover { background: #161c1e; }
+.outline-symbols > button span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.outline-symbols > button small { color: #68757a; font-size: 8px; }
+.outline-symbols > button b { position: absolute; top: 7px; right: 8px; color: #748052; font: 8px "Cascadia Code", monospace; }
 
 .branch-summary { display: grid; grid-template-columns: auto 1fr; gap: 4px 7px; align-items: center; margin: 11px; padding: 11px; border: 1px solid #2a3431; border-radius: 7px; color: var(--acid); background: #242424; }
 .branch-summary strong { overflow: hidden; color: #c9d1cc; font-size: 11px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
@@ -726,6 +919,97 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .auth-notice { display: flex; gap: 8px; align-items: center; border: 1px solid #4b5937; color: #b8c58d; background: #192016; }
 .auth-error { border: 1px solid #654335; color: #d19a7a; background: #211613; }
 
+.titlebar-home { -webkit-app-region: no-drag; width: max-content; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.titlebar-home svg { color: #7f8984; }
+
+.launcher-screen, .classroom-portal { width: 100%; height: 100%; color: #d3d9d4; background: #0a0d0c; }
+.launcher-screen { position: relative; display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; isolation: isolate; }
+.launcher-atmosphere { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.launcher-atmosphere::before { position: absolute; inset: 0; content: ""; opacity: .38; background-image: linear-gradient(#273027 1px, transparent 1px), linear-gradient(90deg, #273027 1px, transparent 1px); background-size: 56px 56px; mask-image: linear-gradient(to bottom, transparent 5%, #000 54%, transparent 98%); }
+.launcher-atmosphere span { position: absolute; border-radius: 50%; filter: blur(100px); opacity: .13; }
+.launcher-atmosphere span:nth-child(1) { width: 430px; height: 430px; top: 18%; left: 12%; background: #b6d64d; }
+.launcher-atmosphere span:nth-child(2) { width: 380px; height: 380px; right: 9%; bottom: 4%; background: #d79257; }
+.launcher-atmosphere span:nth-child(3) { width: 240px; height: 240px; top: -90px; right: 30%; background: #7a9b78; }
+.launcher-header, .portal-titlebar { -webkit-app-region: drag; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 142px 0 28px; border-bottom: 1px solid #202720; background: rgba(10, 13, 12, .88); }
+.launcher-brand, .portal-brand { display: flex; gap: 10px; align-items: center; color: #dfe6d8; font-size: 13px; letter-spacing: .02em; }
+.launcher-worm { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
+.launcher-worm i { display: block; width: 4px; border-radius: 3px 3px 1px 1px; background: #c3dd57; }
+.launcher-worm i:nth-child(1) { height: 7px; }.launcher-worm i:nth-child(2) { height: 12px; }.launcher-worm i:nth-child(3) { height: 16px; }
+.launcher-account, .portal-account { -webkit-app-region: no-drag; display: flex; gap: 16px; align-items: center; color: #7f8b84; font-size: 11px; }
+.launcher-account button, .portal-account button, .portal-back { display: inline-flex; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid #303932; border-radius: 5px; color: #a9b4ad; background: #121713; cursor: pointer; }
+.launcher-content { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(580px, 1.28fr); gap: clamp(42px, 7vw, 112px); align-items: center; width: min(1370px, calc(100% - 96px)); margin: 0 auto; }
+.launcher-intro { max-width: 510px; }
+.launcher-kicker, .portal-overline { display: flex; gap: 7px; align-items: center; color: #bdd454; font: 700 10px/1.3 "Cascadia Code", monospace; letter-spacing: .13em; text-transform: uppercase; }
+.launcher-intro h1 { margin: 18px 0 20px; color: #f0f2ed; font: 500 clamp(45px, 5vw, 76px)/.95 Georgia, serif; letter-spacing: -.045em; }
+.launcher-intro p { max-width: 470px; margin: 0; color: #8d9992; font: 15px/1.75 "Avenir Next", system-ui, sans-serif; }
+.launcher-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.launcher-card { position: relative; display: flex; flex-direction: column; min-height: 410px; padding: 24px; overflow: hidden; border: 1px solid #303a31; border-radius: 10px; color: inherit; background: linear-gradient(155deg, #151a16, #0f1311 70%); text-align: left; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
+.launcher-card::after { position: absolute; right: -60px; bottom: -85px; width: 220px; height: 220px; border: 1px solid #4a5847; border-radius: 50%; content: ""; opacity: .35; }
+.launcher-card:hover { transform: translateY(-4px); border-color: #7b8d50; background: linear-gradient(155deg, #1b211a, #111612 70%); }
+.launcher-card-classrooms:hover { border-color: #9a704c; }
+.launcher-card-index { color: #778279; font: 9px "Cascadia Code", monospace; letter-spacing: .12em; }
+.launcher-card-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-top: 62px; border: 1px solid #4b5840; border-radius: 8px; color: #c5db65; background: #20271c; }
+.launcher-card-classrooms .launcher-card-icon { border-color: #5d4635; color: #dda16a; background: #281d17; }
+.launcher-card h2 { margin: 22px 0 12px; color: #e9eee7; font: 500 31px/1.05 Georgia, serif; }
+.launcher-card p { margin: 0; color: #8d9991; font: 12px/1.7 "Avenir Next", system-ui, sans-serif; }
+.launcher-card-meta { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 28px; color: #b9c5b7; font-size: 11px; }
+
+.classroom-portal { display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; }
+.portal-titlebar { display: grid; grid-template-columns: 1fr auto 1fr; }
+.portal-back { -webkit-app-region: no-drag; justify-self: start; padding: 6px 9px; }
+.portal-account { justify-self: end; }
+.portal-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 0; }
+.portal-sidebar { min-height: 0; padding: 24px 16px; overflow-y: auto; border-right: 1px solid #202720; background: #0c100e; }
+.portal-sidebar-heading, .portal-sidebar-heading > div, .portal-actions, .portal-group-label, .portal-section-heading, .portal-classroom-stats, .portal-invite-card > div:last-child { display: flex; align-items: center; }
+.portal-sidebar-heading { justify-content: space-between; margin-bottom: 14px; }
+.portal-sidebar-heading > div { gap: 8px; color: #aab5ae; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.portal-sidebar-heading b, .portal-group-label b { color: #c1d369; font: 10px "Cascadia Code", monospace; }
+.portal-sidebar-heading button { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid #2c352e; border-radius: 5px; color: #849087; background: #111613; }
+.portal-actions { gap: 7px; margin-bottom: 24px; }
+.portal-actions button { display: flex; flex: 1; gap: 6px; align-items: center; justify-content: center; min-height: 34px; border: 1px solid #3c4836; border-radius: 5px; color: #bdc9b6; background: #171d16; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.portal-error { margin: -12px 0 18px; padding: 9px; border: 1px solid #684335; border-radius: 5px; color: #d5a182; background: #211511; font-size: 11px; line-height: 1.5; }
+.portal-classroom-group { margin-top: 22px; }
+.portal-group-label { justify-content: space-between; padding: 0 7px 8px; color: #728078; font-size: 9px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.portal-classroom-group > button { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; width: 100%; min-height: 54px; padding: 8px; border: 1px solid transparent; border-radius: 7px; color: #aeb8b1; background: transparent; text-align: left; }
+.portal-classroom-group > button:hover, .portal-classroom-group > button[aria-current="page"] { border-color: #394438; background: #161c17; }
+.portal-classroom-group > button > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 7px; color: #c0d16a; background: #232b1e; font: 10px "Cascadia Code", monospace; }
+.portal-classroom-group b, .portal-classroom-group small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-classroom-group b { color: #c4cdc6; font-size: 12px; }.portal-classroom-group small { margin-top: 4px; color: #748078; font-size: 10px; }
+.portal-sidebar-empty { padding: 38px 8px; color: #647069; text-align: center; }.portal-sidebar-empty p { margin: 9px 0 0; font-size: 11px; }
+.portal-main { min-width: 0; min-height: 0; overflow: auto; background: radial-gradient(circle at 80% 4%, rgba(162, 118, 75, .09), transparent 32%), #0a0d0c; }
+.portal-classroom { min-height: 100%; }
+.portal-classroom-header { display: flex; gap: 36px; align-items: flex-end; justify-content: space-between; min-height: 225px; padding: 54px clamp(32px, 6vw, 88px) 38px; border-bottom: 1px solid #252d27; }
+.portal-classroom-header h1, .portal-form h1, .portal-empty h1 { margin: 13px 0 10px; color: #edf0ea; font: 500 45px/1 Georgia, serif; letter-spacing: -.025em; }
+.portal-classroom-header p { max-width: 680px; margin: 0; color: #89958e; font: 13px/1.65 "Avenir Next", system-ui, sans-serif; }
+.portal-classroom-stats { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.portal-classroom-stats span { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border: 1px solid #303a31; border-radius: 5px; color: #89958d; background: #111613; font-size: 10px; white-space: nowrap; }.portal-classroom-stats b { color: #c5d36f; }
+.portal-tabs { display: flex; gap: 28px; height: 50px; padding: 0 clamp(32px, 6vw, 88px); border-bottom: 1px solid #212821; }
+.portal-tabs button { position: relative; border: 0; color: #78857d; background: transparent; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }.portal-tabs button[aria-selected="true"] { color: #ced7cd; }.portal-tabs button[aria-selected="true"]::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; content: ""; background: #bfd557; }
+.portal-tab-content { padding: 34px clamp(32px, 6vw, 88px) 70px; }
+.portal-section-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 24px; align-items: start; }
+.portal-section-grid-single { grid-template-columns: minmax(0, 1fr); }
+.portal-section-main, .portal-invite-card, .portal-people-group { border: 1px solid #2c352e; border-radius: 8px; background: #101512; }
+.portal-section-heading { gap: 24px; justify-content: space-between; padding: 19px 20px; border-bottom: 1px solid #282f29; }.portal-section-heading span { color: #6f7b74; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; }.portal-section-heading h2 { margin: 4px 0 0; color: #d7ddd7; font: 500 23px Georgia, serif; }
+.portal-accent-button, .portal-assignment-grid article button, .portal-primary, .portal-invite-card button { display: inline-flex; gap: 6px; align-items: center; justify-content: center; border: 1px solid #58663e; border-radius: 5px; color: #d2dfaf; background: #273020; font-size: 10px; font-weight: 700; }
+.portal-assignment-actions { display: flex; gap: 7px; align-items: center; }.portal-secondary-button { display: inline-flex; gap: 6px; align-items: center; min-height: 34px; padding: 0 11px; border: 1px solid #3b463e; border-radius: 5px; color: #adb8b0; background: #171d19; font-size: 10px; font-weight: 700; }.portal-secondary-button:disabled { opacity: .45; }
+.portal-accent-button { min-height: 34px; padding: 0 11px; }.portal-accent-button:disabled { opacity: .4; }
+.portal-assignment-grid { display: grid; }
+.portal-assignment-grid article { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 82px; padding: 15px 20px; border-bottom: 1px solid #232b24; }.portal-assignment-grid article:last-child { border-bottom: 0; }
+.portal-assignment-number { color: #7d8a6f; font: 10px "Cascadia Code", monospace; }.portal-assignment-grid h3 { margin: 0; color: #c9d2cb; font-size: 13px; }.portal-assignment-grid time { display: block; margin-top: 6px; color: #707c75; font: 9px "Cascadia Code", monospace; }.portal-assignment-grid article button { min-height: 32px; padding: 0 10px; }
+.portal-section-empty { padding: 55px 20px; color: #6c7871; text-align: center; }.portal-section-empty p { margin: 9px 0 0; font-size: 11px; }
+.portal-invite-card { padding: 20px; }.portal-invite-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 28px; border-radius: 7px; color: #c5d65f; background: #232b1e; }.portal-invite-card > span { color: #778279; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }.portal-invite-card h3 { margin: 9px 0 19px; color: #d4dbd3; font: 500 21px Georgia, serif; }.portal-invite-card code { display: block; padding: 10px; overflow: hidden; border: 1px solid #2e3830; border-radius: 5px; color: #aebe75; background: #0b0f0c; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.portal-invite-card > div:last-child { gap: 7px; margin-top: 9px; }.portal-invite-card button { flex: 1; min-height: 31px; }
+.portal-people { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }.portal-people > .portal-section-heading { grid-column: 1 / -1; padding: 0 0 10px; border: 0; }.portal-people-group { overflow: hidden; }.portal-people-group > header { display: flex; align-items: center; justify-content: space-between; padding: 15px 17px; border-bottom: 1px solid #293129; }.portal-people-group h3 { margin: 0; color: #bbc5bd; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }.portal-people-group header span { color: #c3d36c; font: 10px "Cascadia Code", monospace; }.portal-people-group > p { padding: 22px 17px; color: #707c75; font-size: 11px; }.portal-people-group article { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 11px; align-items: center; min-height: 61px; padding: 10px 17px; border-bottom: 1px solid #242b25; }.portal-people-group article > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: #c4d071; background: #242c20; font-size: 11px; }.portal-people-group article b, .portal-people-group article small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.portal-people-group article b { color: #c9d1cb; font-size: 13px; }.portal-people-group article small { margin-top: 4px; color: #89968e; font-size: 11px; }
+.portal-people-group article { grid-template-columns: 38px minmax(0, 1fr) auto; }.portal-people-group article > button { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #513b33; border-radius: 5px; color: #c39179; background: #211613; }.portal-people-group article > button:disabled { opacity: .4; }
+.portal-add-student { display: flex; gap: 7px; }.portal-add-student input { width: 220px; height: 34px; padding: 0 9px; border: 1px solid #38433a; border-radius: 5px; outline: 0; color: #d1d8d2; background: #0b0f0c; font-size: 11px; }.portal-add-student button { display: inline-flex; gap: 6px; align-items: center; min-height: 34px; padding: 0 10px; border: 1px solid #52603f; border-radius: 5px; color: #cbd8ac; background: #242d1e; font-size: 10px; font-weight: 700; }.portal-add-student button:disabled { opacity: .4; }
+.portal-leave-class { grid-column: 1 / -1; display: flex; gap: 24px; align-items: center; justify-content: space-between; margin-top: 10px; padding: 18px; border: 1px solid #49362f; border-radius: 7px; background: #15110f; }.portal-leave-class h3 { margin: 0 0 5px; color: #c8b8ae; font-size: 12px; }.portal-leave-class p { margin: 0; color: #897a72; font-size: 10px; line-height: 1.5; }.portal-leave-class button { display: inline-flex; gap: 6px; align-items: center; min-height: 33px; padding: 0 10px; border: 1px solid #654638; border-radius: 5px; color: #d1a58e; background: #241713; font-size: 10px; white-space: nowrap; }
+.portal-empty, .portal-form-shell { display: grid; place-items: center; min-height: 100%; padding: 40px; }.portal-empty { color: #68746c; text-align: center; }.portal-empty h1 { font-size: 34px; }.portal-empty p { margin: 0; font-size: 12px; }
+.portal-form { position: relative; display: grid; gap: 16px; width: min(520px, 100%); padding: 35px; border: 1px solid #303a31; border-radius: 10px; background: #111613; box-shadow: 0 24px 80px #0007; }.portal-form h1 { margin: 8px 0 0; font-size: 35px; }.portal-form > p { margin: -8px 0 5px; color: #829087; font-size: 12px; line-height: 1.6; }.portal-form label { display: grid; gap: 7px; color: #8d9991; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.portal-form input, .portal-form textarea { width: 100%; padding: 10px; border: 1px solid #39433a; border-radius: 5px; outline: 0; color: #d3dbd4; background: #0b0f0c; font-size: 12px; text-transform: none; }.portal-form input { height: 39px; }.portal-form textarea { min-height: 105px; resize: vertical; }.portal-form-close { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 30px; height: 30px; border: 0; color: #7b877f; background: transparent; }.portal-primary { min-height: 39px; margin-top: 3px; }.portal-primary:disabled { opacity: .45; }
+.portal-settings { max-width: 760px; }.portal-settings > .portal-section-heading { padding-right: 0; padding-left: 0; border: 0; }.portal-settings-card { margin-top: 12px; padding: 24px; border: 1px solid #2e3830; border-radius: 8px; background: #101512; }.portal-settings-card > div:first-child { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 13px; align-items: start; }.portal-settings-card > div:first-child > svg { box-sizing: content-box; padding: 11px; border-radius: 7px; color: #c2d260; background: #232b1e; }.portal-settings-card h3 { margin: 2px 0 6px; color: #d1d9d2; font-size: 14px; }.portal-settings-card p { margin: 0; color: #7f8c84; font-size: 11px; line-height: 1.6; }.portal-settings-card code { display: block; margin: 22px 0 10px; padding: 11px; overflow: hidden; border: 1px solid #303a31; border-radius: 5px; color: #adbf74; background: #0a0e0b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.portal-settings-card > div:last-child { display: flex; gap: 8px; }.portal-settings-card button { display: inline-flex; gap: 6px; align-items: center; min-height: 33px; padding: 0 11px; border: 1px solid #46523d; border-radius: 5px; color: #bac7b1; background: #1a2119; font-size: 10px; }.portal-settings-card button:disabled { opacity: .45; }.portal-settings-unavailable { margin-top: 20px !important; color: #bb967e !important; }
+.portal-details-form { display: grid; gap: 14px; }.portal-details-form label { display: grid; gap: 6px; color: #89958d; font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }.portal-details-form input, .portal-details-form textarea { width: 100%; padding: 9px 10px; border: 1px solid #39433a; border-radius: 5px; outline: 0; color: #d3dbd4; background: #0b0f0c; font-size: 12px; text-transform: none; }.portal-details-form input { height: 38px; }.portal-details-form textarea { min-height: 82px; resize: vertical; }.portal-details-form input:focus, .portal-details-form textarea:focus { border-color: #657445; }.portal-details-form > button { width: max-content; }
+.titlebar-workspace > span { margin-right: 8px; padding: 2px 5px; border: 1px solid #364033; border-radius: 3px; color: #aebc73; font: 8px "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.portal-mastery-state { display: grid; justify-items: center; padding: 90px 24px; color: #748078; text-align: center; }.portal-mastery-state h2 { margin: 13px 0 5px; color: #cbd3cc; font: 500 24px Georgia, serif; }.portal-mastery-state p { margin: 0; font-size: 11px; }
+.portal-mastery { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; align-items: start; }.portal-sync-notice { grid-column: 1 / -1; padding: 9px 12px; border: 1px solid #66513d; border-radius: 5px; color: #c6a883; background: #1c1611; font-size: 10px; }.portal-mastery-students { display: grid; gap: 5px; padding: 12px; border: 1px solid #2d362f; border-radius: 7px; background: #101512; }.portal-mastery-students > span { padding: 3px 5px 8px; color: #718078; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }.portal-mastery-students button { display: block; padding: 10px; border: 1px solid transparent; border-radius: 5px; color: #98a39c; background: transparent; text-align: left; }.portal-mastery-students button[aria-current="true"] { border-color: #46523d; background: #1a2118; }.portal-mastery-students b, .portal-mastery-students small { display: block; }.portal-mastery-students b { color: #c2cbc4; font-size: 11px; }.portal-mastery-students small { margin-top: 4px; color: #738078; font-size: 9px; }
+.portal-mastery-detail { overflow: hidden; border: 1px solid #2d362f; border-radius: 8px; background: #101512; }.portal-mastery-detail > header { display: flex; align-items: center; justify-content: space-between; padding: 22px; border-bottom: 1px solid #293129; }.portal-mastery-detail h2 { margin: 8px 0 0; color: #d8dfd9; font: 500 27px Georgia, serif; }.portal-mastery-detail > header > strong { color: #c6d963; font: 500 38px Georgia, serif; }.portal-mastery-detail > header > strong small { font-size: 15px; }.portal-mastery-concepts { display: grid; gap: 1px; padding: 10px 22px; }.portal-mastery-concepts article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 13px 0; border-bottom: 1px solid #242c25; }.portal-mastery-concepts b, .portal-mastery-concepts small { display: block; }.portal-mastery-concepts b { color: #c5cec7; font-size: 12px; }.portal-mastery-concepts small { margin-top: 4px; color: #7d8982; font-size: 10px; }.portal-mastery-concepts article > span { color: #bbc971; font: 11px "Cascadia Code", monospace; }.portal-mastery-concepts i { grid-column: 1 / -1; height: 3px; overflow: hidden; border-radius: 2px; background: #252d26; }.portal-mastery-concepts em { display: block; height: 100%; background: #b9cf58; }.portal-mastery-events { padding: 17px 22px 22px; border-top: 1px solid #293129; }.portal-mastery-events h3 { margin: 0 0 9px; color: #78857d; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }.portal-mastery-events article { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 48px; border-bottom: 1px solid #232a24; }.portal-mastery-events svg { color: #9ba966; }.portal-mastery-events svg[data-passed="false"] { color: #b98268; }.portal-mastery-events b, .portal-mastery-events time { display: block; }.portal-mastery-events b { color: #bfc8c1; font-size: 11px; }.portal-mastery-events time { margin-top: 3px; color: #6f7b74; font-size: 9px; }.portal-mastery-events strong { color: #b7c56f; font: 10px "Cascadia Code", monospace; }
 .classroom-panel { background: #1e1e1e; }
 .classroom-scroll { height: calc(100% - 42px); overflow-y: auto; scrollbar-color: #34403b transparent; scrollbar-width: thin; }
 .classroom-account { display: grid; grid-template-columns: 28px minmax(0, 1fr) 24px; gap: 8px; align-items: center; padding: 10px 11px; border-bottom: 1px solid #202824; }
@@ -775,6 +1059,11 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 
 @media (max-width: 1180px) {
   .titlebar-brand b { display: none; }
+  .launcher-content { grid-template-columns: 1fr; align-content: center; max-width: 850px; }
+  .launcher-intro h1 br { display: none; }
+  .launcher-intro h1 { font-size: 48px; }
+  .launcher-card { min-height: 310px; }.launcher-card-icon { margin-top: 30px; }
+  .portal-section-grid { grid-template-columns: 1fr; }.portal-invite-card { max-width: 440px; }
 }
 
 @media (max-width: 900px) {
@@ -783,6 +1072,9 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
   .assignment-studio-backdrop { padding: 12px; }
   .assignment-studio { width: calc(100vw - 24px); }
   .guardrail-grid { grid-template-columns: 1fr; }
+  .launcher-header, .portal-titlebar { padding-right: 90px; padding-left: 16px; }
+  .launcher-content { width: calc(100% - 36px); }.launcher-destinations { grid-template-columns: 1fr; overflow-y: auto; }.launcher-card { min-height: 250px; }
+  .portal-layout { grid-template-columns: 230px minmax(0, 1fr); }.portal-classroom-header { align-items: flex-start; flex-direction: column; }.portal-people, .portal-mastery { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

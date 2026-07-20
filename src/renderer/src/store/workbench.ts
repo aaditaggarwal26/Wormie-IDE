@@ -1,9 +1,15 @@
 import { create } from 'zustand'
-import type { CodeProposal, OpenFile, WorkspaceSnapshot } from '@shared/contracts'
+import type { AutosaveSettings, CodeProposal, FileViewState, OpenFile, WorkspaceSnapshot } from '@shared/contracts'
 import { languageForPath, resolveProposalPath } from '../components/proposalReviewModel'
 
 export type EditorDocument = OpenFile & {
   savedContent: string
+  view: FileViewState
+}
+
+export type ExternalFileChange = {
+  kind: 'changed' | 'deleted'
+  diskFile: OpenFile | null
 }
 
 export type ProposalReviewFile = {
@@ -23,7 +29,7 @@ export type ProposalReview = {
   files: ProposalReviewFile[]
 }
 
-type Activity = 'explorer' | 'search' | 'sourceControl' | 'classrooms' | 'assignments' | 'learning' | 'settings'
+type Activity = 'explorer' | 'search' | 'outline' | 'sourceControl' | 'assignments' | 'settings'
 type BottomView = 'problems' | 'output' | 'terminal' | 'quiz'
 
 type WorkbenchState = {
@@ -38,16 +44,29 @@ type WorkbenchState = {
   output: string[]
   passingScore: number
   proposalReview: ProposalReview | null
+  closedPaths: string[]
+  autosave: AutosaveSettings
+  externalChanges: Record<string, ExternalFileChange>
   setWorkspace: (workspace: WorkspaceSnapshot) => void
   openDocument: (file: OpenFile, line?: number) => void
   updateDocument: (filePath: string, content: string) => void
-  markSaved: (filePath: string) => void
+  discardDocumentChanges: (filePaths: string[]) => void
+  markSaved: (filePath: string, fingerprint: string) => void
   closeDocument: (filePath: string) => void
   moveDocuments: (previousPath: string, nextPath: string) => void
   removeDocuments: (entryPath: string) => void
   consumeRevealLine: () => void
   setCursorPosition: (line: number, column: number) => void
+  setDocumentView: (filePath: string, view: Partial<FileViewState>) => void
   setActivePath: (filePath: string) => void
+  revealDocumentLine: (filePath: string, line: number) => void
+  replaceDocumentFromDisk: (file: OpenFile) => void
+  restoreSession: (documents: EditorDocument[], activePath: string | null, closedPaths: string[], autosave: AutosaveSettings) => void
+  removeClosedPath: (filePath: string) => void
+  setAutosave: (settings: AutosaveSettings) => void
+  setExternalChange: (filePath: string, change: ExternalFileChange) => void
+  clearExternalChange: (filePath: string) => void
+  keepLocalVersion: (filePath: string, fingerprint: string) => void
   setActivity: (activity: Activity) => void
   setBottomView: (view: BottomView) => void
   addOutput: (message: string) => void
@@ -71,6 +90,9 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
   output: ['Workbench ready. Open a folder to begin.'],
   passingScore: 80,
   proposalReview: null,
+  closedPaths: [],
+  autosave: { mode: 'off', delayMs: 1000 },
+  externalChanges: {},
   setWorkspace: (workspace) =>
     set((state) => {
       const changedWorkspace = state.workspace?.rootPath !== workspace.rootPath
@@ -80,6 +102,8 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
         activePath: changedWorkspace ? null : state.activePath,
         revealLine: changedWorkspace ? null : state.revealLine,
         proposalReview: changedWorkspace ? null : state.proposalReview,
+        closedPaths: changedWorkspace ? [] : state.closedPaths,
+        externalChanges: changedWorkspace ? {} : state.externalChanges,
         output: changedWorkspace ? [...state.output, `Opened workspace ${workspace.name}.`] : state.output
       }
     }),
@@ -89,9 +113,14 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
       return {
         documents: existingDocument
           ? state.documents
-          : [...state.documents, { ...file, savedContent: file.content }],
+          : [...state.documents, {
+            ...file,
+            savedContent: file.content,
+            view: { line: line ?? 1, column: 1, scrollTop: 0, scrollLeft: 0 }
+          }],
         activePath: file.path,
-        revealLine: line ?? null
+        revealLine: line ?? null,
+        closedPaths: state.closedPaths.filter((path) => path !== file.path)
       }
     }),
   updateDocument: (filePath, content) =>
@@ -100,10 +129,18 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
         document.path === filePath ? { ...document, content } : document
       )
     })),
-  markSaved: (filePath) =>
+  discardDocumentChanges: (filePaths) => set((state) => {
+    const discarded = new Set(filePaths)
+    return {
+      documents: state.documents.map((document) => discarded.has(document.path)
+        ? { ...document, content: document.savedContent }
+        : document)
+    }
+  }),
+  markSaved: (filePath, fingerprint) =>
     set((state) => ({
       documents: state.documents.map((document) =>
-        document.path === filePath ? { ...document, savedContent: document.content } : document
+        document.path === filePath ? { ...document, savedContent: document.content, fingerprint } : document
       ),
       output: [...state.output, `Saved ${filePath}.`]
     })),
@@ -115,7 +152,9 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
       return {
         documents: remainingDocuments,
         activePath: state.activePath === filePath ? (nextDocument?.path ?? null) : state.activePath,
-        revealLine: null
+        revealLine: null,
+        closedPaths: [filePath, ...state.closedPaths.filter((path) => path !== filePath)].slice(0, 20),
+        externalChanges: Object.fromEntries(Object.entries(state.externalChanges).filter(([path]) => path !== filePath))
       }
     }),
   moveDocuments: (previousPath, nextPath) =>
@@ -145,12 +184,63 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
       const documents = state.documents.filter((document) => !isRemoved(document.path))
       return {
         documents,
-        activePath: state.activePath && isRemoved(state.activePath) ? (documents.at(-1)?.path ?? null) : state.activePath
+        activePath: state.activePath && isRemoved(state.activePath) ? (documents.at(-1)?.path ?? null) : state.activePath,
+        externalChanges: Object.fromEntries(Object.entries(state.externalChanges).filter(([filePath]) => !isRemoved(filePath)))
       }
     }),
   consumeRevealLine: () => set({ revealLine: null }),
-  setCursorPosition: (cursorLine, cursorColumn) => set({ cursorLine, cursorColumn }),
-  setActivePath: (activePath) => set({ activePath }),
+  setCursorPosition: (cursorLine, cursorColumn) => set((state) => ({
+    cursorLine,
+    cursorColumn,
+    documents: state.activePath ? state.documents.map((document) => document.path === state.activePath
+      ? { ...document, view: { ...document.view, line: cursorLine, column: cursorColumn } }
+      : document) : state.documents
+  })),
+  setDocumentView: (filePath, view) => set((state) => ({
+    documents: state.documents.map((document) => document.path === filePath
+      ? { ...document, view: { ...document.view, ...view } }
+      : document)
+  })),
+  setActivePath: (activePath) => set((state) => {
+    const view = state.documents.find((document) => document.path === activePath)?.view
+    return { activePath, cursorLine: view?.line ?? 1, cursorColumn: view?.column ?? 1 }
+  }),
+  revealDocumentLine: (activePath, revealLine) => set((state) => ({
+    activePath: state.documents.some((document) => document.path === activePath) ? activePath : state.activePath,
+    revealLine: Number.isInteger(revealLine) && revealLine > 0 ? revealLine : state.revealLine
+  })),
+  replaceDocumentFromDisk: (file) => set((state) => ({
+    documents: state.documents.map((document) => document.path === file.path
+      ? { ...document, ...file, savedContent: file.content }
+      : document),
+    externalChanges: Object.fromEntries(Object.entries(state.externalChanges).filter(([path]) => path !== file.path))
+  })),
+  restoreSession: (documents, requestedActivePath, closedPaths, autosave) => set(() => {
+    const activePath = requestedActivePath && documents.some((document) => document.path === requestedActivePath)
+      ? requestedActivePath
+      : (documents[0]?.path ?? null)
+    const view = documents.find((document) => document.path === activePath)?.view
+    return {
+      documents,
+      activePath,
+      closedPaths,
+      autosave,
+      externalChanges: {},
+      revealLine: null,
+      cursorLine: view?.line ?? 1,
+      cursorColumn: view?.column ?? 1
+    }
+  }),
+  removeClosedPath: (filePath) => set((state) => ({ closedPaths: state.closedPaths.filter((path) => path !== filePath) })),
+  setAutosave: (autosave) => set({ autosave }),
+  setExternalChange: (filePath, change) => set((state) => ({ externalChanges: { ...state.externalChanges, [filePath]: change } })),
+  clearExternalChange: (filePath) => set((state) => ({
+    externalChanges: Object.fromEntries(Object.entries(state.externalChanges).filter(([path]) => path !== filePath))
+  })),
+  keepLocalVersion: (filePath, fingerprint) => set((state) => ({
+    documents: state.documents.map((document) => document.path === filePath ? { ...document, fingerprint } : document),
+    externalChanges: Object.fromEntries(Object.entries(state.externalChanges).filter(([path]) => path !== filePath))
+  })),
   setActivity: (activity) => set({ activity }),
   setBottomView: (bottomView) => set({ bottomView }),
   addOutput: (message) => set((state) => ({
@@ -178,7 +268,9 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
         name: file.relativePath.split(/[\\/]/).at(-1) ?? file.relativePath,
         language: languageForPath(file.relativePath),
         content: file.originalContent,
-        savedContent: file.originalContent
+        savedContent: file.originalContent,
+        fingerprint: '0'.repeat(64),
+        view: { line: 1, column: 1, scrollTop: 0, scrollLeft: 0 }
       })
     }
     return {
@@ -198,7 +290,9 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
         name: file.relativePath.split(/[\\/]/).at(-1) ?? file.relativePath,
         language: languageForPath(file.relativePath),
         content: file.originalContent,
-        savedContent: file.originalContent
+        savedContent: file.originalContent,
+        fingerprint: '0'.repeat(64),
+        view: { line: 1, column: 1, scrollTop: 0, scrollLeft: 0 }
       }],
       activePath: file.absolutePath,
       revealLine: null

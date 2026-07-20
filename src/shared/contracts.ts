@@ -2,12 +2,20 @@ export const IPC_CHANNELS = {
   openWorkspace: 'workspace:open',
   restoreWorkspace: 'workspace:restore',
   refreshWorkspace: 'workspace:refresh',
+  workspaceSetPurpose: 'workspace:set-purpose',
   readFile: 'workspace:read-file',
   writeFile: 'workspace:write-file',
   createEntry: 'workspace:create-entry',
   renameEntry: 'workspace:rename-entry',
   deleteEntry: 'workspace:delete-entry',
   searchWorkspace: 'workspace:search',
+  replaceWorkspace: 'workspace:replace',
+  listWorkspaceFiles: 'workspace:list-files',
+  copyWorkspacePath: 'workspace:copy-path',
+  watchWorkspaceFiles: 'workspace:watch-files',
+  workspaceFileChanged: 'workspace:file-changed',
+  editorRecoveryLoad: 'editor-recovery:load',
+  editorRecoverySave: 'editor-recovery:save',
   gitStatus: 'git:status',
   gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
@@ -39,6 +47,23 @@ export const IPC_CHANNELS = {
   understandingSaveAnswers: 'understanding:save-answers',
   understandingSubmit: 'understanding:submit',
   understandingBypass: 'understanding:bypass',
+  masteryOverview: 'mastery:overview',
+  masteryDomains: 'mastery:domains',
+  masteryConcept: 'mastery:concept',
+  masteryEvidence: 'mastery:evidence',
+  masteryMisconceptions: 'mastery:misconceptions',
+  masteryReviews: 'mastery:reviews',
+  masteryStartReview: 'mastery:start-review',
+  masterySubmitReview: 'mastery:submit-review',
+  masteryGetPersonalization: 'mastery:get-personalization',
+  masterySavePersonalization: 'mastery:save-personalization',
+  masteryResetPersonalization: 'mastery:reset-personalization',
+  masteryGetGoals: 'mastery:get-goals',
+  masteryCreateGoal: 'mastery:create-goal',
+  masteryUpdateGoal: 'mastery:update-goal',
+  masteryDeleteGoal: 'mastery:delete-goal',
+  masteryGamification: 'mastery:gamification',
+  masterySyncStatus: 'mastery:sync-status',
   gitAnalyzeStaged: 'git:analyze-staged',
   gitCommitStaged: 'git:commit-staged',
   agentCancel: 'agent:cancel',
@@ -64,12 +89,20 @@ export const IPC_CHANNELS = {
   cloudSignOut: 'cloud:sign-out',
   cloudListClassrooms: 'cloud:list-classrooms',
   cloudCreateClassroom: 'cloud:create-classroom',
+  cloudUpdateClassroom: 'cloud:update-classroom',
   cloudJoinClassroom: 'cloud:join-classroom',
   cloudRotateInvite: 'cloud:rotate-invite',
+  cloudAddStudent: 'cloud:add-student',
+  cloudRemoveStudent: 'cloud:remove-student',
+  cloudLeaveClassroom: 'cloud:leave-classroom',
+  cloudBeginAssignmentAuthoring: 'cloud:begin-assignment-authoring',
+  cloudListClassroomMastery: 'cloud:list-classroom-mastery',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
 } as const
+
+export type WorkspacePurpose = 'sandbox' | 'assignment'
 
 export type FileTreeNode = {
   name: string
@@ -90,6 +123,52 @@ export type OpenFile = {
   name: string
   content: string
   language: string
+  fingerprint: string
+}
+
+export type WriteFileRequest = {
+  filePath: string
+  content: string
+  expectedFingerprint: string
+}
+
+export type WrittenFile = {
+  path: string
+  fingerprint: string
+}
+
+export type FileViewState = {
+  line: number
+  column: number
+  scrollTop: number
+  scrollLeft: number
+}
+
+export type AutosaveSettings = {
+  mode: 'off' | 'afterDelay' | 'onFocusChange'
+  delayMs: number
+}
+
+export type EditorRecoveryDocument = {
+  path: string
+  dirtyContent?: string
+  view?: FileViewState
+}
+
+export type EditorRecoveryState = {
+  schemaVersion: 1
+  workspaceRoot: string
+  activePath: string | null
+  autosave: AutosaveSettings
+  documents: EditorRecoveryDocument[]
+  closedPaths: string[]
+}
+
+export type WorkspaceFileChange = {
+  workspaceRoot: string
+  filePath: string
+  kind: 'changed' | 'deleted'
+  fingerprint: string | null
 }
 
 export type WorkspaceMutation = {
@@ -98,12 +177,85 @@ export type WorkspaceMutation = {
   previousPath?: string
 }
 
-export type SearchResult = {
-  path: string
-  relativePath: string
+export type SearchOptions = {
+  requestId: string
+  query: string
+  replacement: string
+  caseSensitive: boolean
+  wholeWord: boolean
+  useRegex: boolean
+  includeGlobs: string[]
+  excludeGlobs: string[]
+  folderPath: string | null
+}
+
+export type SearchMatch = {
+  id: string
+  start: number
+  end: number
   line: number
   column: number
   preview: string
+  matchText: string
+  replacement: string
+}
+
+export type WorkspaceSearchFile = {
+  path: string
+  relativePath: string
+  fingerprint: string
+  matches: SearchMatch[]
+}
+
+export type WorkspaceSearchResponse = {
+  requestId: string
+  workspaceRoot: string
+  files: WorkspaceSearchFile[]
+  totalMatches: number
+  truncated: boolean
+}
+
+export type WorkspaceReplacementEdit = {
+  start: number
+  end: number
+  expectedText: string
+  replacement: string
+}
+
+export type WorkspaceReplacementFile = {
+  filePath: string
+  expectedFingerprint: string
+  edits: WorkspaceReplacementEdit[]
+}
+
+export type WorkspaceReplacementRequest = {
+  workspaceRoot: string
+  files: WorkspaceReplacementFile[]
+}
+
+export type WorkspaceReplacementOutcome = {
+  filePath: string
+  status: 'applied' | 'failed'
+  replacements: number
+  message?: string
+  fingerprint?: string
+}
+
+export type WorkspaceReplacementResponse = {
+  workspaceRoot: string
+  outcomes: WorkspaceReplacementOutcome[]
+}
+
+export type WorkspaceFileEntry = {
+  path: string
+  relativePath: string
+  name: string
+}
+
+export type WorkspaceFileList = {
+  workspaceRoot: string
+  files: WorkspaceFileEntry[]
+  truncated: boolean
 }
 
 export type GitFileChange = {
@@ -214,6 +366,7 @@ export type LearningRequest = {
 }
 
 export type ConceptLesson = {
+  conceptId: string
   name: string
   whyItMatters: string
   mentalModel: string
@@ -222,8 +375,11 @@ export type ConceptLesson = {
 
 export type QuizQuestion = {
   id: string
+  conceptId: string
   prompt: string
   options: string[]
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: 'multiple_choice'
 }
 
 export type LearningSession = {
@@ -385,6 +541,7 @@ export type UnderstandingSubmission = {
 export type UnderstandingQuestionFeedback = {
   questionId: string
   correct: boolean
+  score?: number
   explanation: string
   misconception?: string
 }
@@ -433,6 +590,258 @@ export type KnowledgeMastery = {
   updatedAt: string
   evidenceQuizIds: string[]
 }
+
+export type ConceptDomain =
+  | 'javascript' | 'typescript' | 'react' | 'node' | 'electron' | 'express' | 'nextjs'
+  | 'sql' | 'nosql' | 'authentication' | 'algorithms' | 'data-structures' | 'networking'
+  | 'concurrency' | 'testing' | 'git' | 'docker' | 'system-design' | 'electron-apis'
+  | 'ipc' | 'filesystems' | 'security' | 'memory-management' | 'custom'
+
+export type ConceptDepth = 'foundation' | 'intermediate' | 'advanced'
+export type MasteryStatus = 'unassessed' | 'learning' | 'weak' | 'developing' | 'proficient' | 'strong' | 'review_due'
+
+export type ConceptDefinition = {
+  id: string
+  name: string
+  description: string
+  domain: ConceptDomain
+  depth: ConceptDepth
+  prerequisiteIds: string[]
+  requiredMastery: number
+  aliases: string[]
+  active: boolean
+  deprecated: boolean
+  version: number
+}
+
+export type ConceptMasterySummary = {
+  conceptId: string
+  mastery: number
+  confidence: number
+  status: MasteryStatus
+}
+
+export type MasteryEvidenceSource =
+  | 'prerequisite_quiz' | 'change_understanding' | 'review' | 'challenge'
+  | 'assignment' | 'classroom_assessment' | 'teacher_assessment' | 'test_out' | 'legacy_import'
+
+export type MasteryEvidenceFormat = UnderstandingQuestionType | 'challenge' | 'teacher_review' | 'legacy_summary'
+
+export type MasteryEvidence = {
+  id: string
+  dedupeKey: string
+  conceptId: string
+  source: MasteryEvidenceSource
+  assessmentId: string
+  sessionId?: string
+  questionId: string
+  independenceGroup: string
+  attempt: number
+  score: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: MasteryEvidenceFormat
+  occurredAt: string
+  criticalMisconception?: boolean
+  misconceptionSummary?: string
+  correctiveExplanation?: string
+  assignmentId?: string
+  classroomId?: string
+}
+
+export type MasteryScorePoint = { at: string; mastery: number; confidence: number; evidenceId: string }
+
+export type ConceptMastery = ConceptMasterySummary & {
+  correctEvidence: number
+  incorrectEvidence: number
+  firstAssessedAt: string | null
+  lastAssessedAt: string | null
+  lastCorrectAt: string | null
+  lastIncorrectAt: string | null
+  consecutiveSuccesses: number
+  consecutiveFailures: number
+  difficultyDistribution: Record<'easy' | 'medium' | 'hard', number>
+  evidenceSources: MasteryEvidenceSource[]
+  evidenceIds: string[]
+  scoreHistory: MasteryScorePoint[]
+  canonicalVersion: number
+  reasons: string[]
+}
+
+export type MasteryProfile = {
+  evidence: Record<string, MasteryEvidence>
+  concepts: Record<string, ConceptMastery>
+  dedupeKeys: Record<string, string>
+}
+
+export type ReviewState = {
+  conceptId: string
+  nextReviewAt: string
+  intervalDays: number
+  ease: number
+  stability: number
+  lapseCount: number
+  lastOutcome: 'passed' | 'partial' | 'failed'
+  lastReviewedAt: string
+}
+
+export type MisconceptionRecord = {
+  id: string
+  conceptId: string
+  summary: string
+  correctiveExplanation: string
+  source: MasteryEvidenceSource
+  status: 'active' | 'remediated' | 'resolved'
+  critical: boolean
+  recurrenceCount: number
+  firstSeenAt: string
+  lastSeenAt: string
+  lastEvidenceGroup: string
+  evidenceIds: string[]
+  remediationCompletedAt?: string
+  resolvedAt?: string
+  resolvingEvidenceId?: string
+}
+
+export type ExplicitLearningPreferences = {
+  teachingStyle: 'balanced' | 'visual' | 'socratic' | 'example-driven'
+  lessonVerbosity: 'concise' | 'standard' | 'detailed'
+  exampleStyle: 'practical' | 'minimal' | 'analogy' | 'mixed'
+  quizDifficulty: 'adaptive' | 'gentle' | 'challenging'
+  reviewTolerance: 'low' | 'balanced' | 'high'
+  inferenceEnabled: boolean
+}
+
+export type InferredLearningPreferences = {
+  preferredFormats: MasteryEvidenceFormat[]
+  weakConceptIds: string[]
+  strongConceptIds: string[]
+  recurringMisconceptions: string[]
+  observations: number
+  updatedAt: string | null
+}
+
+export type PersonalizationState = { explicit: ExplicitLearningPreferences; inferred: InferredLearningPreferences }
+
+export type LearningGoal = {
+  id: string
+  title: string
+  type: 'mastery' | 'reviews' | 'streak' | 'xp'
+  target: number
+  progress: number
+  status: 'active' | 'completed' | 'archived'
+  conceptId?: string
+  domain?: ConceptDomain
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export type LearningAward = {
+  id: string
+  ruleId: string
+  kind: 'xp' | 'achievement' | 'badge' | 'milestone'
+  xp: number
+  reason: string
+  earnedAt: string
+  evidenceId?: string
+  conceptId?: string
+  ruleVersion: number
+}
+
+export type GamificationState = {
+  totalXp: number
+  level: number
+  dailyStreak: number
+  weeklyStreak: number
+  activeDates: string[]
+  awards: Record<string, LearningAward>
+  processedEventIds: Record<string, true>
+}
+
+export type MasteryConceptView = {
+  conceptId: string
+  name: string
+  description: string
+  domain: ConceptDomain
+  depth: ConceptDepth
+  mastery: number
+  confidence: number
+  status: MasteryStatus
+  lastAssessedAt: string | null
+  nextReviewAt: string | null
+}
+
+export type MasteryOverviewView = {
+  overallMastery: number | null
+  overallConfidence: number
+  assessedConcepts: number
+  unassessedConcepts: number
+  reviewDueConcepts: number
+  statusCounts: Record<MasteryStatus, number>
+  strongConcepts: MasteryConceptView[]
+  weakConcepts: MasteryConceptView[]
+  reviewDue: MasteryConceptView[]
+  recentImprovements: Array<{ conceptId: string; name: string; delta: number; at: string }>
+  recentRegressions: Array<{ conceptId: string; name: string; delta: number; at: string }>
+  estimatedGrowth: { pointsPer30Days: number; evidenceWindowDays: number } | null
+  gamification: Pick<GamificationState, 'totalXp' | 'level' | 'dailyStreak' | 'weeklyStreak'>
+}
+
+export type DomainMasteryView = {
+  domain: Exclude<ConceptDomain, 'custom'>
+  mastery: number | null
+  confidence: number
+  assessedConcepts: number
+  totalConcepts: number
+  weakConcepts: number
+  strongConcepts: number
+  reviewDueConcepts: number
+}
+
+export type MasteryEvidenceView = {
+  id: string
+  conceptId: string
+  source: MasteryEvidenceSource
+  score: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  format: MasteryEvidenceFormat
+  occurredAt: string
+  assessmentId: string
+  attempt: number
+  assignmentId?: string
+  classroomId?: string
+}
+
+export type MasteryEvidencePage = { page: number; pageSize: number; total: number; items: MasteryEvidenceView[] }
+
+export type ReviewQueueItem = {
+  concept: MasteryConceptView
+  review: ReviewState
+  overdueDays: number
+  forgottenRisk: number
+}
+
+export type ConceptDetailView = {
+  concept: MasteryConceptView
+  reasons: string[]
+  prerequisites: MasteryConceptView[]
+  dependents: MasteryConceptView[]
+  blockingPrerequisiteIds: string[]
+  diagnosticPrerequisiteIds: string[]
+  evidence: MasteryEvidenceView[]
+  scoreHistory: MasteryScorePoint[]
+  misconceptions: MisconceptionRecord[]
+  review: ReviewState | null
+  recommendedAction: 'learn-prerequisites' | 'take-diagnostic' | 'start-review' | 'keep-practicing' | 'continue'
+}
+
+export type ReviewQuestion = { id: string; prompt: string; options: string[]; difficulty: 'easy' | 'medium' | 'hard' }
+export type ReviewSession = { id: string; conceptId: string; title: string; questions: ReviewQuestion[]; createdAt: string }
+export type ReviewSubmission = { sessionId: string; answers: Record<string, number> }
+export type ReviewResult = { sessionId: string; score: number; passed: boolean; feedback: Array<{ questionId: string; correct: boolean; explanation: string }> }
+
+export type LearningGoalInput = Pick<LearningGoal, 'id' | 'title' | 'type' | 'target'> & Partial<Pick<LearningGoal, 'conceptId' | 'domain'>>
+export type MasterySyncStatus = { state: 'local-only' | 'offline' | 'syncing' | 'synced' | 'error'; pending: number; lastSyncedAt: string | null; error?: string }
 
 export type ChangeUnderstandingPreparation = {
   changeId: string
@@ -704,12 +1113,52 @@ export type ClassroomCreateRequest = {
   description: string
 }
 
+export type ClassroomUpdateRequest = ClassroomCreateRequest & {
+  classroomId: string
+}
+
 export type ClassroomPublishRequest = {
   classroomId: string
   workspaceRoot: string
 }
 
-export type ClassroomOpenAssignmentResult = AssignmentImportResult
+export type ClassroomAssignmentContext = {
+  classroomId: string
+  classroomName: string
+  assignmentId: string | null
+  assignmentTitle: string
+  role: 'teacher' | 'student'
+}
+
+export type ClassroomOpenAssignmentResult = AssignmentImportResult & { context: ClassroomAssignmentContext }
+
+export type ClassroomMasteryConcept = {
+  studentId: string
+  conceptId: string
+  conceptName: string
+  mastery: number
+  attempts: number
+  correct: number
+  updatedAt: string
+}
+
+export type ClassroomMasteryEvent = {
+  studentId: string
+  assignmentId: string | null
+  quizId: string
+  attempt: number
+  score: number
+  passed: boolean
+  title: string
+  completedAt: string
+}
+
+export type ClassroomMasterySnapshot = {
+  classroomId: string
+  concepts: ClassroomMasteryConcept[]
+  events: ClassroomMasteryEvent[]
+  pendingSyncCount: number
+}
 
 export type AgentActivityState = 'pending' | 'active' | 'completed' | 'failed' | 'stopped'
 export type AgentActivityPhase = 'context' | 'learning' | 'model' | 'validation' | 'quiz' | 'proposal' | 'approval' | 'apply' | 'complete'
@@ -729,15 +1178,23 @@ export type AgentActivityEvent = {
 
 export type DesktopApi = {
   platform: string
-  openWorkspace: () => Promise<WorkspaceSnapshot | null>
+  setWorkspacePurpose: (purpose: WorkspacePurpose) => Promise<void>
+  openWorkspace: (purpose?: WorkspacePurpose) => Promise<WorkspaceSnapshot | null>
   restoreWorkspace: () => Promise<WorkspaceSnapshot | null>
   refreshWorkspace: () => Promise<WorkspaceSnapshot>
   readFile: (filePath: string) => Promise<OpenFile>
-  writeFile: (filePath: string, content: string) => Promise<void>
+  writeFile: (request: WriteFileRequest) => Promise<WrittenFile>
   createEntry: (parentPath: string, name: string, type: 'file' | 'directory') => Promise<WorkspaceMutation>
   renameEntry: (entryPath: string, name: string) => Promise<WorkspaceMutation>
   deleteEntry: (entryPath: string) => Promise<WorkspaceMutation | null>
-  searchWorkspace: (query: string) => Promise<SearchResult[]>
+  searchWorkspace: (options: SearchOptions) => Promise<WorkspaceSearchResponse>
+  replaceWorkspace: (request: WorkspaceReplacementRequest) => Promise<WorkspaceReplacementResponse>
+  listWorkspaceFiles: () => Promise<WorkspaceFileList>
+  copyWorkspacePath: (filePath: string, kind: 'absolute' | 'relative') => Promise<void>
+  watchWorkspaceFiles: (filePaths: string[]) => Promise<void>
+  onWorkspaceFileChanged: (callback: (change: WorkspaceFileChange) => void) => () => void
+  loadEditorRecovery: (workspaceRoot: string) => Promise<EditorRecoveryState | null>
+  saveEditorRecovery: (state: EditorRecoveryState) => Promise<void>
   getGitStatus: () => Promise<GitStatusSnapshot>
   trustGitRepository: (repositoryRoot: string) => Promise<void>
   startTerminal: (request: TerminalSessionRequest) => Promise<TerminalSessionInfo>
@@ -769,6 +1226,23 @@ export type DesktopApi = {
   saveUnderstandingAnswers: (quizId: string, answers: Record<string, UnderstandingAnswer>) => Promise<UnderstandingGateStatus>
   submitUnderstanding: (submission: UnderstandingSubmission) => Promise<UnderstandingResult>
   bypassUnderstanding: (quizId: string, reason: string) => Promise<UnderstandingGateStatus>
+  getMasteryOverview: () => Promise<MasteryOverviewView>
+  getMasteryDomains: () => Promise<DomainMasteryView[]>
+  getMasteryConcept: (conceptId: string) => Promise<ConceptDetailView>
+  getMasteryEvidence: (request: { conceptId?: string; page: number; pageSize: number }) => Promise<MasteryEvidencePage>
+  getMasteryMisconceptions: (status?: MisconceptionRecord['status']) => Promise<MisconceptionRecord[]>
+  getMasteryReviews: () => Promise<ReviewQueueItem[]>
+  startMasteryReview: (conceptId: string) => Promise<ReviewSession>
+  submitMasteryReview: (submission: ReviewSubmission) => Promise<ReviewResult>
+  getLearningPersonalization: () => Promise<PersonalizationState>
+  saveLearningPersonalization: (update: Partial<ExplicitLearningPreferences>) => Promise<PersonalizationState>
+  resetLearningPersonalization: () => Promise<PersonalizationState>
+  getLearningGoals: () => Promise<LearningGoal[]>
+  createLearningGoal: (input: LearningGoalInput) => Promise<LearningGoal>
+  updateLearningGoal: (id: string, update: Partial<Pick<LearningGoal, 'title' | 'target' | 'status'>>) => Promise<LearningGoal>
+  deleteLearningGoal: (id: string) => Promise<void>
+  getLearningGamification: () => Promise<GamificationState>
+  getMasterySyncStatus: () => Promise<MasterySyncStatus>
   analyzeStagedChange: (repositoryRoot: string, forceNew?: boolean) => Promise<StagedChangeAnalysis>
   commitStagedChange: (request: CommitStagedRequest) => Promise<CommitStagedResult>
   onAgentActivity: (callback: (event: AgentActivityEvent) => void) => () => void
@@ -795,8 +1269,14 @@ export type DesktopApi = {
   signOut: () => Promise<void>
   listClassrooms: () => Promise<Classroom[]>
   createClassroom: (request: ClassroomCreateRequest) => Promise<Classroom[]>
+  updateClassroom: (request: ClassroomUpdateRequest) => Promise<Classroom[]>
   joinClassroom: (invite: string) => Promise<Classroom[]>
   rotateClassroomInvite: (classroomId: string) => Promise<Classroom[]>
+  addClassroomStudent: (classroomId: string, email: string) => Promise<Classroom[]>
+  removeClassroomStudent: (classroomId: string, userId: string) => Promise<Classroom[]>
+  leaveClassroom: (classroomId: string) => Promise<Classroom[]>
+  beginClassroomAssignmentAuthoring: (classroomId: string) => Promise<ClassroomAssignmentContext>
+  listClassroomMastery: (classroomId: string) => Promise<ClassroomMasterySnapshot>
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>

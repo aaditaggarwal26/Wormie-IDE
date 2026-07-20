@@ -10,7 +10,7 @@ import type {
 } from '../../shared/contracts'
 import { defaultUnderstandingSettings } from './significance'
 
-export const understandingSchemaVersion = 1
+export const understandingSchemaVersion = 2
 
 export type StoredGate = {
   quiz: UnderstandingQuiz
@@ -29,6 +29,8 @@ export type UnderstandingState = {
   gates: Record<string, StoredGate>
   history: UnderstandingHistoryEntry[]
   mastery: Record<string, KnowledgeMastery>
+  classroomHistory: Record<string, UnderstandingHistoryEntry[]>
+  classroomMastery: Record<string, Record<string, KnowledgeMastery>>
   auditEvents: Array<{
     type: 'quiz_triggered' | 'quiz_started' | 'quiz_passed' | 'quiz_failed' | 'gate_bypassed' | 'change_rejected'
     at: string
@@ -50,6 +52,8 @@ export function createEmptyUnderstandingState(): UnderstandingState {
     gates: {},
     history: [],
     mastery: {},
+    classroomHistory: {},
+    classroomMastery: {},
     auditEvents: []
   }
 }
@@ -88,6 +92,8 @@ export function migrateUnderstandingState(value: unknown): UnderstandingState {
     gates: candidate.gates && typeof candidate.gates === 'object' ? candidate.gates : {},
     history: Array.isArray(candidate.history) ? candidate.history.slice(0, 500) : [],
     mastery: candidate.mastery && typeof candidate.mastery === 'object' ? candidate.mastery : {},
+    classroomHistory: candidate.classroomHistory && typeof candidate.classroomHistory === 'object' ? candidate.classroomHistory : {},
+    classroomMastery: candidate.classroomMastery && typeof candidate.classroomMastery === 'object' ? candidate.classroomMastery : {},
     auditEvents: Array.isArray(candidate.auditEvents) ? candidate.auditEvents.slice(-1000) : []
   }
 }

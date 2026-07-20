@@ -39,6 +39,7 @@ import type {
   QuizResult
 } from '@shared/contracts'
 import { proposalReviewProgress } from '@/components/proposalReviewModel'
+import { notifyMasteryUpdated } from '@/components/useMasteryProfile'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected AI error occurred.'
@@ -82,6 +83,7 @@ export function TutorPane(): React.JSX.Element {
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const discardProposalReview = useWorkbench((state) => state.discardProposalReview)
   const completeProposalReview = useWorkbench((state) => state.completeProposalReview)
+  const replaceDocumentFromDisk = useWorkbench((state) => state.replaceDocumentFromDisk)
   const dirtyDocuments = useMemo(
     () => documents.filter((document) => document.content !== document.savedContent),
     [documents]
@@ -164,6 +166,7 @@ export function TutorPane(): React.JSX.Element {
     onSuccess: (result) => {
       setQuizResult(result)
       setQuizAttempts((attempts) => attempts + 1)
+      notifyMasteryUpdated()
     },
     onError: reportError
   })
@@ -190,10 +193,12 @@ export function TutorPane(): React.JSX.Element {
       }))
     }),
     onMutate: () => setError(null),
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (!result.applied) return
       setWorkspace(result.workspace)
       completeProposalReview(result.changedPaths)
+      const refreshedFiles = await Promise.all(result.changedPaths.map((filePath) => window.desktop.readFile(filePath).catch(() => null)))
+      for (const file of refreshedFiles) if (file) replaceDocumentFromDisk(file)
       addOutput(`Applied AI proposal to ${result.changedPaths.length} file${result.changedPaths.length === 1 ? '' : 's'}.`)
       setProposal(null)
       setSession(null)
@@ -314,9 +319,11 @@ export function TutorPane(): React.JSX.Element {
     <aside
       className="tutor-pane"
       data-drag-active={dragActive}
+      data-workbench-focus="tutor"
       onDragLeave={() => setDragActive(false)}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      tabIndex={-1}
     >
       <div className="tutor-heading">
         <h2>Chat</h2>
@@ -350,7 +357,7 @@ export function TutorPane(): React.JSX.Element {
       <div className="tutor-scroll" ref={scrollRef}>
         {!session && !guidance && !pendingRequest && (
           <div className="agent-empty">
-            <h3>Ask about your code</h3>
+            <h3>Ask Wormie Agent for help</h3>
             <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review. Drop screenshots onto this panel to attach them.</p>
           </div>
         )}

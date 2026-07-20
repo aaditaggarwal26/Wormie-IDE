@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { BigIntStats } from 'node:fs'
 import { z } from 'zod'
 import type { AssignmentManifest } from '../../shared/contracts'
+import { isSameFileIdentity, isUnchangedFile } from '../fileIdentity'
 import { isPathInside } from '../pathSafety'
 import { assignmentManifestSchema, portableWorkspacePathSchema } from './schema'
 import { readAssignment } from './storage'
@@ -68,14 +69,6 @@ function isProtectedFile(name: string): boolean {
     ['.key', '.pem', '.p12', '.pfx', '.keystore'].includes(path.extname(lower))
 }
 
-function isSameFile(left: BigIntStats, right: BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino
-}
-
-function isUnchangedFile(left: BigIntStats, right: BigIntStats): boolean {
-  return isSameFile(left, right) && left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs
-}
-
 async function assertImportRoot(rootPath: string, expectedIdentity: BigIntStats): Promise<void> {
   const pathStats = await fs.lstat(rootPath)
   if (!pathStats.isDirectory() || pathStats.isSymbolicLink()) throw new Error('The package destination changed during import.')
@@ -83,7 +76,7 @@ async function assertImportRoot(rootPath: string, expectedIdentity: BigIntStats)
   const expectedPath = process.platform === 'win32' ? path.resolve(rootPath).toLowerCase() : path.resolve(rootPath)
   const actualPath = process.platform === 'win32' ? path.resolve(resolvedRoot).toLowerCase() : path.resolve(resolvedRoot)
   const currentIdentity = await fs.stat(resolvedRoot, { bigint: true })
-  if (actualPath !== expectedPath || !isSameFile(expectedIdentity, currentIdentity)) throw new Error('The package destination changed during import.')
+  if (actualPath !== expectedPath || !isSameFileIdentity(expectedIdentity, currentIdentity)) throw new Error('The package destination changed during import.')
 }
 
 async function readPackageFile(handle: Awaited<ReturnType<typeof fs.open>>, initial: BigIntStats, relativePath: string): Promise<Buffer> {
@@ -130,7 +123,7 @@ async function collectFiles(rootPath: string, directoryPath: string, files: Pack
       const resolvedPath = await fs.realpath(entryPath)
       if (!isPathInside(canonicalRoot, resolvedPath)) throw new Error(`Starter file leaves the workspace: ${path.relative(rootPath, entryPath)}`)
       const pathIdentity = await fs.stat(resolvedPath, { bigint: true })
-      if (!isSameFile(handleIdentity, pathIdentity)) throw new Error(`Starter file changed during export: ${path.relative(rootPath, entryPath)}`)
+      if (!isSameFileIdentity(handleIdentity, pathIdentity)) throw new Error(`Starter file changed during export: ${path.relative(rootPath, entryPath)}`)
       content = await readPackageFile(handle, handleIdentity, relativePath)
       const finalHandleIdentity = await handle.stat({ bigint: true })
       const finalPathIdentity = await fs.stat(await fs.realpath(entryPath), { bigint: true })
@@ -192,7 +185,7 @@ export async function importAssignmentPackage(
     const handleIdentity = await packageHandle.stat({ bigint: true })
     const resolvedPackagePath = await fs.realpath(packageFilePath)
     const pathIdentity = await fs.stat(resolvedPackagePath, { bigint: true })
-    if (!isSameFile(handleIdentity, pathIdentity)) throw new Error('The Wormie package changed while opening.')
+    if (!isSameFileIdentity(handleIdentity, pathIdentity)) throw new Error('The Wormie package changed while opening.')
     const chunks: Buffer[] = []
     let totalRead = 0
     while (true) {
@@ -205,7 +198,7 @@ export async function importAssignmentPackage(
     }
     const finalIdentity = await packageHandle.stat({ bigint: true })
     const finalPathIdentity = await fs.stat(await fs.realpath(packageFilePath), { bigint: true })
-    if (!isSameFile(handleIdentity, finalIdentity) || !isSameFile(handleIdentity, finalPathIdentity)) {
+    if (!isUnchangedFile(handleIdentity, finalIdentity) || !isUnchangedFile(handleIdentity, finalPathIdentity)) {
       throw new Error('The Wormie package changed while opening.')
     }
     rawValue = JSON.parse(Buffer.concat(chunks, totalRead).toString('utf8'))

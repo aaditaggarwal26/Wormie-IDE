@@ -31,6 +31,7 @@ import { useWorkbench } from '@/store/workbench'
 import { useApplicationNavigation } from '@/navigation/applicationMode'
 import type {
   AgentConfig,
+  AgentConfigUpdate,
   AgentProvider,
   AssignmentManifestDraft,
   AssignmentEvidencePolicy,
@@ -44,6 +45,7 @@ import type {
   CloudAuthCredentials,
   CloudAuthState,
   CodexAccountStatus,
+  CodexModelOption,
   FileTreeNode
 } from '@shared/contracts'
 
@@ -491,6 +493,12 @@ export default function App(): React.JSX.Element {
       setCloudError(null)
       setResetEmailSent(true)
     },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
+  const submitAuthLinkMutation = useMutation({
+    mutationFn: window.desktop.submitAuthLink,
+    onMutate: () => setCloudError(null),
     onError: (error) => setCloudError(errorMessage(error))
   })
 
@@ -976,13 +984,14 @@ export default function App(): React.JSX.Element {
 
   if (!cloudAuthLoaded || !cloudAuth?.user || cloudAuth.passwordResetRequired) {
     return <AuthScreen
-      busy={authMutation.isPending || googleAuthMutation.isPending || passwordResetMutation.isPending || updatePasswordMutation.isPending}
+      busy={authMutation.isPending || googleAuthMutation.isPending || passwordResetMutation.isPending || submitAuthLinkMutation.isPending || updatePasswordMutation.isPending}
       confirmationRequired={Boolean(cloudAuth?.emailConfirmationRequired)}
       error={cloudError}
       googleBusy={googleAuthMutation.isPending}
       loading={!cloudAuthLoaded}
       onGoogleSignIn={() => googleAuthMutation.mutate()}
       onRequestPasswordReset={(email) => passwordResetMutation.mutate(email)}
+      onSubmitAuthLink={(link) => submitAuthLinkMutation.mutate(link)}
       onSubmit={(mode, credentials) => authMutation.mutate({ mode, credentials })}
       onUpdatePassword={(password) => updatePasswordMutation.mutate(password)}
       passwordResetRequired={Boolean(cloudAuth?.passwordResetRequired)}
@@ -1058,7 +1067,7 @@ export default function App(): React.JSX.Element {
           <span>Search commands</span>
           <kbd>{window.desktop.platform === 'darwin' ? 'Cmd' : 'Ctrl'} Shift P</kbd>
         </button>
-        <div className="titlebar-workspace">{applicationMode.kind === 'assignment' ? <><span>{applicationMode.context.role}</span>{applicationMode.context.classroomName} / {assignmentState?.manifest?.title ?? applicationMode.context.assignmentTitle}</> : workspace?.name ?? 'No workspace'}</div>
+        <div className="titlebar-workspace">{applicationMode.kind === 'assignment' ? <><span>{applicationMode.context.role}</span>{applicationMode.context.classroomName} / {assignmentState?.manifest?.title ?? applicationMode.context.assignmentTitle}</> : null}</div>
       </header>
 
       <div
@@ -1309,6 +1318,7 @@ function SettingsSidebar(): React.JSX.Element {
   const [apiKey, setApiKey] = useState('')
   const [savedConfig, setSavedConfig] = useState<AgentConfig | null>(null)
   const [codexAccount, setCodexAccount] = useState<CodexAccountStatus | null>(null)
+  const [codexModels, setCodexModels] = useState<CodexModelOption[]>([])
 
   const loadCodexAccount = useCallback(() => window.desktop.getCodexAccount().then((status) => {
     setCodexAccount(status)
@@ -1323,9 +1333,7 @@ function SettingsSidebar(): React.JSX.Element {
         setModel(config.model)
         setBaseUrl(config.baseUrl)
         setPassingScore(config.passingScore)
-        if (config.provider === 'codex-account') {
-          void loadCodexAccount().catch((error) => addOutput(`Could not check Codex account: ${errorMessage(error)}`))
-        }
+        void loadCodexAccount().catch((error) => addOutput(`Could not check Codex account: ${errorMessage(error)}`))
       })
       .catch((error) => addOutput(`Could not load AI settings: ${errorMessage(error)}`))
   }, [addOutput, loadCodexAccount, setPassingScore])
@@ -1335,11 +1343,20 @@ function SettingsSidebar(): React.JSX.Element {
     onError: (error) => addOutput(`Could not check Codex account: ${errorMessage(error)}`)
   })
 
+  // Persists the provider selection immediately so the chat pane always uses
+  // what this panel shows — no separate "save" step to forget.
+  const persistMutation = useMutation({
+    mutationFn: (update: AgentConfigUpdate) => window.desktop.saveAgentConfig(update),
+    onSuccess: setSavedConfig,
+    onError: (error) => addOutput(`Could not save AI settings: ${errorMessage(error)}`)
+  })
+
   const connectCodexMutation = useMutation({
     mutationFn: window.desktop.connectCodexAccount,
     onSuccess: (status) => {
       setCodexAccount(status)
       addOutput(`Connected Codex account${status.email ? ` for ${status.email}` : ''}.`)
+      persistMutation.mutate({ provider: 'codex-account', model, baseUrl })
     },
     onError: (error) => addOutput(`Could not connect Codex account: ${errorMessage(error)}`)
   })
@@ -1369,14 +1386,30 @@ function SettingsSidebar(): React.JSX.Element {
     ? codexReady ? 'Connected' : codexAccount?.available === false ? 'Unavailable' : 'Sign in required'
     : savedConfig?.hasApiKey ? 'Connected' : 'Key required'
 
+  useEffect(() => {
+    if (!codexReady || codexModels.length > 0) return
+    void window.desktop.listCodexModels()
+      .then(setCodexModels)
+      .catch((error) => addOutput(`Could not list Codex models: ${errorMessage(error)}`))
+  }, [addOutput, codexReady, codexModels.length])
+
   const selectProvider = (nextProvider: AgentProvider) => {
     setProvider(nextProvider)
     if (nextProvider === 'codex-account') {
-      if (provider !== 'codex-account') setModel('')
+      const nextModel = savedConfig?.provider === 'codex-account' ? savedConfig.model : ''
+      setModel(nextModel)
       codexStatusMutation.mutate()
-    } else if (!model.trim()) {
-      setModel('gpt-5.4-mini')
+      persistMutation.mutate({ provider: 'codex-account', model: nextModel, baseUrl })
+    } else {
+      const nextModel = model.trim() || 'gpt-5.4-mini'
+      setModel(nextModel)
+      persistMutation.mutate({ provider: 'openai-compatible', model: nextModel, baseUrl })
     }
+  }
+
+  const selectCodexModel = (nextModel: string) => {
+    setModel(nextModel)
+    persistMutation.mutate({ provider: 'codex-account', model: nextModel, baseUrl })
   }
 
   return (
@@ -1445,15 +1478,25 @@ function SettingsSidebar(): React.JSX.Element {
                   : codexAccount?.error ?? 'A secure browser window will open for official Codex sign-in.'}</small>
               </div>
             </div>
-            <label className="field-label" htmlFor="ai-model">Model override · optional</label>
-            <input
-              id="ai-model"
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="Use the Codex default"
-              spellCheck={false}
-              type="text"
-              value={model}
-            />
+            <label className="field-label" htmlFor="ai-model">Model</label>
+            {codexReady && codexModels.length > 0 ? (
+              <select id="ai-model" onChange={(event) => selectCodexModel(event.target.value)} value={model}>
+                <option value="">Codex default</option>
+                {codexModels.map((option) => (
+                  <option key={option.id} title={option.description} value={option.id}>{option.displayName}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="ai-model"
+                onBlur={() => codexReady && persistMutation.mutate({ provider: 'codex-account', model, baseUrl })}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="Use the Codex default"
+                spellCheck={false}
+                type="text"
+                value={model}
+              />
+            )}
             <div className="settings-actions">
               <button
                 disabled={connectCodexMutation.isPending || codexStatusMutation.isPending || codexReady}
@@ -1462,20 +1505,16 @@ function SettingsSidebar(): React.JSX.Element {
               >
                 {connectCodexMutation.isPending ? 'Waiting for sign-in…' : codexReady ? 'Account connected' : 'Connect ChatGPT'}
               </button>
-              <button
-                disabled={saveAgentMutation.isPending || !codexReady}
-                onClick={() => saveAgentMutation.mutate()}
-                type="button"
-              >Use Codex</button>
             </div>
+            <p>{codexReady
+              ? 'Wormie uses this account automatically. The connection persists across restarts.'
+              : 'Connecting selects Codex for the tutor automatically.'}</p>
             <button
               className="settings-link-button"
               disabled={codexStatusMutation.isPending}
               onClick={() => codexStatusMutation.mutate()}
               type="button"
             >Refresh account status</button>
-            <p>Uses your ChatGPT plan's Codex allowance through the official bundled runtime. It does not turn your ChatGPT login into an API key.</p>
-            <p>Wormie runs Codex in an isolated, read-only profile with tools, browsing, MCP, and shell access disabled.</p>
           </>
         ) : (
           <>

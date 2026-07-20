@@ -10,15 +10,18 @@ import {
   type ResolvedProposalTextEdit
 } from './proposalEdits'
 import { workspaceAgentStepSchema, type WorkspaceAgentStep } from './schemas'
-import type { ModelOperation } from './provider'
+import type { GenerateStructuredOptions, ModelOperation, ModelSession } from './provider'
 
 type Model = {
+  createSession?(): ModelSession
+  disposeSession?(session: ModelSession): Promise<void>
   generateStructured<T>(
     kind: ModelOperation,
     prompt: string,
     schema: ZodType<T>,
     signal: AbortSignal,
-    onProtocolEvent?: (method: string, detail: string) => void
+    onProtocolEvent?: (method: string, detail: string) => void,
+    options?: GenerateStructuredOptions
   ): Promise<T>
 }
 
@@ -31,11 +34,14 @@ type FileState = {
   original: string | null
   content: string
   tracker: TrackedText | null
+  version: number
 }
+
+type ReadWindow = { startLine: number; endLine: number; version: number }
 
 type CheckCommand = { command: string; args: string[] }
 type AvailableCheck = { id: string; label: string; commands: CheckCommand[] }
-type CheckResult = { id: string; label: string; passed: boolean; output: string }
+type CheckResult = { id: string; label: string; passed: boolean; output: string; baselineFailure?: boolean }
 
 export type WorkspaceAgentChange = {
   relativePath: string
@@ -59,13 +65,17 @@ export type WorkspaceAgentProposal = {
 type RunWorkspaceAgentOptions = {
   rootPath: string
   request: string
+  imagePaths?: string[]
   model: Model
   signal: AbortSignal
   onProtocolEvent?: (method: string, detail: string) => void
   onActivity?: (label: string, detail: string) => void
 }
 
-const excludedDirectories = new Set(['.git', '.next', '.turbo', 'build', 'coverage', 'dist', 'node_modules', 'out', 'target'])
+const excludedDirectories = new Set([
+  '.cache', '.git', '.next', '.parcel-cache', '.turbo', '.venv',
+  'build', 'coverage', 'dist', 'node_modules', 'out', 'release', 'target', 'vendor'
+])
 const protectedNames = new Set(['.env', '.npmrc', '.pypirc', 'auth.json', 'credentials', 'credentials.json', 'secrets.json'])
 const protectedExtensions = new Set(['.key', '.pem', '.p12', '.pfx', '.keystore'])
 const maxFileCharacters = 500_000
@@ -190,6 +200,24 @@ function cleanRelativePath(rootPath: string, value: string): { relativePath: str
   return { relativePath, absolutePath }
 }
 
+function resolveSearchPath(rootPath: string, value?: string): string {
+  if (!value || value === '.') return rootPath
+  return cleanRelativePath(rootPath, value.replace(/^\.\//, '')).absolutePath
+}
+
+function lineRange(content: string, startLine: number, endLine: number): { start: number; end: number } {
+  const starts = [0]
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === '\n') starts.push(index + 1)
+  }
+  if (startLine > endLine || endLine > starts.length) throw new Error(`Choose a line range between 1 and ${starts.length}.`)
+  const start = starts[startLine - 1]
+  const nextLine = starts[endLine]
+  let end = nextLine ?? content.length
+  if (nextLine !== undefined) end -= content[end - 2] === '\r' ? 2 : 1
+  return { start, end }
+}
+
 function displayPath(relativePath: string): string {
   return relativePath.split(path.sep).join('/')
 }
@@ -281,6 +309,7 @@ async function availableChecks(rootPath: string): Promise<AvailableCheck[]> {
 class AgentWorkspace {
   private readonly states = new Map<string, FileState>()
   private readonly explicitlyRead = new Set<string>()
+  private readonly readWindows = new Map<string, ReadWindow[]>()
 
   constructor(private readonly rootPath: string) {}
 
@@ -298,7 +327,8 @@ class AgentWorkspace {
       relativePath: resolved.relativePath,
       original: content,
       content,
-      tracker: new TrackedText(content)
+      tracker: new TrackedText(content),
+      version: 0
     }
     this.states.set(resolved.relativePath, state)
     return state
@@ -315,12 +345,22 @@ class AgentWorkspace {
     const lines = state.content.split(/\r?\n/)
     const start = Math.min(Math.max(startLine, 1), Math.max(lines.length, 1))
     const end = Math.min(Math.max(endLine ?? start + 399, start), start + 399, lines.length)
-    return lines.slice(start - 1, end).map((line, index) => `${start + index}: ${line}`).join('\n') || '(empty file)'
+    const range = lineRange(state.content, start, end)
+    const windows = this.readWindows.get(state.relativePath) ?? []
+    windows.push({ startLine: start, endLine: end, version: state.version })
+    this.readWindows.set(state.relativePath, windows.slice(-8))
+    return JSON.stringify({
+      path: displayPath(state.relativePath),
+      startLine: start,
+      endLine: end,
+      totalLines: lines.length,
+      content: state.content.slice(range.start, range.end)
+    })
   }
 
   async search(query: string, scope?: string): Promise<string> {
     const normalizedQuery = query.toLowerCase()
-    const scopePath = scope ? cleanRelativePath(this.rootPath, scope).absolutePath : this.rootPath
+    const scopePath = resolveSearchPath(this.rootPath, scope)
     const realScope = await fs.realpath(scopePath).catch(() => null)
     if (!realScope || !isPathInside(this.rootPath, realScope)) throw new Error('Search path not found.')
     const stats = await fs.stat(realScope)
@@ -363,7 +403,25 @@ class AgentWorkspace {
       for (const edit of [...materialized.edits].reverse()) state.tracker.apply(edit.start, edit.end, edit.newText)
     }
     state.content = materialized.content
+    state.version += 1
     return `${displayPath(state.relativePath)} updated (${materialized.additions} added, ${materialized.deletions} removed).`
+  }
+
+  async editLines(relativePath: string, startLine: number, endLine: number, newText: string): Promise<string> {
+    const state = await this.stateFor(relativePath)
+    const wasRead = (this.readWindows.get(state.relativePath) ?? []).some((window) =>
+      window.version === state.version && startLine >= window.startLine && endLine <= window.endLine
+    )
+    if (!wasRead) throw new Error('Read the current version of this exact line range before editing it.')
+    const range = lineRange(state.content, startLine, endLine)
+    const oldText = state.content.slice(range.start, range.end)
+    if (oldText === newText) throw new Error('The edit does not change the file.')
+    state.tracker?.apply(range.start, range.end, newText)
+    state.content = `${state.content.slice(0, range.start)}${newText}${state.content.slice(range.end)}`
+    state.version += 1
+    const additions = newText ? newText.split(/\r?\n/).length : 0
+    const deletions = oldText ? oldText.split(/\r?\n/).length : 0
+    return `${displayPath(state.relativePath)} lines ${startLine}-${endLine} updated (${additions} added, ${deletions} removed).`
   }
 
   async create(relativePathValue: string, content: string): Promise<string> {
@@ -378,7 +436,7 @@ class AgentWorkspace {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
-    this.states.set(resolved.relativePath, { relativePath: resolved.relativePath, original: null, content, tracker: null })
+    this.states.set(resolved.relativePath, { relativePath: resolved.relativePath, original: null, content, tracker: null, version: 0 })
     return `${displayPath(resolved.relativePath)} created in the shadow workspace.`
   }
 
@@ -386,7 +444,7 @@ class AgentWorkspace {
     return [...this.states.values()].filter((state) => state.original === null || state.content !== state.original)
   }
 
-  async runCheck(check: AvailableCheck, signal: AbortSignal): Promise<CheckResult> {
+  async runCheck(check: AvailableCheck, signal: AbortSignal, includeChanges = true): Promise<CheckResult> {
     const shadow = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-agent-'))
     try {
       await this.copyWorkspace(this.rootPath, shadow)
@@ -394,18 +452,20 @@ class AgentWorkspace {
       if (await fs.stat(sourceModules).then((stats) => stats.isDirectory()).catch(() => false)) {
         await fs.symlink(sourceModules, path.join(shadow, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
       }
-      for (const state of this.changedStates()) {
-        const target = path.join(shadow, state.relativePath)
-        await fs.mkdir(path.dirname(target), { recursive: true })
-        await fs.writeFile(target, state.content, 'utf8')
+      if (includeChanges) {
+        for (const state of this.changedStates()) {
+          const target = path.join(shadow, state.relativePath)
+          await fs.mkdir(path.dirname(target), { recursive: true })
+          await fs.writeFile(target, state.content, 'utf8')
+        }
       }
       let output = ''
       for (const command of check.commands) {
         const result = await this.runCommand(shadow, command, signal)
         output += `$ ${command.command} ${command.args.join(' ')}\n${result.output}\n`
-        if (!result.passed) return { id: check.id, label: check.label, passed: false, output: redactOutput(output) }
+        if (!result.passed) return { id: check.id, label: check.label, passed: false, output: redactOutput(output).split(shadow).join('<workspace>') }
       }
-      return { id: check.id, label: check.label, passed: true, output: redactOutput(output) }
+      return { id: check.id, label: check.label, passed: true, output: redactOutput(output).split(shadow).join('<workspace>') }
     } finally {
       await fs.rm(shadow, { recursive: true, force: true }).catch(() => undefined)
     }
@@ -508,7 +568,7 @@ function observationText(observations: string[]): string {
 function actionLabel(action: WorkspaceAgentStep['action']): string {
   if (action.type === 'search') return 'Searching the workspace'
   if (action.type === 'read_file') return `Reading ${action.relativePath}`
-  if (action.type === 'edit_file') return `Editing ${action.relativePath}`
+  if (action.type === 'edit_file' || action.type === 'edit_lines') return `Editing ${action.relativePath}`
   if (action.type === 'create_file') return `Creating ${action.relativePath}`
   if (action.type === 'run_check') return `Running ${action.checkId}`
   return 'Finalizing the proposal'
@@ -525,12 +585,16 @@ export async function runWorkspaceAgent(options: RunWorkspaceAgentOptions): Prom
   let mutationVersion = 0
   let passedVersion = -1
   let finish: Extract<WorkspaceAgentStep['action'], { type: 'finish' }> | null = null
-  const repeatedActions = new Map<string, number>()
+  let previousActionKey = ''
+  let consecutiveActionCount = 0
+  const session = options.model.createSession?.()
+  let sentObservationCount = 0
 
+  try {
   for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
     const changedPaths = workspace.changedStates().map((state) => displayPath(state.relativePath))
     const prompt = `Act as a bounded repository coding agent. Understand the existing implementation before editing it.
-Use one action per turn. Search and read exact files before editing. edit_file performs one exact, uniquely anchored replacement in the shadow workspace; it never writes to the user's live project. Prefer several small edits over replacing a complete file. Use create_file only for genuinely new files. Never delete files.
+Use one action per turn. Search and read exact files before editing. Read results are JSON whose content field contains exact source text without line-number prefixes. Prefer edit_lines for a small contiguous line change and edit_file for an exact, uniquely anchored substring replacement. Both edit only the shadow workspace; neither writes to the user's live project. Re-read after an edit before using edit_lines again because line positions may have changed. Never replace a complete existing file. Use create_file only for genuinely new files. Never delete files.
 After edits, run the most relevant available check. If it fails, inspect the output, make the smallest repair, and rerun it. Finish only when the implementation is coherent. Do not claim a check passed unless an observation says it passed.
 
 Available checks: ${checks.length ? checks.map((check) => `${check.id} (${check.label})`).join(', ') : 'none'}
@@ -540,18 +604,34 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
 <user-request>\n${options.request}\n</user-request>
 
 <tool-observations>\n${observationText(observations)}\n</tool-observations>`
+    const deltaPrompt = stepNumber > 1
+      ? `Changed paths: ${changedPaths.join(', ') || 'none'}
+Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks: ${checkResults.length}/${maxChecks}
+
+<new-tool-observations>\n${observationText(observations.slice(sentObservationCount)) || '(none)'}\n</new-tool-observations>
+
+Choose the next single action.`
+      : undefined
+    sentObservationCount = observations.length
+    // Screenshots ride along on the first turn only: reused threads keep them
+    // in context, and fresh-thread fallbacks resend the full prompt anyway.
+    const imagePaths = stepNumber === 1 && options.imagePaths?.length ? options.imagePaths : undefined
+    const stepOptions = session || imagePaths
+      ? { ...(session ? { session, deltaPrompt } : {}), ...(imagePaths ? { imagePaths } : {}) }
+      : undefined
     const step = await options.model.generateStructured(
       'workspace-step',
       prompt,
       workspaceAgentStepSchema,
       options.signal,
-      options.onProtocolEvent
+      options.onProtocolEvent,
+      stepOptions
     )
     options.onActivity?.(actionLabel(step.action), step.note)
     const actionKey = JSON.stringify(step.action)
-    const repeated = (repeatedActions.get(actionKey) ?? 0) + 1
-    repeatedActions.set(actionKey, repeated)
-    if (repeated > 2) {
+    consecutiveActionCount = actionKey === previousActionKey ? consecutiveActionCount + 1 : 1
+    previousActionKey = actionKey
+    if (consecutiveActionCount > 2) {
       observations.push(`Step ${stepNumber}: Repeated action rejected. Choose a different action based on existing observations.`)
       continue
     }
@@ -566,6 +646,11 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
         observations.push(`Step ${stepNumber}: ${await workspace.edit(step.action.relativePath, step.action.oldText, step.action.newText)}`)
         mutations += 1
         mutationVersion += 1
+      } else if (step.action.type === 'edit_lines') {
+        if (mutations >= maxMutations) throw new Error('Mutation limit reached. Finish with the current changes.')
+        observations.push(`Step ${stepNumber}: ${await workspace.editLines(step.action.relativePath, step.action.startLine, step.action.endLine, step.action.newText)}`)
+        mutations += 1
+        mutationVersion += 1
       } else if (step.action.type === 'create_file') {
         if (mutations >= maxMutations) throw new Error('Mutation limit reached. Finish with the current changes.')
         observations.push(`Step ${stepNumber}: ${await workspace.create(step.action.relativePath, step.action.content)}`)
@@ -577,9 +662,17 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
         const check = checks.find((candidate) => candidate.id === checkId)
         if (!check) throw new Error('Choose one of the available check IDs.')
         const result = await workspace.runCheck(check, options.signal)
+        if (!result.passed) {
+          const baseline = await workspace.runCheck(check, options.signal, false)
+          if (!baseline.passed && baseline.output === result.output) {
+            result.baselineFailure = true
+            passedVersion = mutationVersion
+          }
+        }
         checkResults.push(result)
         if (result.passed) passedVersion = mutationVersion
-        observations.push(`Step ${stepNumber} ${result.label}: ${result.passed ? 'PASSED' : 'FAILED'}\n${result.output}`)
+        const status = result.passed ? 'PASSED' : result.baselineFailure ? 'UNCHANGED BASELINE FAILURE' : 'FAILED'
+        observations.push(`Step ${stepNumber} ${result.label}: ${status}\n${result.output}`)
       } else {
         const changed = workspace.changedStates()
         if (!changed.length) throw new Error('No effective file changes exist yet.')
@@ -597,8 +690,27 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
       observations.push(`Step ${stepNumber} action error: ${message.slice(0, 600)}`)
     }
   }
+  } finally {
+    if (session) await options.model.disposeSession?.(session)
+  }
 
-  if (!finish) throw new Error('The coding agent reached its bounded step limit before producing a reviewable proposal.')
+  if (!finish) {
+    const changed = workspace.changedStates()
+    const verificationComplete = !checks.length || passedVersion === mutationVersion || checkResults.length >= maxChecks
+    if (!changed.length || !verificationComplete) {
+      throw new Error('The coding agent reached its bounded step limit before producing a reviewable proposal.')
+    }
+    finish = {
+      type: 'finish',
+      summary: 'Prepared a bounded code change for review.',
+      explanations: changed.map((state) => ({
+        relativePath: displayPath(state.relativePath),
+        explanation: 'Updated this file as part of the requested change.'
+      })),
+      risks: ['The agent reached its step limit. Review each proposed change before applying it.'],
+      verification: []
+    }
+  }
   const explanations = new Map(finish.explanations.map((item) => [path.normalize(item.relativePath), item.explanation]))
   const changes = workspace.changedStates().slice(0, 12).map((state): WorkspaceAgentChange => {
     const explanation = explanations.get(state.relativePath) ?? 'Implement the requested behavior.'
@@ -632,9 +744,9 @@ Step: ${stepNumber}/${maxSteps}; mutations: ${mutations}/${maxMutations}; checks
   })
   const verification = [
     ...finish.verification,
-    ...checkResults.map((result) => `${result.passed ? 'Passed' : 'Failed'}: ${result.label}`)
+    ...checkResults.map((result) => `${result.passed ? 'Passed' : result.baselineFailure ? 'Baseline failure unchanged' : 'Failed'}: ${result.label}`)
   ]
-  const failedChecks = checkResults.filter((result) => !result.passed)
+  const failedChecks = checkResults.filter((result) => !result.passed && !result.baselineFailure)
   return {
     summary: finish.summary,
     changes,

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { isReviewedEditSelection, materializeProposalEdits, materializeResolvedProposalEdits } from './proposalEdits'
+import {
+  convertEol,
+  detectEol,
+  isReviewedEditSelection,
+  isReviewedEditSelectionEolTolerant,
+  materializeProposalEdits,
+  materializeResolvedProposalEdits
+} from './proposalEdits'
 import { proposalDraftSchema } from './schemas'
 
 describe('surgical proposal edits', () => {
@@ -100,6 +107,28 @@ describe('surgical proposal edits', () => {
       ...base,
       changes: [{ relativePath: 'a.ts', action: 'update', content: 'whole file', explanation: 'Replace it' }]
     }).success).toBe(false)
+  })
+
+  it('detects and converts dominant line endings', () => {
+    expect(detectEol('a\r\nb\r\nc\n')).toBe('\r\n')
+    expect(detectEol('a\nb\r\n')).toBe('\n')
+    expect(detectEol('no newline')).toBe('\n')
+    expect(convertEol('a\nb\r\nc', '\r\n')).toBe('a\r\nb\r\nc')
+    expect(convertEol('a\r\nb\n', '\n')).toBe('a\nb\n')
+  })
+
+  it('accepts EOL-normalized reviews without weakening exact validation', () => {
+    const original = 'alpha\r\none\r\nmiddle\r\ntwo\r\nomega'
+    const result = materializeProposalEdits(original, [
+      { oldText: 'one', newText: 'ONE' },
+      { oldText: 'two', newText: 'TWO' }
+    ], 'a.ts')
+    const normalizedKeepFirst = 'alpha\nONE\nmiddle\ntwo\nomega'
+
+    expect(isReviewedEditSelection(original, normalizedKeepFirst, result.edits)).toBe(false)
+    expect(isReviewedEditSelectionEolTolerant(original, normalizedKeepFirst, result.edits)).toBe(true)
+    expect(isReviewedEditSelectionEolTolerant(original, 'alpha\nONE\nmiddle\nTWO\nomega', result.edits)).toBe(true)
+    expect(isReviewedEditSelectionEolTolerant(original, 'alpha\nONE\nmiddle\ncustom\nomega', result.edits)).toBe(false)
   })
 
   it('materializes trusted offset edits without expanding them into file replacements', () => {

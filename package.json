@@ -6,13 +6,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "dev": "node scripts/fix-pty-permissions.mjs && electron-vite dev",
+    "build": "node scripts/fix-pty-permissions.mjs && npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "dist": "npm test && npm run build && electron-builder --publish never",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron && node scripts/fix-pty-permissions.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.10",

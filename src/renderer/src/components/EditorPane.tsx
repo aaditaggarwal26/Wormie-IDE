@@ -88,29 +88,29 @@ export const configureEditor: BeforeMount = (monaco) => {
     base: 'vs-dark',
     inherit: true,
     rules: [
-      { token: 'comment', foreground: '66736d', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'e7a96b' },
-      { token: 'string', foreground: 'a9c98f' },
-      { token: 'number', foreground: 'dfc879' },
-      { token: 'type', foreground: '8fb8c9' }
+      { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'c586c0' },
+      { token: 'string', foreground: 'ce9178' },
+      { token: 'number', foreground: 'b5cea8' },
+      { token: 'type', foreground: '4ec9b0' }
     ],
     colors: {
-      'editor.background': '#0d1012',
-      'editor.foreground': '#c7cec9',
-      'editor.lineHighlightBackground': '#151a1d',
-      'editor.selectionBackground': '#314335aa',
-      'editorCursor.foreground': '#dce873',
-      'editorLineNumber.foreground': '#465057',
-      'editorLineNumber.activeForeground': '#9ba59f',
-      'editorIndentGuide.background1': '#1e2528',
-      'editorIndentGuide.activeBackground1': '#364044',
-      'diffEditor.insertedLineBackground': '#24351f88',
-      'diffEditor.insertedTextBackground': '#3f632b88',
-      'diffEditor.removedLineBackground': '#3a211c88',
-      'diffEditor.removedTextBackground': '#6a342888',
-      'diffEditor.diagonalFill': '#171c1e',
-      'diffEditorGutter.insertedLineBackground': '#2f4b25',
-      'diffEditorGutter.removedLineBackground': '#593027'
+      'editor.background': '#1e1e1e',
+      'editor.foreground': '#d4d4d4',
+      'editor.lineHighlightBackground': '#242424',
+      'editor.selectionBackground': '#264f78',
+      'editorCursor.foreground': '#79a8d8',
+      'editorLineNumber.foreground': '#858585',
+      'editorLineNumber.activeForeground': '#c6c6c6',
+      'editorIndentGuide.background1': '#303030',
+      'editorIndentGuide.activeBackground1': '#505050',
+      'diffEditor.insertedLineBackground': '#1f3d2a66',
+      'diffEditor.insertedTextBackground': '#37664277',
+      'diffEditor.removedLineBackground': '#4b252566',
+      'diffEditor.removedTextBackground': '#7a3e3e77',
+      'diffEditor.diagonalFill': '#252526',
+      'diffEditorGutter.insertedLineBackground': '#315c3b',
+      'diffEditorGutter.removedLineBackground': '#6b3838'
     }
   })
 }

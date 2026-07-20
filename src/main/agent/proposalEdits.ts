@@ -191,22 +191,37 @@ export function materializeProposalEdits(
   return materializeResolvedEdits(originalContent, edits, relativePath)
 }
 
-export function isReviewedEditSelection(
+export function detectEol(content: string): '\n' | '\r\n' {
+  const crlf = content.match(/\r\n/g)?.length ?? 0
+  const lf = (content.match(/\n/g)?.length ?? 0) - crlf
+  return crlf > lf ? '\r\n' : '\n'
+}
+
+export function convertEol(content: string, eol: '\n' | '\r\n'): string {
+  const normalized = content.replace(/\r\n/g, '\n')
+  return eol === '\n' ? normalized : normalized.replace(/\n/g, '\r\n')
+}
+
+function matchesReviewedSelection(
   originalContent: string,
   reviewedContent: string,
-  edits: ResolvedProposalTextEdit[]
+  edits: ResolvedProposalTextEdit[],
+  normalize: (value: string) => string
 ): boolean {
+  const reviewed = normalize(reviewedContent)
   let originalCursor = 0
   let reviewedPositions = new Set([0])
 
   for (const edit of edits) {
-    const unchanged = originalContent.slice(originalCursor, edit.start)
+    const unchanged = normalize(originalContent.slice(originalCursor, edit.start))
+    const oldText = normalize(edit.oldText)
+    const newText = normalize(edit.newText)
     const nextPositions = new Set<number>()
     for (const position of reviewedPositions) {
-      if (!reviewedContent.startsWith(unchanged, position)) continue
+      if (!reviewed.startsWith(unchanged, position)) continue
       const choiceStart = position + unchanged.length
-      if (reviewedContent.startsWith(edit.oldText, choiceStart)) nextPositions.add(choiceStart + edit.oldText.length)
-      if (reviewedContent.startsWith(edit.newText, choiceStart)) nextPositions.add(choiceStart + edit.newText.length)
+      if (reviewed.startsWith(oldText, choiceStart)) nextPositions.add(choiceStart + oldText.length)
+      if (reviewed.startsWith(newText, choiceStart)) nextPositions.add(choiceStart + newText.length)
       if (nextPositions.size > maxReviewStates) return false
     }
     if (nextPositions.size === 0) return false
@@ -214,8 +229,26 @@ export function isReviewedEditSelection(
     originalCursor = edit.end
   }
 
-  const suffix = originalContent.slice(originalCursor)
+  const suffix = normalize(originalContent.slice(originalCursor))
   return [...reviewedPositions].some((position) =>
-    reviewedContent.startsWith(suffix, position) && position + suffix.length === reviewedContent.length
+    reviewed.startsWith(suffix, position) && position + suffix.length === reviewed.length
   )
+}
+
+export function isReviewedEditSelection(
+  originalContent: string,
+  reviewedContent: string,
+  edits: ResolvedProposalTextEdit[]
+): boolean {
+  return matchesReviewedSelection(originalContent, reviewedContent, edits, (value) => value)
+}
+
+// Monaco diff models can normalize CRLF to LF while the user reviews blocks;
+// this variant compares with CRLF folded to LF so such reviews still validate.
+export function isReviewedEditSelectionEolTolerant(
+  originalContent: string,
+  reviewedContent: string,
+  edits: ResolvedProposalTextEdit[]
+): boolean {
+  return matchesReviewedSelection(originalContent, reviewedContent, edits, (value) => value.replace(/\r\n/g, '\n'))
 }

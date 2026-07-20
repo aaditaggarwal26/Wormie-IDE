@@ -1,5 +1,6 @@
 appId: com.wormie.learnbeforeyoucode
 productName: Wormie
+icon: build/icon.png
 directories:
   output: release
 files:

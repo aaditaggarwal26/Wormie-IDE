@@ -234,6 +234,7 @@ export function Explorer({
             ))}
           </ul>
           {workspace.truncated && <p className="tree-notice">Showing the first 5,000 entries.</p>}
+          {/* Outline section intentionally disabled. */}
         </div>
       ) : (
         <div className="panel-empty">

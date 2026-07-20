@@ -55,6 +55,25 @@ describe('proposal review validation', () => {
     ])).toThrow(/invalid/i)
   })
 
+  it('restores the original line endings when a review came back EOL-normalized', () => {
+    const original = 'first\r\nvalue = false\r\nlast\r\n'
+    const crlfUpdate = materializeProposalEdits(original, [{ oldText: 'false', newText: 'true' }], 'src/c.ts')
+    const crlfChanges = [{
+      relativePath: 'src/c.ts', action: 'update' as const, content: crlfUpdate.content,
+      beforeContent: original, surgicalEdits: crlfUpdate.edits
+    }]
+
+    const reviewed = resolveReviewedChanges(crlfChanges, [
+      { relativePath: 'src/c.ts', content: 'first\nvalue = true\nlast\n', keptBlocks: 1, undoneBlocks: 0 }
+    ])
+    expect(reviewed[0].reviewedContent).toBe('first\r\nvalue = true\r\nlast\r\n')
+    expect(hasReviewedChange(reviewed[0])).toBe(true)
+
+    expect(() => resolveReviewedChanges(crlfChanges, [
+      { relativePath: 'src/c.ts', content: 'first\nvalue = tampered\nlast\n', keptBlocks: 1, undoneBlocks: 0 }
+    ])).toThrow(/not part of this proposal/i)
+  })
+
   it('rejects content that was not proposed by the agent', () => {
     expect(() => resolveReviewedChanges(changes, [
       { relativePath: 'src/a.ts', content: 'arbitrary replacement', keptBlocks: 1, undoneBlocks: 0 },

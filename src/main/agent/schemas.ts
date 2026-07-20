@@ -26,6 +26,15 @@ export const learningDraftSchema = z.object({
   })
 })
 
+export const guidanceDraftSchema = z.object({
+  summary: z.string().min(1).max(2400),
+  sections: z.array(z.object({
+    title: z.string().min(1).max(120),
+    content: z.string().min(1).max(2400)
+  })).min(1).max(6),
+  nextSteps: z.array(z.string().min(1).max(500)).max(8)
+})
+
 const proposalChangeBase = {
   relativePath: z.string().min(1).max(500),
   explanation: z.string().min(1).max(1000)
@@ -72,6 +81,13 @@ export const workspaceAgentStepSchema = z.object({
       type: z.literal('edit_file'),
       relativePath: workspacePath,
       oldText: z.string().max(100_000),
+      newText: z.string().max(100_000)
+    }),
+    z.object({
+      type: z.literal('edit_lines'),
+      relativePath: workspacePath,
+      startLine: z.number().int().positive().max(1_000_000),
+      endLine: z.number().int().positive().max(1_000_000),
       newText: z.string().max(100_000)
     }),
     z.object({
@@ -187,6 +203,7 @@ export const remediationDraftSchema = z.object({
 })
 
 export type LearningDraft = z.infer<typeof learningDraftSchema>
+export type GuidanceDraft = z.infer<typeof guidanceDraftSchema>
 export type ProposalDraft = z.infer<typeof proposalDraftSchema>
 export type WorkspaceAgentStep = z.infer<typeof workspaceAgentStepSchema>
 export type ChangeConceptDraft = z.infer<typeof changeConceptDraftSchema>

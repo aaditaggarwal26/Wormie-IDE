@@ -31,6 +31,8 @@ export const IPC_CHANNELS = {
   agentSetPassingScore: 'agent:set-passing-score',
   agentGetCodexAccount: 'agent:get-codex-account',
   agentConnectCodexAccount: 'agent:connect-codex-account',
+  agentListCodexModels: 'agent:list-codex-models',
+  agentListModels: 'agent:list-models',
   agentStartLearning: 'agent:start-learning',
   agentSubmitQuiz: 'agent:submit-quiz',
   agentGenerateProposal: 'agent:generate-proposal',
@@ -64,6 +66,7 @@ export const IPC_CHANNELS = {
   cloudSignUp: 'cloud:sign-up',
   cloudSignIn: 'cloud:sign-in',
   cloudRequestPasswordReset: 'cloud:request-password-reset',
+  cloudSubmitAuthLink: 'cloud:submit-auth-link',
   cloudUpdatePassword: 'cloud:update-password',
   cloudSignInWithGoogle: 'cloud:sign-in-with-google',
   cloudSignOut: 'cloud:sign-out',
@@ -326,11 +329,23 @@ export type CodexAccountStatus = {
   error?: string
 }
 
+export type AgentModelOption = {
+  id: string
+  displayName: string
+  description: string
+}
+
+export type CodexModelOption = AgentModelOption
+
+export type AgentMode = 'ask' | 'plan' | 'agent'
+
 export type LearningRequest = {
   runId: string
   request: string
+  mode?: AgentMode
   activePath?: string | null
   openPaths?: string[]
+  imagePaths?: string[]
 }
 
 export type ConceptLesson = {
@@ -349,12 +364,25 @@ export type QuizQuestion = {
 export type LearningSession = {
   id: string
   runId: string
+  mode: 'agent'
   request: string
   concepts: ConceptLesson[]
   lessonSummary: string
   quiz: QuizQuestion[]
   passingScore: number
 }
+
+export type AgentGuidanceSession = {
+  id: string
+  runId: string
+  mode: 'ask' | 'plan'
+  request: string
+  summary: string
+  sections: Array<{ title: string; content: string }>
+  nextSteps: string[]
+}
+
+export type AgentRunResult = LearningSession | AgentGuidanceSession
 
 export type QuizSubmission = {
   sessionId: string
@@ -908,7 +936,10 @@ export type DesktopApi = {
   setAgentPassingScore: (score: number) => Promise<number>
   getCodexAccount: () => Promise<CodexAccountStatus>
   connectCodexAccount: () => Promise<CodexAccountStatus>
-  startLearning: (request: LearningRequest) => Promise<LearningSession>
+  listCodexModels: () => Promise<CodexModelOption[]>
+  listAgentModels: () => Promise<AgentModelOption[]>
+  pathForFile: (file: File) => string
+  startLearning: (request: LearningRequest) => Promise<AgentRunResult>
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
   generateProposal: (sessionId: string) => Promise<CodeProposal>
   applyProposal: (request: ApplyProposalRequest) => Promise<AppliedProposal>
@@ -941,6 +972,7 @@ export type DesktopApi = {
   signUp: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
   signIn: (credentials: CloudAuthCredentials) => Promise<CloudAuthState>
   requestPasswordReset: (email: string) => Promise<void>
+  submitAuthLink: (link: string) => Promise<void>
   updatePassword: (password: string) => Promise<CloudAuthState>
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import {
   IPC_CHANNELS,
   type AgentActivityEvent,
@@ -55,6 +55,9 @@ const desktopApi: DesktopApi = {
   setAgentPassingScore: (score) => ipcRenderer.invoke(IPC_CHANNELS.agentSetPassingScore, score),
   getCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentGetCodexAccount),
   connectCodexAccount: () => ipcRenderer.invoke(IPC_CHANNELS.agentConnectCodexAccount),
+  listCodexModels: () => ipcRenderer.invoke(IPC_CHANNELS.agentListCodexModels),
+  listAgentModels: () => ipcRenderer.invoke(IPC_CHANNELS.agentListModels),
+  pathForFile: (file) => webUtils.getPathForFile(file),
   startLearning: (request) => ipcRenderer.invoke(IPC_CHANNELS.agentStartLearning, request),
   submitQuiz: (submission) => ipcRenderer.invoke(IPC_CHANNELS.agentSubmitQuiz, submission),
   generateProposal: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.agentGenerateProposal, sessionId),
@@ -103,6 +106,7 @@ const desktopApi: DesktopApi = {
   signUp: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignUp, credentials),
   signIn: (credentials) => ipcRenderer.invoke(IPC_CHANNELS.cloudSignIn, credentials),
   requestPasswordReset: (email) => ipcRenderer.invoke(IPC_CHANNELS.cloudRequestPasswordReset, email),
+  submitAuthLink: (link) => ipcRenderer.invoke(IPC_CHANNELS.cloudSubmitAuthLink, link),
   updatePassword: (password) => ipcRenderer.invoke(IPC_CHANNELS.cloudUpdatePassword, password),
   signInWithGoogle: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignInWithGoogle),
   signOut: () => ipcRenderer.invoke(IPC_CHANNELS.cloudSignOut),

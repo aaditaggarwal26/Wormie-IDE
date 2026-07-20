@@ -274,22 +274,23 @@ function TerminalSession({
       cursorBlink: true,
       cursorStyle: 'bar',
       fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
-      fontSize: 11,
-      lineHeight: 1.35,
+      fontSize: 12,
+      lineHeight: 1.4,
       scrollback: 4000,
       theme: {
-        background: '#0b0e10',
-        foreground: '#b7c0bb',
-        cursor: '#dce873',
-        selectionBackground: '#3a4c3d',
-        black: '#111719',
-        brightBlack: '#59656a',
-        green: '#96bd83',
-        brightGreen: '#dce873',
-        yellow: '#d4b16f',
-        brightYellow: '#e7a96b',
-        cyan: '#86adb6',
-        brightCyan: '#a8ccd3'
+        background: '#181818',
+        foreground: '#d0d4d1',
+        cursor: '#79a8d8',
+        cursorAccent: '#181818',
+        selectionBackground: '#33507055',
+        black: '#181818',
+        brightBlack: '#858585',
+        green: '#75a384',
+        brightGreen: '#8fbc9b',
+        yellow: '#c5a66f',
+        brightYellow: '#d7ba7d',
+        cyan: '#75a7ad',
+        brightCyan: '#9cc5ca'
       }
     })
     const fitAddon = new FitAddon()

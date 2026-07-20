@@ -24,6 +24,7 @@ import {
 const store = new Store<AppPreferences>({ name: 'preferences' })
 const trustedWebContents = new Set<number>()
 const rendererFilePath = path.join(__dirname, '../renderer/index.html')
+const devIconPath = path.join(__dirname, '../../build/icon.png')
 const isTrustedRendererUrl = createRendererUrlValidator(process.env.ELECTRON_RENDERER_URL, rendererFilePath)
 const understandingStore = new Store({ name: 'understanding-state' })
 const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
@@ -99,9 +100,11 @@ function createWindow(): void {
     minWidth: 1040,
     minHeight: 680,
     title: 'Wormie',
+    icon: app.isPackaged ? undefined : devIconPath,
     backgroundColor: '#090b0d',
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: process.platform === 'darwin' ? { x: 17, y: 14 } : undefined,
     titleBarOverlay:
       process.platform === 'darwin'
         ? undefined
@@ -193,6 +196,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(() => {
+    if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(devIconPath)
     const cloud = registerCloudHandlers(
       workspace.getWorkspaceRoot,
       workspace.setWorkspace,

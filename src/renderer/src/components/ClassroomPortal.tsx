@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
-import type { AssignmentWorkspaceState, Classroom, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
-import { classroomTabsForRole, groupClassrooms, validClassroomTab } from '../classrooms/classroomPortalModel'
+import { ArrowLeft, BarChart3, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Coins, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, MessageSquareText, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import type { AssignmentWorkspaceState, Classroom, ClassroomAiAnalyticsSnapshot, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import { classroomTabsForRole, groupClassrooms, summarizeClassroomAnalytics, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
 
 type ClassroomPortalProps = {
   actionVersion: number
   assignment: AssignmentWorkspaceState | null
+  analytics: ClassroomAiAnalyticsSnapshot | null
+  analyticsBusy: boolean
   busy: boolean
   classrooms: Classroom[]
   error: string | null
@@ -115,6 +117,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
               {selectedTab === 'assignments' && <AssignmentsTab {...props} classroom={selected} />}
               {selectedTab === 'people' && <PeopleTab {...props} classroom={selected} />}
               {selectedTab === 'mastery' && <MasteryTab {...props} classroom={selected} />}
+              {selectedTab === 'analytics' && selected.role === 'teacher' && <AnalyticsTab {...props} classroom={selected} />}
               {selectedTab === 'settings' && selected.role === 'teacher' && <ClassroomSettings {...props} classroom={selected} />}
             </div>
           </motion.div> : <div className="portal-empty"><GraduationCap size={28} /><h1>Classrooms live here.</h1><p>Create a class to teach, or join one with an invitation.</p></div>}
@@ -195,5 +198,46 @@ function MasteryTab(props: ClassroomPortalProps & { classroom: Classroom }): Rea
     {props.mastery.pendingSyncCount > 0 && <div className="portal-sync-notice">{props.mastery.pendingSyncCount} local mastery event{props.mastery.pendingSyncCount === 1 ? '' : 's'} waiting to sync.</div>}
     {props.classroom.role === 'teacher' && <aside className="portal-mastery-students"><span>Students</span>{visibleStudentIds.map((studentId) => <button aria-current={effectiveStudentId === studentId ? 'true' : undefined} key={studentId} onClick={() => setSelectedStudentId(studentId)} type="button"><b>{memberName(studentId)}</b><small>{props.mastery!.concepts.filter((item) => item.studentId === studentId).length} concepts</small></button>)}</aside>}
     <section className="portal-mastery-detail"><header><div><span className="portal-overline">Classroom mastery</span><h2>{memberName(effectiveStudentId!)}</h2></div><strong>{average}<small>%</small></strong></header><div className="portal-mastery-concepts">{concepts.length ? concepts.map((concept) => <article key={concept.conceptId}><div><b>{concept.conceptName}</b><small>{concept.correct} correct across {concept.attempts} attempts</small></div><span>{concept.mastery}%</span><i><em style={{ width: `${concept.mastery}%` }} /></i></article>) : <p>No concept evidence yet.</p>}</div><div className="portal-mastery-events"><h3>Recent checks</h3>{events.map((event) => <article key={`${event.quizId}:${event.attempt}`}><CheckCircle2 data-passed={event.passed} size={15} /><div><b>{event.title}</b><time>{new Date(event.completedAt).toLocaleString()}</time></div><strong>{event.score}%</strong></article>)}</div></section>
+  </div>
+}
+
+function formatCount(value: number): string {
+  return new Intl.NumberFormat(undefined, { notation: value >= 100_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value)
+}
+
+function formatCredits(value: number | null): string {
+  return value === null ? 'Not reported' : value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })
+}
+
+function AnalyticsTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
+  if (props.analyticsBusy && !props.analytics) return <div className="portal-mastery-state"><RefreshCw className="spin" size={22} /><p>Loading AI analytics...</p></div>
+  if (!props.analytics) return <div className="portal-mastery-state"><BarChart3 size={24} /><h2>Analytics unavailable.</h2><p>Refresh the classroom to try again.</p></div>
+
+  const summary = summarizeClassroomAnalytics(props.analytics.students)
+  const trackedScopes = Object.values(summary.requestScopes).reduce((total, count) => total + count, 0)
+  const memberName = (studentId: string) => props.classroom.members.find((member) => member.userId === studentId)?.displayName ?? 'Student'
+  const memberEmail = (studentId: string) => props.classroom.members.find((member) => member.userId === studentId)?.email ?? ''
+
+  return <div className="portal-analytics">
+    <header className="portal-analytics-heading"><div><span className="portal-overline">Classroom signals</span><h2>AI learning analytics</h2><p>Usage metadata only. Student prompts, responses, and conversations are never shown here.</p></div>{summary.lastActivityAt && <time>Updated {new Date(summary.lastActivityAt).toLocaleString()}</time>}</header>
+    <section className="portal-analytics-cards" aria-label="Classroom AI analytics summary">
+      <article><MessageSquareText size={17} /><span>AI requests</span><strong>{formatCount(summary.requestCount)}</strong><small>{formatCount(summary.averageRequestCharacters)} average characters</small></article>
+      <article><CheckCircle2 size={17} /><span>Average quiz score</span><strong>{summary.averageQuizScore === null ? '-' : `${Math.round(summary.averageQuizScore)}%`}</strong><small>{formatCount(summary.quizAttemptCount)} quiz attempts</small></article>
+      <article><BookOpenCheck size={17} /><span>Quiz questions</span><strong>{formatCount(summary.quizQuestionCount)}</strong><small>Across all attempts</small></article>
+      <article><BarChart3 size={17} /><span>Total tokens</span><strong>{formatCount(summary.totalTokens)}</strong><small>{formatCount(summary.inputTokens)} input, {formatCount(summary.outputTokens)} output</small></article>
+      <article><Coins size={17} /><span>Credits used</span><strong>{formatCredits(summary.reportedCredits)}</strong><small>Provider-reported only</small></article>
+    </section>
+    <div className="portal-analytics-grid">
+      <section className="portal-analytics-scope"><div><span>Agent request scope</span><h3>Micro to large</h3></div>{(['micro', 'small', 'medium', 'large'] as const).map((scope) => {
+        const count = summary.requestScopes[scope]
+        const percentage = trackedScopes ? Math.round((count / trackedScopes) * 100) : 0
+        return <div className="portal-scope-row" key={scope}><b>{scope}</b><i><em data-scope={scope} style={{ width: `${percentage}%` }} /></i><span>{count} <small>{percentage}%</small></span></div>
+      })}{trackedScopes === 0 && <p>No classified Agent requests yet. Ask and Plan requests count toward usage totals but do not receive a coding scope.</p>}</section>
+      <section className="portal-token-detail"><div><span>Token detail</span><h3>Reported model usage</h3></div><dl><div><dt>Input</dt><dd>{formatCount(summary.inputTokens)}</dd></div><div><dt>Cached input</dt><dd>{formatCount(summary.cachedInputTokens)}</dd></div><div><dt>Output</dt><dd>{formatCount(summary.outputTokens)}</dd></div><div><dt>Reasoning output</dt><dd>{formatCount(summary.reasoningOutputTokens)}</dd></div></dl></section>
+    </div>
+    <section className="portal-analytics-students"><header><div><span>Student detail</span><h3>Usage by student</h3></div><b>{props.analytics.students.length}</b></header>{props.analytics.students.length === 0 ? <p>No students are enrolled.</p> : <div className="portal-analytics-table" role="table" aria-label="AI usage by student">
+      <div className="portal-analytics-row portal-analytics-columns" role="row"><span role="columnheader">Student</span><span role="columnheader">Requests</span><span role="columnheader">Avg length</span><span role="columnheader">Quiz score</span><span role="columnheader">Questions</span><span role="columnheader">Tokens</span><span role="columnheader">Credits</span></div>
+      {props.analytics.students.map((student) => <div className="portal-analytics-row" key={student.studentId} role="row"><span role="cell"><b>{memberName(student.studentId)}</b><small>{memberEmail(student.studentId) || 'No email available'}</small></span><span role="cell">{formatCount(student.requestCount)}</span><span role="cell">{formatCount(student.averageRequestCharacters)} chars</span><span role="cell">{student.averageQuizScore === null ? '-' : `${Math.round(student.averageQuizScore)}%`}</span><span role="cell">{formatCount(student.quizQuestionCount)}</span><span role="cell">{formatCount(student.totalTokens)}</span><span role="cell">{formatCredits(student.reportedCredits)}</span></div>)}
+    </div>}</section>
   </div>
 }

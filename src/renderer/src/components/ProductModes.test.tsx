@@ -37,6 +37,8 @@ describe('authenticated product modes', () => {
   it('renders classroom management without IDE chrome', () => {
     const markup = renderToStaticMarkup(<ClassroomPortal
       actionVersion={0}
+      analytics={null}
+      analyticsBusy={false}
       assignment={null}
       busy={false}
       classrooms={[classroom]}
@@ -74,6 +76,8 @@ describe('authenticated product modes', () => {
   it('shows roster management only to teachers', () => {
     const renderPortal = (value: Classroom) => renderToStaticMarkup(<ClassroomPortal
       actionVersion={0}
+      analytics={null}
+      analyticsBusy={false}
       assignment={null}
       busy={false}
       classrooms={[value]}
@@ -109,7 +113,7 @@ describe('authenticated product modes', () => {
 
   it('shows editable classroom details only in teacher settings', () => {
     const markup = renderToStaticMarkup(<ClassroomPortal
-      actionVersion={0} assignment={null} busy={false} classrooms={[classroom]} error={null} mastery={null} masteryBusy={false}
+      actionVersion={0} analytics={null} analyticsBusy={false} assignment={null} busy={false} classrooms={[classroom]} error={null} mastery={null} masteryBusy={false}
       onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
       onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
       onRotateInvite={action} onSelectClassroom={action} onSelectTab={action} onSignOut={action} onUpdateClassroom={action}
@@ -118,5 +122,25 @@ describe('authenticated product modes', () => {
 
     expect(markup).toContain('Classroom details')
     expect(markup).toContain('Save changes')
+  })
+
+  it('shows metadata-only AI analytics to teachers', () => {
+    const markup = renderToStaticMarkup(<ClassroomPortal
+      actionVersion={0} analytics={{ classroomId: classroom.id, pendingSyncCount: 0, students: [{
+        studentId: 'student-1', requestCount: 2, totalRequestCharacters: 300, averageRequestCharacters: 150,
+        quizAttemptCount: 1, quizQuestionCount: 3, averageQuizScore: 90,
+        requestScopes: { micro: 1, small: 1, medium: 0, large: 0 },
+        inputTokens: 100, cachedInputTokens: 20, outputTokens: 50, reasoningOutputTokens: 10, totalTokens: 150,
+        reportedCredits: null, lastActivityAt: '2026-07-20T00:00:00.000Z'
+      }] }} analyticsBusy={false} assignment={null} busy={false} classrooms={[classroom]} error={null} mastery={null} masteryBusy={false}
+      onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
+      onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
+      onRotateInvite={action} onSelectClassroom={action} onSelectTab={action} onSignOut={action} onUpdateClassroom={action}
+      selectedClassroomId={classroom.id} selectedTab="analytics" user={{ id: 'teacher-1', email: 'teacher@example.com' }} workspace={null}
+    />)
+
+    expect(markup).toContain('AI learning analytics')
+    expect(markup).toContain('Usage metadata only')
+    expect(markup).not.toContain('private prompt')
   })
 })

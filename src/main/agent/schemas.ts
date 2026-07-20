@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const learningDraftSchema = z.object({
+  requestScope: z.enum(['micro', 'small', 'medium', 'large']),
   concepts: z.array(z.object({
     id: z.string().min(1).max(100),
     name: z.string().min(1).max(80),
@@ -16,8 +17,16 @@ export const learningDraftSchema = z.object({
     correctOption: z.number().int().min(0).max(4),
     difficulty: z.enum(['easy', 'medium', 'hard']),
     explanation: z.string().min(1).max(600)
-  })).min(3).max(5)
+  })).min(1).max(4)
 }).superRefine((value, context) => {
+  const expectedQuestionCount = { micro: 1, small: 2, medium: 3, large: 4 }[value.requestScope]
+  if (value.quiz.length !== expectedQuestionCount) {
+    context.addIssue({
+      code: 'custom',
+      message: `${value.requestScope} requests require exactly ${expectedQuestionCount} learning-check question${expectedQuestionCount === 1 ? '' : 's'}.`,
+      path: ['quiz']
+    })
+  }
   const conceptIds = new Set(value.concepts.map((concept) => concept.id))
   value.quiz.forEach((question, index) => {
     if (!conceptIds.has(question.conceptId)) {

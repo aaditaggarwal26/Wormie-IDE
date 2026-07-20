@@ -118,6 +118,9 @@ describe('workspace coding agent', () => {
         edits: [{ oldText: 'export const value = false', newText: 'export const value = true' }]
       }])
       expect(lastPrompt).toContain('value.ts')
+      expect(lastPrompt).toContain('Implement only behavior explicitly requested by the user.')
+      expect(lastPrompt).toContain('Do not add visual polish, redesigns, refactors, abstractions, dependencies, cleanup, or unrelated fixes')
+      expect(lastPrompt).toContain('Stop as soon as the explicit request is satisfied')
       expect(await fs.readFile(sourcePath, 'utf8')).toBe('export const value = false\n')
     } finally {
       await fs.rm(rootPath, { recursive: true, force: true })

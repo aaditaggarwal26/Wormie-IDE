@@ -127,11 +127,11 @@ export async function appendAiActivity(
   manifest: AssignmentManifest,
   assignmentRevision: string,
   input: AssignmentAiActivityInput
-): Promise<void> {
+): Promise<boolean> {
   const progress = await readProgress(storageRoot, workspaceRoot, manifest, assignmentRevision)
-  if (!progress) return
+  if (!progress) return false
   if (progress.status === 'submitted') throw new Error('This assignment has already been submitted.')
-  if (!progress.evidenceConsent.includeAiActivity) return
+  if (!progress.evidenceConsent.includeAiActivity) return false
   const filePath = activityPath(storageRoot, workspaceRoot, manifest.id)
   await withActivityLock(filePath, async () => {
     const raw = await readActivityFile(filePath)
@@ -145,4 +145,5 @@ export async function appendAiActivity(
     const event = assignmentAiActivitySchema.parse({ ...input, id: randomUUID(), occurredAt: new Date().toISOString() })
     await writeActivity(filePath, { ...current, events: [...current.events, event] })
   })
+  return true
 }

@@ -1,7 +1,8 @@
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import Store from 'electron-store'
-import { registerAgentHandlers } from './agent'
+import { registerAgentHandlers, type AgentClassroomAnalyticsInput, type AgentClassroomAnalyticsScope } from './agent'
 import { registerAssignmentHandlers } from './assignments'
 import { registerCloudHandlers } from './cloud'
 import { registerGitHandlers } from './git'
@@ -20,6 +21,7 @@ import { registerWorkspaceHandlers } from './workspace'
 import { IPC_CHANNELS, type ClassroomAssignmentContext, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
 import { MasterySyncQueue } from './cloud/masterySync'
+import { AiAnalyticsSyncQueue, type AiAnalyticsSyncEvent } from './cloud/aiAnalyticsSync'
 import {
   authCallback,
   authCallbackFromArguments,
@@ -35,6 +37,8 @@ const understandingStore = new Store({ name: 'understanding-state' })
 const editorRecoveryStore = new Store<{ state?: unknown }>({ name: 'editor-recovery' })
 const masterySyncStore = new Store<{ queue?: unknown }>({ name: 'mastery-sync' })
 const masterySyncQueue = new MasterySyncQueue(masterySyncStore)
+const analyticsSyncStore = new Store<{ queue?: unknown }>({ name: 'classroom-ai-analytics-sync' })
+const analyticsSyncQueue = new AiAnalyticsSyncQueue(analyticsSyncStore)
 let workspacePurpose: WorkspacePurpose = 'sandbox'
 let activeAssignmentContext: (ClassroomAssignmentContext & { userId: string }) | null = null
 const understandingRepository = new UnderstandingRepository(understandingStore)
@@ -52,10 +56,16 @@ const understanding = new UnderstandingController(understandingRepository, maste
 let pendingClassroomInvite = classroomInviteFromArguments(process.argv)
 let pendingAuthCallback = authCallbackFromArguments(process.argv)
 let handleAuthCallback: ((callback: AuthCallback) => Promise<void>) | null = null
+let recordAiAnalyticsEvent: ((event: AiAnalyticsSyncEvent) => void) | null = null
 const isTrustedSender = (event: IpcMainEvent | IpcMainInvokeEvent) =>
   trustedWebContents.has(event.sender.id) &&
   event.senderFrame === event.sender.mainFrame &&
   isTrustedRendererUrl(event.senderFrame.url)
+
+function samePath(left: string, right: string): boolean {
+  const normalize = (value: string) => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
+  return normalize(left) === normalize(right)
+}
 
 for (const protocol of ['wormie', 'wormie-ide']) {
   if (process.defaultApp) {
@@ -192,7 +202,48 @@ if (!app.requestSingleInstanceLock()) {
   registerMasteryIpc(mastery, isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot, mastery)
+  const getClassroomAnalyticsScope = (): AgentClassroomAnalyticsScope | null => {
+    const rootPath = workspace.getWorkspaceRoot()
+    if (!rootPath || workspacePurpose !== 'assignment' || !activeAssignmentContext || activeAssignmentContext.role !== 'student' || !activeAssignmentContext.assignmentId) return null
+    return {
+      classroomId: activeAssignmentContext.classroomId,
+      studentId: activeAssignmentContext.userId,
+      assignmentId: activeAssignmentContext.assignmentId,
+      workspaceRoot: rootPath
+    }
+  }
+  const queueClassroomAnalytics = (scope: AgentClassroomAnalyticsScope, input: AgentClassroomAnalyticsInput): void => {
+    const currentScope = getClassroomAnalyticsScope()
+    if (!currentScope || currentScope.classroomId !== scope.classroomId || currentScope.studentId !== scope.studentId || currentScope.assignmentId !== scope.assignmentId || !samePath(currentScope.workspaceRoot, scope.workspaceRoot)) return
+    const usage = input.eventType === 'quiz'
+      ? { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, reportedCredits: null }
+      : {
+          inputTokens: input.usage.inputTokens,
+          cachedInputTokens: input.usage.cachedInputTokens ?? 0,
+          outputTokens: input.usage.outputTokens,
+          reasoningOutputTokens: input.usage.reasoningOutputTokens ?? 0,
+          totalTokens: input.usage.totalTokens,
+          reportedCredits: input.usage.reportedCredits ?? null
+        }
+    recordAiAnalyticsEvent?.({
+      eventKey: randomUUID(),
+      classroomId: scope.classroomId,
+      studentId: scope.studentId,
+      assignmentId: scope.assignmentId,
+      sessionId: input.sessionId,
+      eventType: input.eventType,
+      mode: input.eventType === 'request' ? input.mode : null,
+      requestLength: input.eventType === 'request' ? input.requestLength : null,
+      requestScope: input.eventType === 'request' ? input.requestScope : null,
+      quizQuestionCount: input.eventType === 'request' || input.eventType === 'quiz' ? input.quizQuestionCount : null,
+      quizScore: input.eventType === 'quiz' ? input.quizScore : null,
+      passed: input.eventType === 'quiz' ? input.passed : null,
+      model: input.model,
+      ...usage,
+      occurredAt: new Date().toISOString()
+    })
+  }
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot, mastery, getClassroomAnalyticsScope, queueClassroomAnalytics, isTrustedSender)
 
   app.on('second-instance', (_event, commandLine) => {
     const callback = authCallbackFromArguments(commandLine)
@@ -213,11 +264,13 @@ if (!app.requestSingleInstanceLock()) {
       () => workspacePurpose,
       (context) => { activeAssignmentContext = context },
       masterySyncQueue,
+      analyticsSyncQueue,
       isTrustedSender,
       takePendingClassroomInvite,
       notifyCloudAuthChanged
     )
     understanding.setCompletionListener(cloud.recordUnderstandingCompletion)
+    recordAiAnalyticsEvent = cloud.recordAiAnalyticsEvent
     handleAuthCallback = cloud.handleAuthCallback
     createWindow()
     if (pendingAuthCallback) {

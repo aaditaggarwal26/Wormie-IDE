@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ClassroomPortalTab = 'assignments' | 'people' | 'mastery' | 'settings'
+export type ClassroomPortalTab = 'assignments' | 'people' | 'mastery' | 'analytics' | 'settings'
 
 export type AssignmentModeContext = {
   classroomId: string

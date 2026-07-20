@@ -36,7 +36,8 @@ import type {
   AgentRunResult,
   CodeProposal,
   LearningSession,
-  QuizResult
+  QuizResult,
+  TutorHistoryEntry
 } from '@shared/contracts'
 import { proposalReviewProgress } from '@/components/proposalReviewModel'
 import { notifyMasteryUpdated } from '@/components/useMasteryProfile'
@@ -48,6 +49,38 @@ function errorMessage(error: unknown): string {
 type ImageAttachment = { path: string; name: string }
 
 const maxAttachments = 4
+
+function historyEntryFromResult(result: AgentRunResult): TutorHistoryEntry {
+  const occurredAt = new Date().toISOString()
+  return result.mode === 'agent'
+    ? { id: result.id, occurredAt, mode: result.mode, request: result.request, lessonSummary: result.lessonSummary, concepts: result.concepts }
+    : { id: result.id, occurredAt, mode: result.mode, request: result.request, summary: result.summary, sections: result.sections, nextSteps: result.nextSteps }
+}
+
+function TutorHistoryExchange({ entry }: { entry: TutorHistoryEntry }): React.JSX.Element {
+  return <article className="tutor-history-entry">
+    <div className="chat-user-message">{entry.request}</div>
+    <div className="tutor-history-meta"><span>{entry.mode === 'agent' ? 'Agent lesson' : entry.mode === 'plan' ? 'Plan' : 'Answer'}</span><time>{new Date(entry.occurredAt).toLocaleString()}</time></div>
+    <div className="lesson-summary">{entry.mode === 'agent' ? entry.lessonSummary : entry.summary}</div>
+    {entry.mode === 'agent' ? (
+      <div className="concept-list tutor-history-concepts">
+        {entry.concepts.map((concept, index) => <details key={`${entry.id}:${concept.conceptId}`}>
+          <summary><span>{index + 1}</span>{concept.name}<ChevronDown size={12} /></summary>
+          <div className="concept-body">
+            <b>Why it matters</b><p>{concept.whyItMatters}</p>
+            <b>Mental model</b><p>{concept.mentalModel}</p>
+            <b>Common mistake</b><p>{concept.commonMistake}</p>
+          </div>
+        </details>)}
+      </div>
+    ) : (
+      <>
+        <div className="guidance-sections">{entry.sections.map((section, index) => <section key={`${entry.id}:${index}`}><h4>{section.title}</h4><p>{section.content}</p></section>)}</div>
+        {entry.nextSteps.length > 0 && <div className="guidance-next-steps"><b>Next steps</b><ol>{entry.nextSteps.map((step, index) => <li key={`${entry.id}:step:${index}`}>{step}</li>)}</ol></div>}
+      </>
+    )}
+  </article>
+}
 
 export function TutorPane(): React.JSX.Element {
   const [request, setRequest] = useState('')
@@ -68,6 +101,8 @@ export function TutorPane(): React.JSX.Element {
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
   const [modelOptions, setModelOptions] = useState<AgentModelOption[]>([])
   const [modelSaving, setModelSaving] = useState(false)
+  const [history, setHistory] = useState<TutorHistoryEntry[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   const activeRunId = useRef<string | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
@@ -129,7 +164,34 @@ export function TutorPane(): React.JSX.Element {
     return () => { active = false }
   }, [])
 
-  const learningMutation = useMutation<AgentRunResult, Error, { runId: string; intent: string; mode: AgentMode; imagePaths: string[] }>({
+  useEffect(() => {
+    const workspaceRoot = workspace?.rootPath
+    setHistory([])
+    setHistoryLoading(Boolean(workspaceRoot))
+    setSession(null)
+    setGuidance(null)
+    setAnswers({})
+    setQuizResult(null)
+    setQuizAttempts(0)
+    setProposal(null)
+    setPendingRequest(null)
+    setActivityState(null)
+    setError(null)
+    activeRunId.current = null
+    if (!workspaceRoot) return
+    let active = true
+    void window.desktop.getTutorHistory(workspaceRoot).then((restored) => {
+      if (!active || restored.workspaceRoot !== workspaceRoot || useWorkbench.getState().workspace?.rootPath !== workspaceRoot) return
+      setHistory(restored.entries)
+    }).catch((cause) => {
+      if (active && useWorkbench.getState().workspace?.rootPath === workspaceRoot) setError(`Could not restore Tutor history: ${errorMessage(cause)}`)
+    }).finally(() => {
+      if (active && useWorkbench.getState().workspace?.rootPath === workspaceRoot) setHistoryLoading(false)
+    })
+    return () => { active = false }
+  }, [workspace?.rootPath])
+
+  const learningMutation = useMutation<AgentRunResult, Error, { runId: string; workspaceRoot: string; intent: string; mode: AgentMode; imagePaths: string[] }>({
     mutationFn: ({ runId, intent, mode: requestMode, imagePaths }) => window.desktop.startLearning({
       runId,
       request: intent,
@@ -139,7 +201,10 @@ export function TutorPane(): React.JSX.Element {
       imagePaths
     }),
     onMutate: () => setError(null),
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
+      if (activeRunId.current !== variables.runId || useWorkbench.getState().workspace?.rootPath !== variables.workspaceRoot) return
+      const historyEntry = historyEntryFromResult(result)
+      setHistory((current) => [...current.filter((entry) => entry.id !== historyEntry.id), historyEntry].slice(-50))
       if (result.mode === 'agent') {
         setSession(result)
         setGuidance(null)
@@ -154,10 +219,13 @@ export function TutorPane(): React.JSX.Element {
       setAttachments([])
     },
     onError: (cause, variables) => {
+      if (activeRunId.current !== variables.runId || useWorkbench.getState().workspace?.rootPath !== variables.workspaceRoot) return
       setRequest((current) => current || variables.intent)
       reportError(cause)
     },
-    onSettled: () => setPendingRequest(null)
+    onSettled: (_result, _error, variables) => {
+      if (activeRunId.current === variables.runId && useWorkbench.getState().workspace?.rootPath === variables.workspaceRoot) setPendingRequest(null)
+    }
   })
 
   const quizMutation = useMutation({
@@ -236,7 +304,7 @@ export function TutorPane(): React.JSX.Element {
     setGuidance(null)
     setPendingRequest(intent)
     setPendingMode(mode)
-    learningMutation.mutate({ runId, intent, mode, imagePaths: attachments.map((attachment) => attachment.path) })
+    learningMutation.mutate({ runId, workspaceRoot: workspace.rootPath, intent, mode, imagePaths: attachments.map((attachment) => attachment.path) })
   }
 
   const selectModel = (nextModel: string) => {
@@ -355,7 +423,11 @@ export function TutorPane(): React.JSX.Element {
       )}
 
       <div className="tutor-scroll" ref={scrollRef}>
-        {!session && !guidance && !pendingRequest && (
+        {history.filter((entry) => entry.id !== session?.id && entry.id !== guidance?.id).map((entry) => <TutorHistoryExchange entry={entry} key={entry.id} />)}
+
+        {historyLoading && !session && !guidance && !pendingRequest && <div className="tutor-history-loading"><LoaderCircle className="spin" size={13} /> Restoring assignment conversation...</div>}
+
+        {!historyLoading && history.length === 0 && !session && !guidance && !pendingRequest && (
           <div className="agent-empty">
             <h3>Ask Wormie Agent for help</h3>
             <p>Wormie explains concepts, checks your understanding, then proposes changes for you to review. Drop screenshots onto this panel to attach them.</p>

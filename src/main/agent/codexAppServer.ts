@@ -5,6 +5,7 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { z, type ZodType } from 'zod'
 import { CodexTurnCapture } from './codexTurnCapture'
+import type { ModelUsage } from './provider'
 import { sanitizeStructuredOutputSchema, stripNullProperties } from './structuredOutputSchema'
 
 export type CodexSession = { codexThreadId: string | null }
@@ -13,6 +14,7 @@ export type CodexGenerateOptions = {
   session?: CodexSession
   deltaPrompt?: string
   imagePaths?: string[]
+  onUsage?: (usage: ModelUsage) => void
 }
 
 export type CodexModelOption = {
@@ -75,6 +77,10 @@ type ModelListResponse = {
 
 type TurnStartResponse = {
   turn: { id: string }
+}
+
+type RateLimitsResponse = {
+  rateLimits?: { credits?: { balance?: string | null } | null }
 }
 
 const require = createRequire(import.meta.url)
@@ -315,7 +321,7 @@ export class CodexAppServer {
     const reusedThreadId = session?.codexThreadId ?? null
     if (session && reusedThreadId && options?.deltaPrompt) {
       try {
-        return await this.runTurnOnThread(reusedThreadId, options.deltaPrompt, schema, signal, onProtocolEvent, imagePaths)
+        return await this.runTurnOnThread(reusedThreadId, options.deltaPrompt, schema, signal, onProtocolEvent, imagePaths, options.onUsage)
       } catch (error) {
         if (signal.aborted) throw error
         // The thread may have been lost to a runtime restart; retry once on
@@ -327,7 +333,7 @@ export class CodexAppServer {
     const threadId = await this.startThread(model)
     if (session) session.codexThreadId = threadId
     try {
-      return await this.runTurnOnThread(threadId, prompt, schema, signal, onProtocolEvent, imagePaths)
+      return await this.runTurnOnThread(threadId, prompt, schema, signal, onProtocolEvent, imagePaths, options?.onUsage)
     } finally {
       if (!session) void this.request('thread/unsubscribe', { threadId }).catch(() => undefined)
     }
@@ -358,12 +364,14 @@ export class CodexAppServer {
     schema: ZodType<T>,
     signal: AbortSignal,
     onProtocolEvent?: (method: string, detail: string) => void,
-    imagePaths?: string[]
+    imagePaths?: string[],
+    onUsage?: (usage: ModelUsage) => void
   ): Promise<T> {
     const capture = new CodexTurnCapture(threadId, onProtocolEvent)
-    const methods = ['item/started', 'item/completed', 'item/agentMessage/delta', 'turn/completed']
+    const methods = ['item/started', 'item/completed', 'item/agentMessage/delta', 'thread/tokenUsage/updated', 'turn/completed']
     const unsubscribers = methods.map((method) => this.subscribeNotification(method, (params) => capture.accept(method, params)))
     let turn: TurnStartResponse | null = null
+    const creditBalanceBefore = onUsage ? await this.readCreditBalance() : null
     const abort = () => {
       if (turn) void this.request('turn/interrupt', { threadId, turnId: turn.turn.id }).catch(() => undefined)
     }
@@ -385,11 +393,31 @@ export class CodexAppServer {
       }
       const finalMessage = capture.outputFor(turn.turn.id)
       if (!finalMessage) throw new Error('Codex completed without an agent-message output event.')
+      const usage = capture.usageFor(turn.turn.id)
+      if (usage && onUsage) {
+        const creditBalanceAfter = await this.readCreditBalance()
+        const reportedCredits = creditBalanceBefore !== null && creditBalanceAfter !== null && creditBalanceBefore >= creditBalanceAfter
+          ? creditBalanceBefore - creditBalanceAfter
+          : null
+        onUsage({ ...usage, ...(reportedCredits !== null ? { reportedCredits } : {}) })
+      }
       return schema.parse(stripNullProperties(JSON.parse(finalMessage)))
     } finally {
       signal.removeEventListener('abort', abort)
       unsubscribers.forEach((unsubscribe) => unsubscribe())
       capture.dispose()
+    }
+  }
+
+  private async readCreditBalance(): Promise<number | null> {
+    try {
+      const response = await this.request<RateLimitsResponse>('account/rateLimits/read')
+      const raw = response.rateLimits?.credits?.balance
+      if (typeof raw !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(raw)) return null
+      const value = Number(raw)
+      return Number.isFinite(value) ? value : null
+    } catch {
+      return null
     }
   }
 

@@ -7,6 +7,14 @@ export type CapturedTurnCompletion = {
   }
 }
 
+export type CapturedTokenUsage = {
+  inputTokens: number
+  cachedInputTokens: number
+  outputTokens: number
+  reasoningOutputTokens: number
+  totalTokens: number
+}
+
 type TurnWaiter = {
   resolve: (completion: CapturedTurnCompletion) => void
   reject: (error: Error) => void
@@ -17,6 +25,7 @@ const protocolMethods = new Set([
   'item/started',
   'item/completed',
   'item/agentMessage/delta',
+  'thread/tokenUsage/updated',
   'turn/completed'
 ])
 
@@ -43,10 +52,33 @@ function readTurnCompletion(params: unknown): CapturedTurnCompletion | null {
   }
 }
 
+function readTokenCount(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+}
+
+function readTokenUsage(params: unknown): { turnId: string; usage: CapturedTokenUsage } | null {
+  const record = asRecord(params)
+  const tokenUsage = asRecord(record?.tokenUsage)
+  const last = asRecord(tokenUsage?.last)
+  if (!record || typeof record.turnId !== 'string' || !last) return null
+  const inputTokens = readTokenCount(last, 'inputTokens')
+  const cachedInputTokens = readTokenCount(last, 'cachedInputTokens')
+  const outputTokens = readTokenCount(last, 'outputTokens')
+  const reasoningOutputTokens = readTokenCount(last, 'reasoningOutputTokens')
+  const totalTokens = readTokenCount(last, 'totalTokens')
+  if ([inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens].some((value) => value === null)) return null
+  return {
+    turnId: record.turnId,
+    usage: { inputTokens: inputTokens!, cachedInputTokens: cachedInputTokens!, outputTokens: outputTokens!, reasoningOutputTokens: reasoningOutputTokens!, totalTokens: totalTokens! }
+  }
+}
+
 export class CodexTurnCapture {
   private readonly completedText = new Map<string, string>()
   private readonly deltaText = new Map<string, string>()
   private readonly completions = new Map<string, CapturedTurnCompletion>()
+  private readonly tokenUsage = new Map<string, CapturedTokenUsage>()
   private readonly waiters = new Map<string, TurnWaiter>()
 
   constructor(
@@ -58,6 +90,14 @@ export class CodexTurnCapture {
     if (!protocolMethods.has(method)) return
     const record = asRecord(params)
     if (!record || record.threadId !== this.threadId) return
+
+    if (method === 'thread/tokenUsage/updated') {
+      const update = readTokenUsage(params)
+      if (!update) return
+      this.tokenUsage.set(update.turnId, update.usage)
+      this.onProtocolEvent?.(method, 'tokenUsage')
+      return
+    }
 
     if (method === 'turn/completed') {
       const completion = readTurnCompletion(params)
@@ -110,6 +150,10 @@ export class CodexTurnCapture {
 
   outputFor(turnId: string): string | null {
     return this.completedText.get(turnId) ?? this.deltaText.get(turnId) ?? null
+  }
+
+  usageFor(turnId: string): CapturedTokenUsage | null {
+    return this.tokenUsage.get(turnId) ?? null
   }
 
   dispose(error = new Error('The Codex turn capture was closed.')): void {

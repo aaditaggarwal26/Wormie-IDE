@@ -33,6 +33,7 @@ export const IPC_CHANNELS = {
   agentConnectCodexAccount: 'agent:connect-codex-account',
   agentListCodexModels: 'agent:list-codex-models',
   agentListModels: 'agent:list-models',
+  agentGetTutorHistory: 'agent:get-tutor-history',
   agentStartLearning: 'agent:start-learning',
   agentSubmitQuiz: 'agent:submit-quiz',
   agentGenerateProposal: 'agent:generate-proposal',
@@ -97,6 +98,7 @@ export const IPC_CHANNELS = {
   cloudLeaveClassroom: 'cloud:leave-classroom',
   cloudBeginAssignmentAuthoring: 'cloud:begin-assignment-authoring',
   cloudListClassroomMastery: 'cloud:list-classroom-mastery',
+  cloudListClassroomAiAnalytics: 'cloud:list-classroom-ai-analytics',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
@@ -404,6 +406,30 @@ export type AgentGuidanceSession = {
 }
 
 export type AgentRunResult = LearningSession | AgentGuidanceSession
+
+export type TutorHistoryEntry =
+  | {
+      id: string
+      occurredAt: string
+      mode: 'agent'
+      request: string
+      lessonSummary: string
+      concepts: ConceptLesson[]
+    }
+  | {
+      id: string
+      occurredAt: string
+      mode: 'ask' | 'plan'
+      request: string
+      summary: string
+      sections: Array<{ title: string; content: string }>
+      nextSteps: string[]
+    }
+
+export type TutorHistory = {
+  workspaceRoot: string
+  entries: TutorHistoryEntry[]
+}
 
 export type QuizSubmission = {
   sessionId: string
@@ -1160,6 +1186,30 @@ export type ClassroomMasterySnapshot = {
   pendingSyncCount: number
 }
 
+export type ClassroomAiAnalyticsStudent = {
+  studentId: string
+  requestCount: number
+  totalRequestCharacters: number
+  averageRequestCharacters: number
+  quizAttemptCount: number
+  quizQuestionCount: number
+  averageQuizScore: number | null
+  requestScopes: { micro: number; small: number; medium: number; large: number }
+  inputTokens: number
+  cachedInputTokens: number
+  outputTokens: number
+  reasoningOutputTokens: number
+  totalTokens: number
+  reportedCredits: number | null
+  lastActivityAt: string | null
+}
+
+export type ClassroomAiAnalyticsSnapshot = {
+  classroomId: string
+  students: ClassroomAiAnalyticsStudent[]
+  pendingSyncCount: number
+}
+
 export type AgentActivityState = 'pending' | 'active' | 'completed' | 'failed' | 'stopped'
 export type AgentActivityPhase = 'context' | 'learning' | 'model' | 'validation' | 'quiz' | 'proposal' | 'approval' | 'apply' | 'complete'
 export type AgentActivityFile = { path: string; action: 'create' | 'update' | 'applied' }
@@ -1212,6 +1262,7 @@ export type DesktopApi = {
   connectCodexAccount: () => Promise<CodexAccountStatus>
   listCodexModels: () => Promise<CodexModelOption[]>
   listAgentModels: () => Promise<AgentModelOption[]>
+  getTutorHistory: (workspaceRoot: string) => Promise<TutorHistory>
   pathForFile: (file: File) => string
   startLearning: (request: LearningRequest) => Promise<AgentRunResult>
   submitQuiz: (submission: QuizSubmission) => Promise<QuizResult>
@@ -1277,6 +1328,7 @@ export type DesktopApi = {
   leaveClassroom: (classroomId: string) => Promise<Classroom[]>
   beginClassroomAssignmentAuthoring: (classroomId: string) => Promise<ClassroomAssignmentContext>
   listClassroomMastery: (classroomId: string) => Promise<ClassroomMasterySnapshot>
+  listClassroomAiAnalytics: (classroomId: string) => Promise<ClassroomAiAnalyticsSnapshot>
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>

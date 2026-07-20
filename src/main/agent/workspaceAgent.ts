@@ -10,7 +10,7 @@ import {
   type ResolvedProposalTextEdit
 } from './proposalEdits'
 import { workspaceAgentStepSchema, type WorkspaceAgentStep } from './schemas'
-import type { GenerateStructuredOptions, ModelOperation, ModelSession } from './provider'
+import type { GenerateStructuredOptions, ModelOperation, ModelSession, ModelUsage } from './provider'
 
 type Model = {
   createSession?(): ModelSession
@@ -69,6 +69,7 @@ type RunWorkspaceAgentOptions = {
   model: Model
   signal: AbortSignal
   onProtocolEvent?: (method: string, detail: string) => void
+  onUsage?: (usage: ModelUsage) => void
   onActivity?: (label: string, detail: string) => void
 }
 
@@ -594,6 +595,7 @@ export async function runWorkspaceAgent(options: RunWorkspaceAgentOptions): Prom
   for (let stepNumber = 1; stepNumber <= maxSteps; stepNumber += 1) {
     const changedPaths = workspace.changedStates().map((state) => displayPath(state.relativePath))
     const prompt = `Act as a bounded repository coding agent. Understand the existing implementation before editing it.
+Implement only behavior explicitly requested by the user. Choose the narrowest interpretation that fully satisfies the request, and make every edit traceable to a requested outcome. Preserve existing architecture, structure, naming, visual design, and code style wherever possible. Do not add visual polish, redesigns, refactors, abstractions, dependencies, cleanup, or unrelated fixes unless they are strictly required for the requested behavior. Do not expand tests or documentation unless the request requires them. A broad request may require broad changes, but never expand its stated scope. Stop as soon as the explicit request is satisfied and the resulting implementation is coherent.
 Use one action per turn. Search and read exact files before editing. Read results are JSON whose content field contains exact source text without line-number prefixes. Prefer edit_lines for a small contiguous line change and edit_file for an exact, uniquely anchored substring replacement. Both edit only the shadow workspace; neither writes to the user's live project. Re-read after an edit before using edit_lines again because line positions may have changed. Never replace a complete existing file. Use create_file only for genuinely new files. Never delete files.
 After edits, run the most relevant available check. If it fails, inspect the output, make the smallest repair, and rerun it. Finish only when the implementation is coherent. Do not claim a check passed unless an observation says it passed.
 
@@ -616,8 +618,8 @@ Choose the next single action.`
     // Screenshots ride along on the first turn only: reused threads keep them
     // in context, and fresh-thread fallbacks resend the full prompt anyway.
     const imagePaths = stepNumber === 1 && options.imagePaths?.length ? options.imagePaths : undefined
-    const stepOptions = session || imagePaths
-      ? { ...(session ? { session, deltaPrompt } : {}), ...(imagePaths ? { imagePaths } : {}) }
+    const stepOptions = session || imagePaths || options.onUsage
+      ? { ...(session ? { session, deltaPrompt } : {}), ...(imagePaths ? { imagePaths } : {}), ...(options.onUsage ? { onUsage: options.onUsage } : {}) }
       : undefined
     const step = await options.model.generateStructured(
       'workspace-step',

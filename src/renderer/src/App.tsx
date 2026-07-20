@@ -41,6 +41,7 @@ import type {
   AssignmentTaskProgressUpdate,
   AssignmentWorkspaceState,
   Classroom,
+  ClassroomAiAnalyticsSnapshot,
   ClassroomMasterySnapshot,
   CloudAuthCredentials,
   CloudAuthState,
@@ -134,6 +135,7 @@ export default function App(): React.JSX.Element {
   const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [classroomMastery, setClassroomMastery] = useState<ClassroomMasterySnapshot | null>(null)
+  const [classroomAnalytics, setClassroomAnalytics] = useState<ClassroomAiAnalyticsSnapshot | null>(null)
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
@@ -567,6 +569,15 @@ export default function App(): React.JSX.Element {
     onError: (error) => setCloudError(errorMessage(error))
   })
 
+  const classroomAnalyticsMutation = useMutation({
+    mutationFn: window.desktop.listClassroomAiAnalytics,
+    onSuccess: (result) => {
+      const mode = useApplicationNavigation.getState().mode
+      if (mode.kind === 'classrooms' && mode.classroomId === result.classroomId && mode.tab === 'analytics') setClassroomAnalytics(result)
+    },
+    onError: (error) => setCloudError(errorMessage(error))
+  })
+
   const addClassroomStudentMutation = useMutation({
     mutationFn: ({ classroomId, email }: { classroomId: string; email: string }) => window.desktop.addClassroomStudent(classroomId, email),
     onSuccess: (result) => {
@@ -848,6 +859,12 @@ export default function App(): React.JSX.Element {
   }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
 
   useEffect(() => {
+    if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'analytics' || !applicationMode.classroomId) return
+    setClassroomAnalytics(null)
+    classroomAnalyticsMutation.mutate(applicationMode.classroomId)
+  }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
+
+  useEffect(() => {
     if (restored.current) return
     restored.current = true
     void window.desktop.restoreWorkspace().then((result) => {
@@ -1019,6 +1036,8 @@ export default function App(): React.JSX.Element {
       <ClassroomPortal
         actionVersion={classroomActionVersion}
         assignment={assignmentState}
+        analytics={classroomAnalytics}
+        analyticsBusy={classroomAnalyticsMutation.isPending}
         busy={classroomBusy}
         mastery={classroomMastery}
         masteryBusy={classroomMasteryMutation.isPending}
@@ -1042,6 +1061,7 @@ export default function App(): React.JSX.Element {
         onRefresh={() => {
           classroomListMutation.mutate()
           if (applicationMode.tab === 'mastery' && applicationMode.classroomId) classroomMasteryMutation.mutate(applicationMode.classroomId)
+          if (applicationMode.tab === 'analytics' && applicationMode.classroomId) classroomAnalyticsMutation.mutate(applicationMode.classroomId)
         }}
         onRemoveStudent={(classroomId, userId) => removeClassroomStudentMutation.mutate({ classroomId, userId })}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}

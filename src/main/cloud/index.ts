@@ -8,6 +8,7 @@ import {
   IPC_CHANNELS,
   type Classroom,
   type ClassroomAssignmentContext,
+  type ClassroomAiAnalyticsSnapshot,
   type ClassroomCreateRequest,
   type ClassroomUpdateRequest,
   type ClassroomOpenAssignmentResult,
@@ -25,6 +26,7 @@ import { inviteCodeFrom } from './invite'
 import { authCallback, authCallbackUrl, authTokensFromLink, passwordResetCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 import { MasterySyncQueue, type MasterySyncEvent } from './masterySync'
+import { AiAnalyticsSyncQueue, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
 import { classroomUpdateSchema } from './classroomDetails'
 import type { UnderstandingCompletion } from '../understanding/gate'
 
@@ -62,6 +64,27 @@ const assignmentRowSchema = z.object({
 const downloadableAssignmentSchema = z.object({ id: z.uuid(), classroom_id: z.uuid(), title: z.string(), package_path: z.string(), package_sha256: z.string().regex(/^[a-f0-9]{64}$/) })
 const masteryRowSchema = z.object({ classroom_id: z.uuid(), student_id: z.uuid(), concept_id: z.string(), concept_name: z.string(), mastery: z.number(), attempts: z.number(), correct: z.number(), updated_at: z.string() })
 const masteryEventRowSchema = z.object({ student_id: z.uuid(), assignment_id: z.uuid().nullable(), quiz_id: z.uuid(), attempt: z.number(), score: z.number(), passed: z.boolean(), title: z.string(), completed_at: z.string() })
+const analyticsNumberSchema = z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER)
+const analyticsRowSchema = z.object({
+  student_id: z.uuid(),
+  request_count: analyticsNumberSchema,
+  total_request_characters: analyticsNumberSchema,
+  average_request_characters: analyticsNumberSchema,
+  quiz_attempt_count: analyticsNumberSchema,
+  quiz_question_count: analyticsNumberSchema,
+  average_quiz_score: z.coerce.number().min(0).max(100).nullable(),
+  micro_requests: analyticsNumberSchema,
+  small_requests: analyticsNumberSchema,
+  medium_requests: analyticsNumberSchema,
+  large_requests: analyticsNumberSchema,
+  input_tokens: analyticsNumberSchema,
+  cached_input_tokens: analyticsNumberSchema,
+  output_tokens: analyticsNumberSchema,
+  reasoning_output_tokens: analyticsNumberSchema,
+  total_tokens: analyticsNumberSchema,
+  reported_credits: z.coerce.number().min(0).max(1_000_000).nullable(),
+  last_activity_at: z.string().datetime().nullable()
+})
 
 function cleanError(error: unknown, fallback: string): Error {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -116,10 +139,15 @@ export function registerCloudHandlers(
   getWorkspacePurpose: () => WorkspacePurpose,
   setAssignmentContext: (context: (ClassroomAssignmentContext & { userId: string }) | null) => void,
   masteryQueue: MasterySyncQueue,
+  analyticsQueue: AiAnalyticsSyncQueue,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
   takePendingInvite: () => string | null,
   notifyAuthChanged: (update: CloudAuthUpdate) => void
-): { handleAuthCallback: (callback: AuthCallback) => Promise<void>; recordUnderstandingCompletion: (completion: UnderstandingCompletion) => void } {
+): {
+  handleAuthCallback: (callback: AuthCallback) => Promise<void>
+  recordUnderstandingCompletion: (completion: UnderstandingCompletion) => void
+  recordAiAnalyticsEvent: (event: AiAnalyticsSyncEvent) => void
+} {
   const client = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
       autoRefreshToken: true,
@@ -190,6 +218,18 @@ export function registerCloudHandlers(
     if (error) throw cleanError(error, 'Could not synchronize classroom mastery.')
   }
 
+  async function sendAiAnalyticsEvent(event: AiAnalyticsSyncEvent): Promise<void> {
+    const user = await requireUser()
+    if (user.id !== event.studentId) throw new Error('The AI analytics event belongs to a different account.')
+    const { error } = await client.rpc('record_classroom_ai_usage_event', { event_payload: event })
+    if (error) throw cleanError(error, 'Could not synchronize classroom AI analytics.')
+  }
+
+  function recordAiAnalyticsEvent(event: AiAnalyticsSyncEvent): void {
+    analyticsQueue.enqueue(event)
+    void analyticsQueue.flush(sendAiAnalyticsEvent)
+  }
+
   function recordUnderstandingCompletion(completion: UnderstandingCompletion): void {
     const conceptIds = new Set(completion.quiz.concepts.map((concept) => concept.id))
     masteryQueue.enqueue({
@@ -218,7 +258,7 @@ export function registerCloudHandlers(
 
   async function listClassrooms(): Promise<Classroom[]> {
     const currentUser = await requireUser()
-    await masteryQueue.flush(sendMasteryEvent)
+    await Promise.all([masteryQueue.flush(sendMasteryEvent), analyticsQueue.flush(sendAiAnalyticsEvent)])
     const [classroomsResult, membersResult, invitesResult, assignmentsResult, visibleMembersResult] = await Promise.all([
       client.from('classrooms').select('id,name,description,owner_id,created_at').order('created_at'),
       client.from('classroom_members').select('classroom_id,user_id,role,joined_at'),
@@ -536,6 +576,36 @@ export function registerCloudHandlers(
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.cloudListClassroomAiAnalytics, async (event, classroomId: string): Promise<ClassroomAiAnalyticsSnapshot> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    await requireUser()
+    await analyticsQueue.flush(sendAiAnalyticsEvent)
+    const result = await client.rpc('get_classroom_ai_analytics', { target_classroom_id: id })
+    if (result.error) throw cleanError(result.error, 'Could not load classroom AI analytics.')
+    return {
+      classroomId: id,
+      students: z.array(analyticsRowSchema).parse(result.data ?? []).map((row) => ({
+        studentId: row.student_id,
+        requestCount: row.request_count,
+        totalRequestCharacters: row.total_request_characters,
+        averageRequestCharacters: row.average_request_characters,
+        quizAttemptCount: row.quiz_attempt_count,
+        quizQuestionCount: row.quiz_question_count,
+        averageQuizScore: row.average_quiz_score,
+        requestScopes: { micro: row.micro_requests, small: row.small_requests, medium: row.medium_requests, large: row.large_requests },
+        inputTokens: row.input_tokens,
+        cachedInputTokens: row.cached_input_tokens,
+        outputTokens: row.output_tokens,
+        reasoningOutputTokens: row.reasoning_output_tokens,
+        totalTokens: row.total_tokens,
+        reportedCredits: row.reported_credits,
+        lastActivityAt: row.last_activity_at
+      })),
+      pendingSyncCount: analyticsQueue.pendingCount(id)
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.cloudCopyInvite, (event, inviteLink: string): void => {
     assertTrusted(event)
     if (!/^wormie:\/\/join\/[a-f0-9]{32}$/.test(inviteLink)) throw new Error('The classroom invitation is invalid.')
@@ -631,6 +701,7 @@ export function registerCloudHandlers(
 
   return {
     recordUnderstandingCompletion,
+    recordAiAnalyticsEvent,
     handleAuthCallback: processAuthCallback
   }
 }

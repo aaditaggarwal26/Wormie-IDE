@@ -50,6 +50,28 @@ describe('CodexTurnCapture', () => {
     })
   })
 
+  it('captures only the matching turn token usage', () => {
+    const capture = new CodexTurnCapture('thread-a')
+    capture.accept('thread/tokenUsage/updated', {
+      threadId: 'thread-b',
+      turnId: 'turn-a',
+      tokenUsage: { last: { inputTokens: 90, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0, totalTokens: 100 } }
+    })
+    capture.accept('thread/tokenUsage/updated', {
+      threadId: 'thread-a',
+      turnId: 'turn-a',
+      tokenUsage: { last: { inputTokens: 8, cachedInputTokens: 3, outputTokens: 2, reasoningOutputTokens: 1, totalTokens: 10 } }
+    })
+
+    expect(capture.usageFor('turn-a')).toEqual({
+      inputTokens: 8,
+      cachedInputTokens: 3,
+      outputTokens: 2,
+      reasoningOutputTokens: 1,
+      totalTokens: 10
+    })
+  })
+
   it('rejects a waiter on cancellation and ignores other turns', async () => {
     const controller = new AbortController()
     const capture = new CodexTurnCapture('thread-a')

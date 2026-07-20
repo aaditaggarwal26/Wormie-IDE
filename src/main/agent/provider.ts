@@ -12,6 +12,42 @@ export type GenerateStructuredOptions = {
   session?: ModelSession
   deltaPrompt?: string
   imagePaths?: string[]
+  onUsage?: (usage: ModelUsage) => void
+}
+
+export type ModelUsage = {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  cachedInputTokens?: number
+  reasoningOutputTokens?: number
+  reportedCredits?: number
+}
+
+function nonNegativeTokenCount(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0
+}
+
+function reportAiSdkUsage(usage: {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  inputTokenDetails?: { cacheReadTokens?: number }
+  outputTokenDetails?: { reasoningTokens?: number }
+}, onUsage?: (usage: ModelUsage) => void): void {
+  if (!onUsage) return
+  const inputTokens = nonNegativeTokenCount(usage.inputTokens)
+  const outputTokens = nonNegativeTokenCount(usage.outputTokens)
+  const totalTokens = nonNegativeTokenCount(usage.totalTokens) || inputTokens + outputTokens
+  const cachedInputTokens = nonNegativeTokenCount(usage.inputTokenDetails?.cacheReadTokens)
+  const reasoningOutputTokens = nonNegativeTokenCount(usage.outputTokenDetails?.reasoningTokens)
+  onUsage({
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    ...(cachedInputTokens ? { cachedInputTokens } : {}),
+    ...(reasoningOutputTokens ? { reasoningOutputTokens } : {})
+  })
 }
 
 const imageMediaTypes: Record<string, string> = {
@@ -49,9 +85,10 @@ function extractJson(text: string): unknown {
 export function schemaSummary(kind: ModelOperation): string {
   if (kind === 'learning') {
     return `{
-  "concepts": [{ "name": string, "whyItMatters": string, "mentalModel": string, "commonMistake": string }],
+  "requestScope": "micro" | "small" | "medium" | "large",
+  "concepts": [{ "id": string, "name": string, "whyItMatters": string, "mentalModel": string, "commonMistake": string }],
   "lessonSummary": string,
-  "quiz": [{ "prompt": string, "options": [string, string, string], "correctOption": integer, "explanation": string }]
+  "quiz": [{ "conceptId": string, "prompt": string, "options": [string, string, string], "correctOption": integer, "difficulty": "easy" | "medium" | "hard", "explanation": string }]
 }`
   }
 
@@ -137,7 +174,8 @@ export class ModelGateway {
         options && {
           session: options.session,
           deltaPrompt: options.deltaPrompt ? `${options.deltaPrompt}${outputReminder}` : undefined,
-          imagePaths: options.imagePaths
+          imagePaths: options.imagePaths,
+          onUsage: options.onUsage
         }
       )
     }
@@ -156,7 +194,7 @@ export class ModelGateway {
     const imagePaths = options?.imagePaths ?? []
 
     try {
-      const { object } = await generateObject({
+      const result = await generateObject({
         model,
         schema,
         system: baseInstructions,
@@ -166,7 +204,8 @@ export class ModelGateway {
         abortSignal: signal,
         maxOutputTokens
       })
-      return object
+      reportAiSdkUsage(result.usage, options?.onUsage)
+      return result.object
     } catch (error) {
       if (signal.aborted) throw error
       // Some OpenAI-compatible servers reject json_schema response formats;
@@ -183,6 +222,7 @@ export class ModelGateway {
       abortSignal: signal,
       maxOutputTokens
     })
+    reportAiSdkUsage(first.usage, options?.onUsage)
     const parsed = schema.safeParse(extractJson(first.text))
     if (parsed.success) return parsed.data
 
@@ -193,6 +233,7 @@ export class ModelGateway {
       abortSignal: signal,
       maxOutputTokens
     })
+    reportAiSdkUsage(repair.usage, options?.onUsage)
     return schema.parse(extractJson(repair.text))
   }
 }

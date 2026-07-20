@@ -57,13 +57,17 @@ describe('structured output fallback', () => {
       passingScore: 80
     }, null, {} as CodexAppServer)
 
+    const usage: Array<{ inputTokens: number; outputTokens: number; totalTokens: number }> = []
     const result = await gateway.generateStructured(
       'remediation',
       'Write a short remediation lesson.',
       remediationDraftSchema,
-      new AbortController().signal
+      new AbortController().signal,
+      undefined,
+      { onUsage: (value) => usage.push(value) }
     )
     expect(result).toEqual({ lesson: 'Practice smaller edits.' })
+    expect(usage).toEqual([{ inputTokens: 1, outputTokens: 1, totalTokens: 2 }])
     expect(requestBodies.some((body) => body.includes('response_format'))).toBe(true)
     expect(requestBodies.length).toBeGreaterThan(1)
   })
@@ -133,6 +137,12 @@ describe('OpenAI-compatible model listing', () => {
 })
 
 describe('proposal output contract', () => {
+  it('describes the adaptive learning-check scope', () => {
+    const summary = schemaSummary('learning')
+    expect(summary).toContain('"requestScope": "micro" | "small" | "medium" | "large"')
+    expect(summary).toContain('"conceptId": string')
+  })
+
   it('tells OpenAI-compatible models to use edits only for updates', () => {
     const summary = schemaSummary('proposal')
     expect(summary).toContain('"edits"?: [{ "oldText": string, "newText": string }]')

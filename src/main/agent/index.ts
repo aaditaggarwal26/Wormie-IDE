@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type MessageBoxOptions, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent, type MessageBoxOptions, type WebContents } from 'electron'
 import type Store from 'electron-store'
 import {
   IPC_CHANNELS,
@@ -20,6 +20,7 @@ import {
   type ProposedFileChange,
   type QuizResult,
   type QuizSubmission,
+  type TutorHistory,
   type WorkspacePurpose
 } from '../../shared/contracts'
 import { isPathInside, validateEntryName } from '../pathSafety'
@@ -32,7 +33,7 @@ import { buildWorkspaceContext } from './context'
 import { CodexAppServer } from './codexAppServer'
 import { sanitizeAgentActivity } from './activity'
 import { gradeQuiz, type AnswerKey } from './grading'
-import { listOpenAICompatibleModels, ModelGateway, validateBaseUrl } from './provider'
+import { listOpenAICompatibleModels, ModelGateway, validateBaseUrl, type ModelUsage } from './provider'
 import { materializeResolvedProposalEdits, type ResolvedProposalTextEdit } from './proposalEdits'
 import { hasReviewedChange, resolveReviewedChanges } from './proposalReview'
 import { changeConceptDraftSchema, guidanceDraftSchema, learningDraftSchema, proposalDraftSchema, remediationDraftSchema, reviewDraftSchema, semanticGradeSchema, understandingQuizDraftSchema } from './schemas'
@@ -42,6 +43,7 @@ import type { MasteryService } from '../mastery/service'
 import { resolveConcept } from '../mastery/catalog'
 import { resolveOrRegisterConcept } from '../mastery/catalog'
 import { recordPrerequisiteQuizEvidence } from './masteryIntegration'
+import { appendTutorHistory, readTutorHistory, tutorHistoryEntryFromResult } from './tutorHistory'
 
 type InternalSession = {
   publicSession: LearningSession
@@ -51,9 +53,43 @@ type InternalSession = {
   assignmentId: string | null
   assignmentRevision: string | null
   allowGeneration: boolean
+  requestScope: 'micro' | 'small' | 'medium' | 'large'
+  analyticsScope: AgentClassroomAnalyticsScope | null
   passed: boolean
   attempts: number
   createdAt: number
+}
+
+export type AgentClassroomAnalyticsScope = {
+  classroomId: string
+  studentId: string
+  assignmentId: string
+  workspaceRoot: string
+}
+
+export type AgentClassroomAnalyticsInput =
+  | { eventType: 'request'; sessionId: string; mode: 'ask' | 'plan' | 'agent'; requestLength: number; requestScope: 'micro' | 'small' | 'medium' | 'large' | null; quizQuestionCount: number; model: string; usage: ModelUsage }
+  | { eventType: 'quiz'; sessionId: string; quizQuestionCount: number; quizScore: number; passed: boolean; model: string }
+  | { eventType: 'usage'; sessionId: string; model: string; usage: ModelUsage }
+
+function createUsageAccumulator(): { add: (usage: ModelUsage) => void; value: () => ModelUsage } {
+  let inputTokens = 0
+  let cachedInputTokens = 0
+  let outputTokens = 0
+  let reasoningOutputTokens = 0
+  let totalTokens = 0
+  let reportedCredits: number | undefined
+  return {
+    add: (usage) => {
+      inputTokens += usage.inputTokens
+      cachedInputTokens += usage.cachedInputTokens ?? 0
+      outputTokens += usage.outputTokens
+      reasoningOutputTokens += usage.reasoningOutputTokens ?? 0
+      totalTokens += usage.totalTokens
+      if (usage.reportedCredits !== undefined) reportedCredits = (reportedCredits ?? 0) + usage.reportedCredits
+    },
+    value: () => ({ inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens, ...(reportedCredits !== undefined ? { reportedCredits } : {}) })
+  }
 }
 
 type InternalChange = ProposedFileChange & {
@@ -173,7 +209,10 @@ export function registerAgentHandlers(
   getWorkspacePurpose: () => WorkspacePurpose,
   understanding: UnderstandingController,
   progressStorageRoot: string,
-  mastery: MasteryService
+  mastery: MasteryService,
+  getClassroomAnalyticsScope: () => AgentClassroomAnalyticsScope | null,
+  recordClassroomAnalytics: (scope: AgentClassroomAnalyticsScope, input: AgentClassroomAnalyticsInput) => void,
+  isTrustedSender: (event: IpcMainInvokeEvent) => boolean
 ): void {
   const sessions = new Map<string, InternalSession>()
   const proposals = new Map<string, InternalProposal>()
@@ -181,6 +220,11 @@ export function registerAgentHandlers(
   let activeController: AbortController | null = null
   let activeActivity: { sender: WebContents; runId: string } | null = null
   const codexRuntime = new CodexAppServer(path.join(app.getPath('userData'), 'codex'))
+
+  const sameWorkspace = (left: string, right: string): boolean => {
+    const normalize = (value: string) => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
+    return normalize(left) === normalize(right)
+  }
 
   app.once('before-quit', () => codexRuntime.stop())
 
@@ -256,11 +300,27 @@ export function registerAgentHandlers(
     }
   }
 
-  async function recordAssignmentActivity(rootPath: string, input: AssignmentAiActivityInput): Promise<void> {
+  async function recordAssignmentActivity(rootPath: string, input: AssignmentAiActivityInput): Promise<boolean> {
+    if (!usesAssignmentPolicy(getWorkspacePurpose())) return false
+    const assignment = await readAssignment(rootPath)
+    if (!assignment.manifest || !assignment.revision) return false
+    return appendAiActivity(progressStorageRoot, rootPath, assignment.manifest, assignment.revision, input)
+  }
+
+  function recordAnalytics(scope: AgentClassroomAnalyticsScope | null, input: AgentClassroomAnalyticsInput): void {
+    if (!scope) return
+    try {
+      recordClassroomAnalytics(scope, input)
+    } catch (error) {
+      console.warn('Could not queue classroom AI analytics:', cleanError(error).message)
+    }
+  }
+
+  async function preserveTutorResponse(rootPath: string, result: AgentRunResult): Promise<void> {
     if (!usesAssignmentPolicy(getWorkspacePurpose())) return
     const assignment = await readAssignment(rootPath)
     if (!assignment.manifest || !assignment.revision) return
-    await appendAiActivity(progressStorageRoot, rootPath, assignment.manifest, assignment.revision, input)
+    await appendTutorHistory(progressStorageRoot, rootPath, assignment.manifest, assignment.revision, tutorHistoryEntryFromResult(result))
   }
 
   function validateRunId(value: unknown): string {
@@ -371,6 +431,21 @@ export function registerAgentHandlers(
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.agentGetTutorHistory, async (event, expectedRoot: unknown): Promise<TutorHistory> => {
+    if (!isTrustedSender(event)) throw new Error('Tutor history access was denied for this window.')
+    const rootPath = getWorkspaceRoot()
+    if (typeof expectedRoot !== 'string' || !rootPath || !sameWorkspace(expectedRoot, rootPath)) {
+      throw new Error('Tutor history belongs to a different workspace.')
+    }
+    if (!usesAssignmentPolicy(getWorkspacePurpose())) return { workspaceRoot: rootPath, entries: [] }
+    const assignment = await readAssignment(rootPath)
+    if (!assignment.manifest || !assignment.revision) return { workspaceRoot: rootPath, entries: [] }
+    return {
+      workspaceRoot: rootPath,
+      entries: await readTutorHistory(progressStorageRoot, rootPath, assignment.manifest, assignment.revision)
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.agentSetPassingScore, (_event, rawScore: number): number => {
     if (!Number.isInteger(rawScore) || rawScore < 60 || rawScore > 100) throw new Error('Passing score must be between 60 and 100.')
     store.set('learningPassingScore', rawScore)
@@ -424,6 +499,8 @@ export function registerAgentHandlers(
     const mode = request?.mode ?? 'agent'
     if (!['ask', 'plan', 'agent'].includes(mode)) throw new Error('Choose Ask, Plan, or Agent mode.')
     const assignmentPolicy = await currentAssignmentPolicy(rootPath)
+    const currentAnalyticsScope = getClassroomAnalyticsScope()
+    const analyticsScope = currentAnalyticsScope && sameWorkspace(currentAnalyticsScope.workspaceRoot, rootPath) ? currentAnalyticsScope : null
     const passingScore = assignmentPolicy.passingScore
     const imagePaths = await validateImageAttachments(request?.imagePaths)
     const contextRequest: LearningRequest = {
@@ -445,6 +522,8 @@ export function registerAgentHandlers(
 
     if (mode !== 'agent') {
       const planning = mode === 'plan'
+      const sessionId = randomUUID()
+      const usage = createUsageAccumulator()
       emitPhase(event.sender, runId, 'learning', planning ? 'Researching an implementation plan' : 'Researching your question', 'active')
       const instruction = planning
         ? `Research the requested change in the supplied workspace and produce a concrete implementation plan. Do not generate implementation code or edit files. Explain the relevant concepts, identify likely files and symbols, order the work, call out risks, and include verification steps.`
@@ -455,25 +534,39 @@ export function registerAgentHandlers(
         guidanceDraftSchema,
         signal,
         onProtocolEvent,
-        imagePaths.length ? { imagePaths } : undefined
+        { ...(imagePaths.length ? { imagePaths } : {}), onUsage: usage.add }
       ), { sender: event.sender, runId })
       emitPhase(event.sender, runId, 'validation', planning ? 'Plan validated' : 'Answer validated', 'completed')
-      await recordAssignmentActivity(rootPath, {
+      const activityRecorded = await recordAssignmentActivity(rootPath, {
         type: 'learning',
         request: intent,
         concepts: draft.sections.map((section) => section.title),
         lessonSummary: draft.summary
       })
+      if (activityRecorded) recordAnalytics(analyticsScope, {
+        eventType: 'request',
+        sessionId,
+        mode,
+        requestLength: intent.length,
+        requestScope: null,
+        quizQuestionCount: 0,
+        model: getConfig().model || 'provider-default',
+        usage: usage.value()
+      })
       emitPhase(event.sender, runId, 'learning', planning ? 'Plan ready' : 'Answer ready', 'completed', `${draft.sections.length} section${draft.sections.length === 1 ? '' : 's'}`)
       emitPhase(event.sender, runId, 'complete', planning ? 'Planning complete' : 'Answer complete', 'completed')
-      return { id: randomUUID(), runId, mode, request: intent, ...draft }
+      const result: AgentRunResult = { id: sessionId, runId, mode, request: intent, ...draft }
+      await preserveTutorResponse(rootPath, result).catch((error) => console.warn('Could not preserve Tutor history:', cleanError(error).message))
+      return result
     }
 
     emitPhase(event.sender, runId, 'learning', 'Preparing the learning plan', 'active')
+    const learningUsage = createUsageAccumulator()
     const draft = await runModel((gateway, signal, onProtocolEvent) => gateway.generateStructured(
       'learning',
       `Analyze this requested change and teach only the prerequisite concepts. Do not provide implementation code yet.
-Create 2-5 concise concept lessons and 3-5 multiple-choice questions that test applied understanding, not trivia.
+Classify only the explicitly requested work as micro, small, medium, or large. Do not inflate the scope because optional cleanup, polish, refactoring, or adjacent improvements are possible. A micro request changes one localized behavior and requires exactly 1 question. A small focused request requires exactly 2 questions. A medium request with several coordinated behaviors requires exactly 3 questions. A broad, multi-part large request requires exactly 4 questions. Set requestScope to that classification.
+Create 2-5 concise concept lessons and the exact number of multiple-choice questions required by requestScope. Test applied understanding, not trivia.
 Use only canonical concept IDs from the supplied catalog. Include weak prerequisite concepts before advanced concepts, while allowing unassessed learners to demonstrate knowledge through diagnostic questions.
 
 <user-request>\n${intent}\n</user-request>${attachmentNote}
@@ -481,7 +574,7 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
       learningDraftSchema,
       signal,
       onProtocolEvent,
-      imagePaths.length ? { imagePaths } : undefined
+      { ...(imagePaths.length ? { imagePaths } : {}), onUsage: learningUsage.add }
     ), { sender: event.sender, runId })
     emitPhase(event.sender, runId, 'validation', 'Structured learning plan validated', 'completed')
 
@@ -541,16 +634,29 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
       assignmentId: assignmentPolicy.assignmentId,
       assignmentRevision: assignmentPolicy.assignmentRevision,
       allowGeneration: assignmentPolicy.allowGeneration,
+      requestScope: draft.requestScope,
+      analyticsScope,
       passed: false,
       attempts: 0,
       createdAt: Date.now()
     }
-    await recordAssignmentActivity(rootPath, {
+    const activityRecorded = await recordAssignmentActivity(rootPath, {
       type: 'learning',
       request: intent,
       concepts: draft.concepts.map((concept) => concept.name),
       lessonSummary: draft.lessonSummary
     })
+    if (activityRecorded) recordAnalytics(analyticsScope, {
+      eventType: 'request',
+      sessionId,
+      mode: 'agent',
+      requestLength: intent.length,
+      requestScope: draft.requestScope,
+      quizQuestionCount: quiz.length,
+      model: getConfig().model || 'provider-default',
+      usage: learningUsage.value()
+    })
+    await preserveTutorResponse(rootPath, publicSession).catch((error) => console.warn('Could not preserve Tutor history:', cleanError(error).message))
     sessions.set(sessionId, internalSession)
     emitPhase(event.sender, runId, 'learning', 'Learning plan ready', 'completed', `${draft.concepts.length} concepts prepared`)
     emitPhase(event.sender, runId, 'quiz', 'Waiting for your learning check', 'active')
@@ -566,7 +672,15 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
     const result = gradeQuiz(submission, session.answerKey, session.publicSession.passingScore)
     session.passed = result.passed
     recordPrerequisiteQuizEvidence(mastery, session.publicSession.id, session.attempts, result, session.answerKey)
-    await recordAssignmentActivity(session.workspaceRoot, { type: 'quiz', sessionId: session.publicSession.id, score: result.score, passed: result.passed })
+    const activityRecorded = await recordAssignmentActivity(session.workspaceRoot, { type: 'quiz', sessionId: session.publicSession.id, score: result.score, passed: result.passed })
+    if (activityRecorded) recordAnalytics(session.analyticsScope, {
+      eventType: 'quiz',
+      sessionId: session.publicSession.id,
+      quizQuestionCount: session.publicSession.quiz.length,
+      quizScore: result.score,
+      passed: result.passed,
+      model: getConfig().model || 'provider-default'
+    })
     emitPhase(
       event.sender,
       session.publicSession.runId,
@@ -590,6 +704,7 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
     const runId = session.publicSession.runId
     emitPhase(event.sender, runId, 'proposal', 'Preparing proposed files', 'active')
     const proposalImages = await existingImagePaths(session.contextRequest.imagePaths ?? [])
+    const proposalUsage = createUsageAccumulator()
     const draft = await runModel((gateway, signal, onProtocolEvent) => runWorkspaceAgent({
       rootPath,
       request: session.publicSession.request,
@@ -597,6 +712,7 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
       model: gateway,
       signal,
       onProtocolEvent,
+      onUsage: proposalUsage.add,
       onActivity: (label, detail) => emitPhase(event.sender, runId, 'model', label, 'active', detail)
     }), { sender: event.sender, runId }, 8 * 60_000)
     emitPhase(event.sender, runId, 'model', 'Proposal draft complete', 'completed')
@@ -698,12 +814,18 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
       risks: draft.risks,
       verification: draft.verification
     }
-    await recordAssignmentActivity(rootPath, {
+    const activityRecorded = await recordAssignmentActivity(rootPath, {
       type: 'proposal',
       sessionId,
       proposalId,
       summary: draft.summary,
       paths: draft.changes.map((change) => change.relativePath)
+    })
+    if (activityRecorded) recordAnalytics(session.analyticsScope, {
+      eventType: 'usage',
+      sessionId,
+      model: getConfig().model || 'provider-default',
+      usage: proposalUsage.value()
     })
     proposals.set(proposalId, { publicProposal, changes: internalChanges, workspaceRoot: rootPath, createdAt: Date.now(), changeInput })
     try {

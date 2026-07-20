@@ -37,6 +37,21 @@ describe('agent activity model', () => {
     expect(state.phases.find((phase) => phase.phase === 'model')?.state).toBe('failed')
   })
 
+  it('completes an active earlier phase when the workflow advances', () => {
+    let state = initialAgentActivityState('run-1')
+    state = reduceAgentActivity(state, {
+      id: 'a', runId: 'run-1', timestamp: '2026-07-15T00:00:00.000Z',
+      kind: 'phase', phase: 'model', label: 'Finalizing the proposal', state: 'active'
+    })
+    state = reduceAgentActivity(state, {
+      id: 'b', runId: 'run-1', timestamp: '2026-07-15T00:00:01.000Z',
+      kind: 'phase', phase: 'validation', label: 'Proposal validated', state: 'completed'
+    })
+
+    expect(state.phases.find((phase) => phase.phase === 'model')?.state).toBe('completed')
+    expect(state.phases.find((phase) => phase.phase === 'validation')?.state).toBe('completed')
+  })
+
   it('ignores other runs and caps technical events at 120', () => {
     let state = initialAgentActivityState('run-1')
     state = reduceAgentActivity(state, {

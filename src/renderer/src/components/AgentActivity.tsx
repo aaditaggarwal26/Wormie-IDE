@@ -64,9 +64,9 @@ export function AgentActivity({ state, canOpenProposed, onOpenProposedFile, onOp
       ) : (
         <ol aria-live="polite" className="activity-trace">
           {state.phases.map((event) => (
-            <li data-state={event.state} key={event.phase}>
+            <li data-state={event.state} key={event.phase} title={event.detail}>
               <span className="activity-marker"><StateIcon event={event} /></span>
-              <div><b>{event.label}</b>{event.detail && <small>{event.detail}</small>}</div>
+              <div><b>{event.label}</b></div>
             </li>
           ))}
         </ol>

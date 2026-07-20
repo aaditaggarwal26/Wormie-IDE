@@ -75,6 +75,52 @@ describe('assignment packages', () => {
     expect(imported.assignmentTitle).toBe('Imported screen')
   })
 
+  it('reopens an existing import of the same assignment without overwriting student work', async () => {
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-source-'))
+    const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-destination-'))
+    temporaryDirectories.push(source, destination)
+    await fs.mkdir(path.join(source, 'src'))
+    await fs.writeFile(path.join(source, 'src', 'screen.tsx'), 'export const screen = true\n')
+    await saveAssignment(source, {
+      title: 'Existing assignment', summary: 'Complete it.', instructions: 'Read first.',
+      tasks: [{ id: 'screen', title: 'Screen', description: 'Complete it.', filePath: 'src/screen.tsx', kind: 'implement', acceptanceCriteria: ['It works.'] }],
+      aiPolicy: { mode: 'learning-gated', passingScore: 80, allowGeneration: true },
+      evidencePolicy: { includeAiActivity: true, includeFileSnapshots: true }
+    })
+    const assignmentPackage = await createAssignmentPackage(source)
+    const packagePath = path.join(destination, 'assignment.wormie-package.json')
+    await fs.writeFile(packagePath, assignmentPackage.payload)
+    const firstImport = await importAssignmentPackage(packagePath, destination)
+    await fs.writeFile(path.join(firstImport.rootPath, 'src', 'screen.tsx'), 'export const studentWork = true\n')
+
+    const reopened = await importAssignmentPackage(packagePath, destination)
+
+    expect(reopened.rootPath).toBe(firstImport.rootPath)
+    expect(await fs.readFile(path.join(reopened.rootPath, 'src', 'screen.tsx'), 'utf8')).toContain('studentWork = true')
+  })
+
+  it('does not reuse or remove an unrelated folder with the same assignment name', async () => {
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-source-'))
+    const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-destination-'))
+    temporaryDirectories.push(source, destination)
+    await fs.writeFile(path.join(source, 'task.ts'), 'export {}\n')
+    await saveAssignment(source, {
+      title: 'Name collision', summary: 'Complete it.', instructions: 'Read first.',
+      tasks: [{ id: 'task', title: 'Task', description: 'Complete it.', filePath: 'task.ts', kind: 'implement', acceptanceCriteria: ['It works.'] }],
+      aiPolicy: { mode: 'disabled', passingScore: 80, allowGeneration: false },
+      evidencePolicy: { includeAiActivity: false, includeFileSnapshots: false }
+    })
+    const assignmentPackage = await createAssignmentPackage(source)
+    const packagePath = path.join(destination, 'assignment.wormie-package.json')
+    await fs.writeFile(packagePath, assignmentPackage.payload)
+    const collisionPath = path.join(destination, 'Name collision - assignment')
+    await fs.mkdir(collisionPath)
+    await fs.writeFile(path.join(collisionPath, 'keep.txt'), 'keep me')
+
+    await expect(importAssignmentPackage(packagePath, destination)).rejects.toThrow('different folder')
+    expect(await fs.readFile(path.join(collisionPath, 'keep.txt'), 'utf8')).toBe('keep me')
+  })
+
   it('refuses to export when a required task file is protected from packaging', async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-'))
     temporaryDirectories.push(workspace)

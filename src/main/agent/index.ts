@@ -599,6 +599,7 @@ Use only canonical concept IDs from the supplied catalog. Include weak prerequis
       onProtocolEvent,
       onActivity: (label, detail) => emitPhase(event.sender, runId, 'model', label, 'active', detail)
     }), { sender: event.sender, runId }, 8 * 60_000)
+    emitPhase(event.sender, runId, 'model', 'Proposal draft complete', 'completed')
     if (getWorkspaceRoot() !== session.workspaceRoot) {
       throw new Error('The workspace changed while the agent was working. Generate a fresh proposal in the active workspace.')
     }

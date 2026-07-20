@@ -46,6 +46,12 @@ const assignmentPackageSchema = z.object({
   files: z.array(packageFileSchema).max(maxPackageFiles)
 }).strict()
 
+const studentWorkspaceMarkerSchema = z.object({
+  schemaVersion: z.literal(1),
+  packageId: z.uuid(),
+  importedAt: z.iso.datetime()
+}).strict()
+
 function validatePackagePath(relativePath: string): string {
   if (!portableWorkspacePathSchema.safeParse(relativePath).success) throw new Error(`Package contains an invalid path: ${relativePath}`)
   const segments = relativePath.split('/')
@@ -58,6 +64,47 @@ function validatePackagePath(relativePath: string): string {
 function importFolderName(title: string): string {
   const name = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/[ .]+$/g, '').trim().slice(0, 70)
   return `${name || 'Wormie assignment'} - assignment`
+}
+
+async function reopenExistingImport(canonicalParent: string, rootPath: string, assignmentPackage: AssignmentPackage): Promise<boolean> {
+  const rootStats = await fs.lstat(rootPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  if (!rootStats) return false
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+    throw new Error('A file with the assignment project name already exists in that location.')
+  }
+  const canonicalRoot = await fs.realpath(rootPath)
+  if (!isPathInside(canonicalParent, canonicalRoot)) throw new Error('The existing assignment workspace is outside the selected folder.')
+
+  const markerPath = path.join(rootPath, '.wormie', 'student.json')
+  const markerStats = await fs.lstat(markerPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  if (!markerStats || !markerStats.isFile() || markerStats.isSymbolicLink() || markerStats.size > 4_096) {
+    throw new Error('A different folder with the assignment project name already exists in that location.')
+  }
+  if (!isPathInside(canonicalRoot, await fs.realpath(markerPath))) throw new Error('The existing assignment workspace marker is outside the project.')
+
+  let marker: unknown
+  try {
+    marker = JSON.parse(await fs.readFile(markerPath, 'utf8'))
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('The existing assignment workspace marker is invalid.')
+    throw error
+  }
+  const parsedMarker = studentWorkspaceMarkerSchema.safeParse(marker)
+  if (!parsedMarker.success || parsedMarker.data.packageId !== assignmentPackage.id) {
+    throw new Error('A different assignment project with the same name already exists in that location.')
+  }
+
+  const existing = await readAssignment(rootPath)
+  if (!existing.manifest || existing.manifest.id !== assignmentPackage.assignment.id || existing.manifest.title !== assignmentPackage.assignment.title) {
+    throw new Error('The existing assignment workspace does not match this assignment.')
+  }
+  return true
 }
 
 function isProtectedFile(name: string): boolean {
@@ -213,6 +260,9 @@ export async function importAssignmentPackage(
   const canonicalParent = await fs.realpath(destinationParent)
   const rootPath = path.join(canonicalParent, importFolderName(parsed.data.assignment.title))
   if (!isPathInside(canonicalParent, rootPath)) throw new Error('The package destination is invalid.')
+  if (await reopenExistingImport(canonicalParent, rootPath, parsed.data)) {
+    return { rootPath, assignmentTitle: parsed.data.assignment.title, fileCount: parsed.data.files.length }
+  }
   await fs.mkdir(rootPath)
   const rootIdentity = await fs.stat(rootPath, { bigint: true })
 

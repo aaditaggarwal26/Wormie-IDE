@@ -57,11 +57,19 @@ export function reduceAgentActivity(state: AgentActivityViewState, event: AgentA
     return { ...state, files: { ...state.files, [event.phase]: event.files ?? [] } }
   }
   const terminal = event.state === 'failed' || event.state === 'stopped'
+  const incomingPhaseIndex = phaseOrder.indexOf(event.phase)
   const phases = [
     ...state.phases
       .filter((item) => item.phase !== event.phase)
       // A failure or stop ends the run: no earlier phase keeps spinning.
-      .map((item) => (terminal && item.state === 'active' ? { ...item, state: 'stopped' as const } : item)),
+      .map((item) => {
+        if (item.state !== 'active') return item
+        if (terminal) return { ...item, state: 'stopped' as const }
+        if (event.state !== 'pending' && phaseOrder.indexOf(item.phase) < incomingPhaseIndex) {
+          return { ...item, state: 'completed' as const }
+        }
+        return item
+      }),
     event
   ].sort((left, right) => phaseOrder.indexOf(left.phase) - phaseOrder.indexOf(right.phase))
   return { ...state, phases }

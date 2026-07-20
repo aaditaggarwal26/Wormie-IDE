@@ -427,7 +427,11 @@ export function TutorPane(): React.JSX.Element {
               const feedback = quizResult?.feedback.find((item) => item.questionId === question.id)
               return (
                 <fieldset className="quiz-question" key={question.id}>
-                  <legend>{questionIndex + 1}. {question.prompt}</legend>
+                  <legend className="sr-only">Question {questionIndex + 1}: {question.prompt}</legend>
+                  <div className="quiz-question-prompt" aria-hidden="true">
+                    <span>{questionIndex + 1}</span>
+                    <p>{question.prompt}</p>
+                  </div>
                   {question.options.map((option, optionIndex) => (
                     <label data-selected={answers[question.id] === optionIndex} key={`${question.id}:${optionIndex}`}>
                       <input

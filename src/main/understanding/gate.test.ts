@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ChangeInput, PrivateQuizQuestion, UnderstandingQuiz } from '../../shared/contracts'
 import { UnderstandingGateService } from './gate'
 import { fingerprintChange } from './fingerprint'
@@ -50,6 +50,17 @@ describe('UnderstandingGateService', () => {
     expect(() => service.assertUnlocked(change.id, change.source, 'materially-edited')).toThrow(/changed/i)
   })
 
+  it('records canonical question evidence in the shared mastery service', async () => {
+    const recordAssessment = vi.fn(() => ({ acceptedEvidenceIds: ['e1'], conceptIds: ['authentication.sessions'] }))
+    const service = new UnderstandingGateService(new UnderstandingRepository(new MemoryStorage()), undefined, undefined, { recordAssessment })
+    service.createGate(change, quiz(), privateQuestions)
+    await service.submit({ quizId: 'quiz-1', answers: { q1: { value: 'style' } } })
+    expect(recordAssessment).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'change_understanding', assessmentId: 'quiz-1', attempt: 1,
+      answers: [expect.objectContaining({ questionId: 'q1', score: 0, difficulty: 'medium', format: 'multiple_choice' })]
+    }))
+  })
+
   it('moves a failed retry to targeted remediation', async () => {
     const service = new UnderstandingGateService(new UnderstandingRepository(new MemoryStorage()), undefined, async () => 'Trace the cookie boundary from middleware to browser storage, then explain the XSS consequence.')
     service.createGate(change, quiz(), privateQuestions)
@@ -82,7 +93,7 @@ describe('UnderstandingGateService', () => {
     expect(JSON.stringify(repository.read().auditEvents)).not.toContain('session.ts')
   })
 
-  it('requires every hard critical question and updates mastery gradually', async () => {
+  it('requires every hard critical question even when the aggregate score passes', async () => {
     const service = new UnderstandingGateService(new UnderstandingRepository(new MemoryStorage()))
     const criticalQuestions: PrivateQuizQuestion[] = [
       privateQuestions[0],
@@ -93,10 +104,7 @@ describe('UnderstandingGateService', () => {
     const result = await service.submit({ quizId: criticalQuiz.id, answers: { q1: { value: 'xss' }, q2: { value: 'style' } } })
     expect(result.score).toBe(25)
     expect(result.passed).toBe(false)
-    const mastery = service.getHistory().mastery[0]
-    expect(mastery.mastery).toBeGreaterThan(40)
-    expect(mastery.mastery).toBeLessThan(60)
-    expect(mastery.evidenceQuizIds).toContain(criticalQuiz.id)
+    expect(result.weakConceptIds).toContain('auth')
   })
 
   it('preserves answers without consuming an attempt when semantic grading fails', async () => {

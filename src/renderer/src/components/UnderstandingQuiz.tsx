@@ -9,6 +9,7 @@ import type {
   UnderstandingSettings
 } from '@shared/contracts'
 import { isQuestionAnswered, moveQuestionWithShortcut } from './understandingQuizModel'
+import { notifyMasteryUpdated } from './useMasteryProfile'
 
 type Props = {
   preparation: ChangeUnderstandingPreparation
@@ -68,6 +69,7 @@ export function UnderstandingQuiz({ preparation, onRetry, onGateChange, onOpenSo
       const nextResult = await window.desktop.submitUnderstanding({ quizId: quiz.id, answers })
       const nextGate = await window.desktop.getUnderstandingGate(preparation.changeId, preparation.fingerprint)
       setResult(nextResult)
+      notifyMasteryUpdated()
       if (nextGate) { setGate(nextGate); onGateChange?.(nextGate) }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not grade this understanding check.')

@@ -39,6 +39,7 @@ import type {
   QuizResult
 } from '@shared/contracts'
 import { proposalReviewProgress } from '@/components/proposalReviewModel'
+import { notifyMasteryUpdated } from '@/components/useMasteryProfile'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected AI error occurred.'
@@ -165,6 +166,7 @@ export function TutorPane(): React.JSX.Element {
     onSuccess: (result) => {
       setQuizResult(result)
       setQuizAttempts((attempts) => attempts + 1)
+      notifyMasteryUpdated()
     },
     onError: reportError
   })

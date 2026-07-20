@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const learningDraftSchema = z.object({
   concepts: z.array(z.object({
+    id: z.string().min(1).max(100),
     name: z.string().min(1).max(80),
     whyItMatters: z.string().min(1).max(600),
     mentalModel: z.string().min(1).max(900),
@@ -9,13 +10,19 @@ export const learningDraftSchema = z.object({
   })).min(2).max(5),
   lessonSummary: z.string().min(1).max(2400),
   quiz: z.array(z.object({
+    conceptId: z.string().min(1).max(100),
     prompt: z.string().min(1).max(600),
     options: z.array(z.string().min(1).max(300)).min(3).max(5),
     correctOption: z.number().int().min(0).max(4),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
     explanation: z.string().min(1).max(600)
   })).min(3).max(5)
 }).superRefine((value, context) => {
+  const conceptIds = new Set(value.concepts.map((concept) => concept.id))
   value.quiz.forEach((question, index) => {
+    if (!conceptIds.has(question.conceptId)) {
+      context.addIssue({ code: 'custom', message: 'The question concept must reference a lesson concept.', path: ['quiz', index, 'conceptId'] })
+    }
     if (question.correctOption >= question.options.length) {
       context.addIssue({
         code: 'custom',
@@ -114,7 +121,7 @@ export const workspaceAgentStepSchema = z.object({
 
 export const changeConceptDraftSchema = z.object({
   concepts: z.array(z.object({
-    id: z.string().min(1).max(80).regex(/^[a-z0-9_-]+$/i),
+    id: z.string().min(1).max(80).regex(/^[a-z0-9._-]+$/i),
     name: z.string().min(1).max(100),
     summary: z.string().min(1).max(500),
     prerequisite: z.boolean().default(false)
@@ -202,6 +209,19 @@ export const remediationDraftSchema = z.object({
   lesson: z.string().min(1).max(1600)
 })
 
+export const reviewDraftSchema = z.object({
+  title: z.string().min(1).max(160),
+  questions: z.array(z.object({
+    prompt: z.string().min(1).max(900),
+    options: z.array(z.string().min(1).max(400)).min(3).max(5),
+    correctOption: z.number().int().min(0).max(4),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
+    explanation: z.string().min(1).max(900)
+  })).min(3).max(5)
+}).superRefine((value, context) => value.questions.forEach((question, index) => {
+  if (question.correctOption >= question.options.length) context.addIssue({ code: 'custom', message: 'The correct option must reference an available answer.', path: ['questions', index, 'correctOption'] })
+}))
+
 export type LearningDraft = z.infer<typeof learningDraftSchema>
 export type GuidanceDraft = z.infer<typeof guidanceDraftSchema>
 export type ProposalDraft = z.infer<typeof proposalDraftSchema>
@@ -210,3 +230,4 @@ export type ChangeConceptDraft = z.infer<typeof changeConceptDraftSchema>
 export type UnderstandingQuizDraft = z.infer<typeof understandingQuizDraftSchema>
 export type SemanticGradeDraft = z.infer<typeof semanticGradeSchema>
 export type RemediationDraft = z.infer<typeof remediationDraftSchema>
+export type ReviewDraft = z.infer<typeof reviewDraftSchema>

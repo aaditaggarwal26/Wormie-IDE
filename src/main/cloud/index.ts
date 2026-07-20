@@ -396,6 +396,7 @@ export function registerCloudHandlers(
 
   ipcMain.handle(IPC_CHANNELS.cloudListClassrooms, async (event): Promise<Classroom[]> => {
     assertTrusted(event)
+    await requireUser()
     return listClassrooms()
   })
 

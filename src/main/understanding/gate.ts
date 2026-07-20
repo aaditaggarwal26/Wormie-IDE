@@ -13,12 +13,14 @@ import type {
 } from '../../shared/contracts'
 import { gradeDeterministicAnswers } from './grading'
 import type { UnderstandingRepository, UnderstandingState } from './store'
+import type { AssessmentEvidenceInput } from '../mastery/service'
 
 type SemanticGrader = (
   question: PrivateQuizQuestion,
   answer: UnderstandingAnswer
 ) => Promise<{ correct: boolean; explanation: string; misconception?: string }>
 type RemediationGenerator = (quiz: UnderstandingQuiz, feedback: UnderstandingQuestionFeedback[]) => Promise<string>
+type MasteryRecorder = { recordAssessment: (input: AssessmentEvidenceInput) => unknown }
 
 export type ClassroomUnderstandingScope = {
   classroomId: string
@@ -53,13 +55,20 @@ function publicStatus(gate: UnderstandingState['gates'][string]): UnderstandingG
 
 export class UnderstandingGateService {
   private completionListener: ((completion: UnderstandingCompletion) => void) | null = null
+  private readonly mastery?: MasteryRecorder
+  private readonly getClassroomScope?: () => ClassroomUnderstandingScope | null
 
   constructor(
     private readonly repository: UnderstandingRepository,
     private readonly semanticGrader?: SemanticGrader,
     private readonly remediationGenerator?: RemediationGenerator,
-    private readonly getClassroomScope?: () => ClassroomUnderstandingScope | null
-  ) {}
+    masteryOrScope?: MasteryRecorder | (() => ClassroomUnderstandingScope | null),
+    getClassroomScope?: () => ClassroomUnderstandingScope | null
+  ) {
+    if (typeof masteryOrScope === 'function') this.getClassroomScope = masteryOrScope
+    else this.mastery = masteryOrScope
+    if (getClassroomScope) this.getClassroomScope = getClassroomScope
+  }
 
   setCompletionListener(listener: (completion: UnderstandingCompletion) => void): void {
     this.completionListener = listener
@@ -167,6 +176,24 @@ export class UnderstandingGateService {
       weakConceptIds,
       remediation
     }
+    this.mastery?.recordAssessment({
+      source: 'change_understanding',
+      assessmentId: gate.quiz.id,
+      sessionId: gate.quiz.changeId,
+      attempt,
+      answers: gate.privateQuestions.map((question) => {
+        const item = feedback.find((candidate) => candidate.questionId === question.id)
+        return {
+          questionId: question.id,
+          conceptId: question.conceptId,
+          score: item?.score ?? (item?.correct ? 1 : 0),
+          difficulty: question.difficulty,
+          format: question.type,
+          ...(item?.misconception ? { misconceptionSummary: item.misconception, correctiveExplanation: item.explanation } : {}),
+          ...(Boolean(item?.misconception) && question.difficulty === 'hard' && gate.quiz.significance.level === 'critical' ? { criticalMisconception: true } : {})
+        }
+      })
+    })
     const now = new Date().toISOString()
     const scopeKey = classroomScope ? classroomScopeKey(classroomScope) : null
     const updatedState = this.repository.update((value) => {

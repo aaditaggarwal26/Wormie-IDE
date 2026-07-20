@@ -4,7 +4,6 @@ import type {
   ChangeInput,
   ChangeSignificanceResult,
   ChangeUnderstandingPreparation,
-  KnowledgeMastery,
   PrivateQuizQuestion,
   UnderstandingAnswer,
   UnderstandingQuiz
@@ -18,6 +17,8 @@ import { buildConceptExtractionPrompt, buildQuizGenerationPrompt, buildRemediati
 import { sanitizeChangeContext } from './redaction'
 import { classifyChange } from './significance'
 import type { UnderstandingRepository } from './store'
+import type { MasteryService } from '../mastery/service'
+import { resolveOrRegisterConcept } from '../mastery/catalog'
 
 type UnderstandingAi = {
   extractConcepts: (prompt: string) => Promise<ChangeConceptDraft>
@@ -31,21 +32,30 @@ export class UnderstandingController {
   readonly gates: UnderstandingGateService
   private ai: UnderstandingAi | null = null
   private readonly quizContexts = new Map<string, string>()
+  private readonly mastery?: MasteryService
 
-  constructor(readonly repository: UnderstandingRepository, getClassroomScope?: () => ClassroomUnderstandingScope | null) {
+  constructor(
+    readonly repository: UnderstandingRepository,
+    masteryOrScope?: MasteryService | (() => ClassroomUnderstandingScope | null),
+    getClassroomScope?: () => ClassroomUnderstandingScope | null
+  ) {
+    const mastery = typeof masteryOrScope === 'function' ? undefined : masteryOrScope
+    const classroomScope = typeof masteryOrScope === 'function' ? masteryOrScope : getClassroomScope
+    this.mastery = mastery
     this.gates = new UnderstandingGateService(
       repository,
       async (question, answer) => {
         if (!this.ai) throw new Error('AI grading is unavailable.')
         const result = await this.ai.gradeAnswer(buildSemanticGradingPrompt(question, answer, this.quizContexts.get(question.id.split(':')[0]) ?? ''))
-        return { correct: result.isCorrect, explanation: result.feedback, misconception: result.misconceptions.join(' ') || undefined }
+        return { correct: result.isCorrect, score: result.score / 100, explanation: result.feedback, misconception: result.misconceptions.join(' ') || undefined }
       },
       async (quiz, feedback) => {
         if (!this.ai) throw new Error('AI remediation is unavailable.')
         const result = await this.ai.generateRemediation(buildRemediationPrompt(quiz, feedback, this.quizContexts.get(quiz.id) ?? ''))
         return result.lesson
       },
-      getClassroomScope
+      mastery,
+      classroomScope
     )
   }
 
@@ -73,14 +83,25 @@ export class UnderstandingController {
 
     const safeChange = sanitizeChangeContext(change)
     if (safeChange.files.length === 0) throw new Error('No safe text diff is available for a grounded understanding check.')
-    const concepts = await this.ai.extractConcepts(buildConceptExtractionPrompt(safeChange, significance))
-    const mastery = this.gates.getHistory().mastery as KnowledgeMastery[]
-    const draft = await this.ai.generateQuiz(buildQuizGenerationPrompt(safeChange, significance, concepts, this.gates.getSettings(), mastery))
+    const extracted = await this.ai.extractConcepts(buildConceptExtractionPrompt(safeChange, significance))
+    const conceptIdMap = new Map(extracted.concepts.map((concept) => [concept.id, resolveOrRegisterConcept(concept.id || concept.name)]))
+    const concepts = { ...extracted, concepts: extracted.concepts.map((concept) => {
+      const canonical = conceptIdMap.get(concept.id)!
+      return { ...concept, id: canonical.id, name: canonical.name }
+    }) }
+    const promptContext = this.mastery?.promptContext()
+    const draft = await this.ai.generateQuiz(buildQuizGenerationPrompt(safeChange, significance, concepts, this.gates.getSettings(), promptContext?.profile ?? [], promptContext?.personalization))
     this.validateGrounding(draft, safeChange, significance)
 
     const quizId = randomUUID()
+    const draftConceptMap = new Map(draft.concepts.map((concept) => [concept.id, resolveOrRegisterConcept(concept.id || concept.name)]))
+    const canonicalConcepts = [...new Map(draft.concepts.map((concept) => {
+      const canonical = draftConceptMap.get(concept.id)!
+      return [canonical.id, { id: canonical.id, name: canonical.name, summary: concept.summary }]
+    })).values()]
     const privateQuestions: PrivateQuizQuestion[] = draft.questions.map((question, index) => ({
       ...question,
+      conceptId: draftConceptMap.get(question.conceptId)?.id ?? resolveOrRegisterConcept(question.conceptId).id,
       id: `${quizId}:${index}`
     }))
     const settings = this.gates.getSettings()
@@ -98,7 +119,7 @@ export class UnderstandingController {
       whyThisMatters: draft.whyThisMatters,
       flowSummary: draft.flowSummary,
       risks: draft.risks,
-      concepts: draft.concepts,
+      concepts: canonicalConcepts,
       questions: privateQuestions.map(toPublicQuestion),
       passingScore: significance.level === 'critical' ? Math.max(90, settings.passingScore) : settings.passingScore,
       estimatedMinutes: Math.max(2, Math.ceil(privateQuestions.length * 0.75)),

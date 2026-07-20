@@ -11,6 +11,11 @@ import { registerTerminalHandlers } from './terminal'
 import { UnderstandingController } from './understanding'
 import { UnderstandingRepository } from './understanding/store'
 import { registerEditorRecoveryHandlers } from './editorRecovery'
+import { MasteryRepository } from './mastery/repository'
+import { MasteryService } from './mastery/service'
+import { KnowledgeGraph } from './mastery/graph'
+import { canonicalConcepts } from './mastery/catalog'
+import { registerMasteryIpc } from './mastery/ipc'
 import { registerWorkspaceHandlers } from './workspace'
 import { IPC_CHANNELS, type ClassroomAssignmentContext, type CloudAuthUpdate, type WorkspacePurpose } from '../shared/contracts'
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
@@ -32,7 +37,11 @@ const masterySyncStore = new Store<{ queue?: unknown }>({ name: 'mastery-sync' }
 const masterySyncQueue = new MasterySyncQueue(masterySyncStore)
 let workspacePurpose: WorkspacePurpose = 'sandbox'
 let activeAssignmentContext: (ClassroomAssignmentContext & { userId: string }) | null = null
-const understanding = new UnderstandingController(new UnderstandingRepository(understandingStore), () => {
+const understandingRepository = new UnderstandingRepository(understandingStore)
+const masteryStore = new Store({ name: 'mastery-state' })
+const masteryRepository = new MasteryRepository(masteryStore, Object.values(understandingRepository.read().mastery))
+const mastery = new MasteryService(masteryRepository, new KnowledgeGraph(canonicalConcepts))
+const understanding = new UnderstandingController(understandingRepository, mastery, () => {
   if (!activeAssignmentContext || activeAssignmentContext.role !== 'student') return null
   return {
     classroomId: activeAssignmentContext.classroomId,
@@ -180,9 +189,10 @@ if (!app.requestSingleInstanceLock()) {
     isTrustedSender
   )
   understanding.registerIpc(isTrustedSender)
+  registerMasteryIpc(mastery, isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
   registerTerminalHandlers(workspace.getWorkspaceRoot, isTrustedSender)
-  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot)
+  registerAgentHandlers(store, workspace.getWorkspaceRoot, () => workspacePurpose, understanding, progressStorageRoot, mastery)
 
   app.on('second-instance', (_event, commandLine) => {
     const callback = authCallbackFromArguments(commandLine)

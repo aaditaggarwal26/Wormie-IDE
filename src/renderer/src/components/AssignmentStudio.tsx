@@ -9,6 +9,7 @@ import type {
   FileTreeNode,
   WorkspaceSnapshot
 } from '@shared/contracts'
+import { useAppearance } from '@/store/appearance'
 
 type EditableTask = AssignmentTask & { criteriaText: string }
 type ValidationErrors = Record<string, string>
@@ -59,7 +60,9 @@ export function AssignmentStudio({
   onSave,
   returnFocus
 }: AssignmentStudioProps): React.JSX.Element {
-  const reducedMotion = useReducedMotion()
+  const systemReducedMotion = useReducedMotion()
+  const reduceMotion = useAppearance((state) => state.preferences.reduceMotion)
+  const reducedMotion = reduceMotion || systemReducedMotion
   const formRef = useRef<HTMLFormElement>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const initialSnapshotRef = useRef<string | null>(null)

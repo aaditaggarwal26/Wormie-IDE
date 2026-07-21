@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronUp, RotateCcw, Sparkles } from 'lucide-react
 import * as monaco from 'monaco-editor'
 import { languageForPath, lineChangeRange } from './proposalReviewModel'
 import type { ProposalReviewFile } from '@/store/workbench'
+import { CODE_FONT_STACKS, editorTheme, shouldReduceMotion, useAppearance } from '@/store/appearance'
 
 type AgentDiffReviewProps = {
   beforeMount: BeforeMount
@@ -35,6 +36,7 @@ export function AgentDiffReview({
   onPendingBlocksChange,
   onResolveBlock
 }: AgentDiffReviewProps): React.JSX.Element {
+  const appearance = useAppearance((state) => state.preferences)
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
   const reportedPending = useRef<number | null>(null)
   const currentIndexRef = useRef(0)
@@ -168,11 +170,11 @@ export function AgentDiffReview({
           bracketPairColorization: { enabled: true },
           diffAlgorithm: 'advanced',
           enableSplitViewResizing: false,
-          fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
-          fontLigatures: true,
-          fontSize: 13,
+          fontFamily: CODE_FONT_STACKS[appearance.codeFont],
+          fontLigatures: appearance.fontLigatures,
+          fontSize: appearance.editorFontSize,
           hideUnchangedRegions: { enabled: true, contextLineCount: 4, minimumLineCount: 10, revealLineCount: 12 },
-          lineHeight: 21,
+          lineHeight: Math.round(appearance.editorFontSize * appearance.editorLineHeight),
           minimap: { enabled: false },
           originalEditable: false,
           padding: { top: 54 },
@@ -182,11 +184,11 @@ export function AgentDiffReview({
           renderOverviewRuler: true,
           renderSideBySide: false,
           scrollBeyondLastLine: false,
-          smoothScrolling: true
+          smoothScrolling: !shouldReduceMotion(appearance)
         }}
         original={file.originalContent}
         originalModelPath={`wormie-review://original/${proposalId}/${modelKey}`}
-        theme="wormie-dark"
+        theme={editorTheme(appearance)}
       />
     </div>
   )

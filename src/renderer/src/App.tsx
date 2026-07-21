@@ -16,7 +16,6 @@ import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { QuickOpen } from '@/components/QuickOpen'
 import { WormieLauncher } from '@/components/WormieLauncher'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
-import { AppearanceSettings } from '@/components/AppearanceSettings'
 import { BrandLogo } from '@/components/BrandLogo'
 import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
 import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
@@ -1547,7 +1546,6 @@ function SettingsSidebar(): React.JSX.Element {
   return (
     <aside className="side-panel info-panel">
       <div className="panel-heading"><span>Settings</span><Settings2 size={15} /></div>
-      <AppearanceSettings />
       <div className="settings-block">
         <label htmlFor="passing-score"><span>Passing score</span><b>{passingScore}%</b></label>
         <input

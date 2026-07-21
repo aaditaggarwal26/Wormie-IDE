@@ -1,7 +1,6 @@
 import { DiffEditor } from '@monaco-editor/react'
 import type { EditorDocument, ExternalFileChange } from '@/store/workbench'
 import { configureEditor } from './EditorPane'
-import { CODE_FONT_STACKS, editorTheme, useAppearance } from '@/store/appearance'
 
 type Props = {
   change: ExternalFileChange
@@ -12,7 +11,6 @@ type Props = {
 }
 
 export function ExternalChangeReview({ change, document, onCloseEditor, onKeepLocal, onReload }: Props): React.JSX.Element {
-  const appearance = useAppearance((state) => state.preferences)
   return (
     <div className="modal-backdrop">
       <section aria-label="File changed on disk" aria-modal="true" className="external-change-dialog" role="dialog">
@@ -29,17 +27,8 @@ export function ExternalChangeReview({ change, document, onCloseEditor, onKeepLo
               beforeMount={configureEditor}
               modified={document.content}
               original={change.diskFile.content}
-              options={{
-                automaticLayout: true,
-                fontFamily: CODE_FONT_STACKS[appearance.codeFont],
-                fontLigatures: appearance.fontLigatures,
-                fontSize: appearance.editorFontSize,
-                lineHeight: Math.round(appearance.editorFontSize * appearance.editorLineHeight),
-                readOnly: true,
-                renderSideBySide: true,
-                minimap: { enabled: false }
-              }}
-              theme={editorTheme(appearance)}
+              options={{ automaticLayout: true, readOnly: true, renderSideBySide: true, minimap: { enabled: false } }}
+              theme="wormie-dark"
             />
           </div>
         )}

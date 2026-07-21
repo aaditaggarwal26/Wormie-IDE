@@ -13,7 +13,6 @@ import { SafeRenameDialog } from '@/components/SafeRenameDialog'
 import { useTypeScriptProject } from '@/typescript/useTypeScriptProject'
 import { useSafeRename } from '@/typescript/useSafeRename'
 import { fileUriToPath, isWorkspaceFilePath, workspacePathToFileUri } from '@/typescript/fileUri'
-import { CODE_FONT_STACKS, editorTheme, shouldReduceMotion, useAppearance } from '@/store/appearance'
 
 const monacoScope = self as typeof self & { MonacoEnvironment: monaco.Environment }
 
@@ -114,66 +113,6 @@ export const configureEditor: BeforeMount = (monaco) => {
       'diffEditorGutter.removedLineBackground': '#6b3838'
     }
   })
-  monaco.editor.defineTheme('wormie-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '477b3a', fontStyle: 'italic' },
-      { token: 'keyword', foreground: '7f3b8f' },
-      { token: 'string', foreground: 'a31515' },
-      { token: 'number', foreground: '098658' },
-      { token: 'type', foreground: '267f99' }
-    ],
-    colors: {
-      'editor.background': '#ffffff',
-      'editor.foreground': '#202124',
-      'editor.lineHighlightBackground': '#f4f6f8',
-      'editor.selectionBackground': '#add6ff',
-      'editorCursor.foreground': '#1769aa',
-      'editorLineNumber.foreground': '#6e7781',
-      'editorLineNumber.activeForeground': '#1f2328',
-      'editorIndentGuide.background1': '#d8dee4',
-      'editorIndentGuide.activeBackground1': '#a9b4bf',
-      'diffEditor.insertedLineBackground': '#dff3e566',
-      'diffEditor.insertedTextBackground': '#a8ddb877',
-      'diffEditor.removedLineBackground': '#fce3df66',
-      'diffEditor.removedTextBackground': '#efb4ac77',
-      'diffEditor.diagonalFill': '#eef1f3',
-      'diffEditorGutter.insertedLineBackground': '#4b9460',
-      'diffEditorGutter.removedLineBackground': '#c75b50'
-    }
-  })
-  monaco.editor.defineTheme('wormie-hc-dark', {
-    base: 'hc-black',
-    inherit: true,
-    rules: [],
-    colors: { 'editor.background': '#000000', 'editorCursor.foreground': '#ffffff', 'editor.selectionBackground': '#155b8f' }
-  })
-  monaco.editor.defineTheme('wormie-hc-light', {
-    base: 'hc-light',
-    inherit: true,
-    rules: [],
-    colors: { 'editor.background': '#ffffff', 'editorCursor.foreground': '#000000', 'editor.selectionBackground': '#8cc8ff' }
-  })
-  const accessiblePalettes = {
-    'red-green': { inserted: '0072b244', insertedText: '56b4e966', insertedGutter: '0072b2', removed: 'cc79a744', removedText: 'df9ac066', removedGutter: 'a94c7e' },
-    'blue-yellow': { inserted: '18897744', insertedText: '4cab9d66', insertedGutter: '188977', removed: 'a64d7944', removedText: 'c2759d66', removedGutter: '8f3d67' },
-    monochrome: { inserted: '8a8a8a44', insertedText: 'b0b0b066', insertedGutter: 'd0d0d0', removed: '4a4a4a66', removedText: '70707077', removedGutter: '777777' }
-  } as const
-  for (const [name, palette] of Object.entries(accessiblePalettes)) {
-    const diffColors = {
-      'diffEditor.insertedLineBackground': `#${palette.inserted}`,
-      'diffEditor.insertedTextBackground': `#${palette.insertedText}`,
-      'diffEditor.removedLineBackground': `#${palette.removed}`,
-      'diffEditor.removedTextBackground': `#${palette.removedText}`,
-      'diffEditorGutter.insertedLineBackground': `#${palette.insertedGutter}`,
-      'diffEditorGutter.removedLineBackground': `#${palette.removedGutter}`
-    }
-    monaco.editor.defineTheme(`wormie-dark-${name}`, { base: 'vs-dark', inherit: true, rules: [], colors: { 'editor.background': '#1e1e1e', ...diffColors } })
-    monaco.editor.defineTheme(`wormie-light-${name}`, { base: 'vs', inherit: true, rules: [], colors: { 'editor.background': '#ffffff', ...diffColors } })
-    monaco.editor.defineTheme(`wormie-hc-dark-${name}`, { base: 'hc-black', inherit: true, rules: [], colors: diffColors })
-    monaco.editor.defineTheme(`wormie-hc-light-${name}`, { base: 'hc-light', inherit: true, rules: [], colors: diffColors })
-  }
 }
 
 export function EditorPane({
@@ -200,7 +139,6 @@ export function EditorPane({
   const proposalReview = useWorkbench((state) => state.proposalReview)
   const openProposalFile = useWorkbench((state) => state.openProposalFile)
   const updateProposalReviewFile = useWorkbench((state) => state.updateProposalReviewFile)
-  const appearance = useAppearance((state) => state.preferences)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
   const safeRename = useSafeRename(editorRef)
@@ -411,21 +349,21 @@ export function EditorPane({
               automaticLayout: false,
               bracketPairColorization: { enabled: true },
               cursorBlinking: 'smooth',
-              cursorSmoothCaretAnimation: shouldReduceMotion(appearance) ? 'off' : 'on',
-              fontFamily: CODE_FONT_STACKS[appearance.codeFont],
-              fontLigatures: appearance.fontLigatures,
-              fontSize: appearance.editorFontSize,
+              cursorSmoothCaretAnimation: 'on',
+              fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
+              fontLigatures: true,
+              fontSize: 13,
               inlayHints: { enabled: 'on' },
-              lineHeight: Math.round(appearance.editorFontSize * appearance.editorLineHeight),
+              lineHeight: 21,
               minimap: { enabled: true, scale: 0.8 },
               padding: { top: 14 },
               renderLineHighlight: 'all',
               'semanticHighlighting.enabled': true,
               scrollBeyondLastLine: false,
-              smoothScrolling: !shouldReduceMotion(appearance)
+              smoothScrolling: true
             }}
             path={workspacePathToFileUri(activeDocument.path, window.desktop.platform)}
-            theme={editorTheme(appearance)}
+            theme="wormie-dark"
             value={activeDocument.content}
           />
         )}

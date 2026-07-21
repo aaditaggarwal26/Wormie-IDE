@@ -2,6 +2,7 @@
   "name": "learn-before-you-code",
   "version": "0.1.0",
   "description": "A learning-first desktop IDE that unlocks AI code generation through understanding.",
+  "author": "Wormie",
   "main": "./out/main/index.js",
   "type": "module",
   "private": true,

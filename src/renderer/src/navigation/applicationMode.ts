@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { WorkspacePurpose } from '@shared/contracts'
 
 export type ClassroomPortalTab = 'assignments' | 'people' | 'mastery' | 'analytics' | 'settings'
 
@@ -30,6 +31,10 @@ type ApplicationNavigationState = {
 }
 
 const launcherMode = (): ApplicationMode => ({ kind: 'launcher' })
+
+export function workspacePurposeForMode(mode: ApplicationMode): WorkspacePurpose {
+  return mode.kind === 'assignment' ? 'assignment' : 'sandbox'
+}
 
 export const useApplicationNavigation = create<ApplicationNavigationState>((set, get) => ({
   mode: launcherMode(),

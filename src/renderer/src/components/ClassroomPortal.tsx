@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, BarChart3, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Coins, Download, DoorOpen, FolderInput, GraduationCap, Link2, LogOut, MessageSquareText, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
-import type { AssignmentWorkspaceState, Classroom, ClassroomAiAnalyticsSnapshot, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import { ArrowLeft, BarChart3, BookOpenCheck, BrainCircuit, CheckCircle2, Clipboard, Clock3, Coins, Download, DoorOpen, FileCode2, FolderInput, GraduationCap, Link2, LogOut, MessageSquareText, Plus, RefreshCw, RotateCw, Send, UserMinus, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import type { AssignmentSubmission, AssignmentWorkspaceState, Classroom, ClassroomAiAnalyticsSnapshot, ClassroomAssignmentProgressSnapshot, ClassroomAssignmentStudentProgress, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, summarizeClassroomAnalytics, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
 
@@ -10,11 +10,15 @@ type ClassroomPortalProps = {
   assignment: AssignmentWorkspaceState | null
   analytics: ClassroomAiAnalyticsSnapshot | null
   analyticsBusy: boolean
+  assignmentProgress: ClassroomAssignmentProgressSnapshot | null
+  assignmentProgressBusy: boolean
   busy: boolean
   classrooms: Classroom[]
   error: string | null
   mastery: ClassroomMasterySnapshot | null
   masteryBusy: boolean
+  cloudSubmission: { assignmentId: string; studentId: string; submission: AssignmentSubmission } | null
+  cloudSubmissionBusy: boolean
   selectedClassroomId: string | null
   selectedTab: ClassroomPortalTab
   user: CloudUser
@@ -28,6 +32,8 @@ type ClassroomPortalProps = {
   onLeaveClassroom: (classroomId: string) => void
   onAuthorAssignment: (classroom: Classroom) => void
   onOpenAssignment: (classroom: Classroom, assignmentId: string) => void
+  onOpenCloudSubmission: (assignmentId: string, studentId: string) => void
+  onCloseCloudSubmission: () => void
   onPublish: (classroomId: string, dueAt: string | null) => void
   onRefresh: () => void
   onRemoveStudent: (classroomId: string, userId: string) => void
@@ -125,6 +131,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
         </AnimatePresence>
       </section>
     </div>
+    {props.cloudSubmission && <CloudSubmissionDialog classroom={selected} onClose={props.onCloseCloudSubmission} review={props.cloudSubmission} />}
   </main>
 }
 
@@ -136,18 +143,116 @@ function ClassroomGroup({ classrooms, label, onSelect, selectedId }: { classroom
 function AssignmentsTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
   const classroom = props.classroom
   const [dueDate, setDueDate] = useState('')
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState(classroom.assignments[0]?.id ?? null)
   const publishableAssignment = props.assignment?.manifest && props.workspace && props.assignment.workspaceRoot === props.workspace.rootPath && props.assignment.role !== 'student'
     ? props.assignment
     : null
   const dueTimestamp = dueDate ? Date.parse(dueDate) : null
   const invalidDueDate = dueTimestamp !== null && (!Number.isFinite(dueTimestamp) || dueTimestamp <= Date.now())
   useEffect(() => setDueDate(''), [classroom.id, props.actionVersion])
+  useEffect(() => {
+    if (!classroom.assignments.some((assignment) => assignment.id === selectedAssignmentId)) setSelectedAssignmentId(classroom.assignments[0]?.id ?? null)
+  }, [classroom.id, classroom.assignments, selectedAssignmentId])
+  const selectedAssignment = classroom.assignments.find((assignment) => assignment.id === selectedAssignmentId) ?? null
   return <div className="portal-section-grid portal-section-grid-single">
     <section className="portal-section-main">
       <div className="portal-section-heading portal-assignment-heading"><div><h2>Assignments</h2></div>{classroom.role === 'teacher' && <div className="portal-assignment-actions"><button className="portal-secondary-button" disabled={props.busy} onClick={() => props.onAuthorAssignment(classroom)} type="button"><FolderInput size={14} /> Author from folder</button><label className="portal-due-date"><span>Due date</span><input aria-invalid={invalidDueDate} aria-label="Assignment due date" onChange={(event) => setDueDate(event.target.value)} title={invalidDueDate ? 'Choose a future date and time.' : undefined} type="datetime-local" value={dueDate} /></label><button className="portal-accent-button" disabled={props.busy || !publishableAssignment || invalidDueDate} onClick={() => props.onPublish(classroom.id, dueTimestamp === null ? null : new Date(dueTimestamp).toISOString())} type="button"><Send size={14} /> {publishableAssignment ? `Publish ${publishableAssignment.manifest!.title}` : 'No draft ready'}</button></div>}</div>
-      {classroom.assignments.length === 0 ? <div className="portal-section-empty"><BookOpenCheck size={21} /><p>No assignments have been published.</p></div> : <div className="portal-assignment-grid">{classroom.assignments.map((assignment, index) => <article key={assignment.id}><span className="portal-assignment-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{assignment.title}</h3><div className="portal-assignment-dates"><time dateTime={assignment.publishedAt}>Assigned {new Date(assignment.publishedAt).toLocaleDateString()}</time>{assignment.dueAt && <time data-due dateTime={assignment.dueAt}>Due {new Date(assignment.dueAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>}</div></div><button disabled={props.busy} onClick={() => props.onOpenAssignment(classroom, assignment.id)} type="button">{classroom.role === 'student' ? <><Download size={14} /> Open assignment</> : <><DoorOpen size={14} /> Open project</>}</button></article>)}</div>}
+      {classroom.assignments.length === 0 ? <div className="portal-section-empty"><BookOpenCheck size={21} /><p>No assignments have been published.</p></div> : <div className="portal-assignment-grid">{classroom.assignments.map((assignment, index) => <article aria-current={selectedAssignmentId === assignment.id ? 'true' : undefined} key={assignment.id}><span className="portal-assignment-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{assignment.title}</h3><div className="portal-assignment-dates"><time dateTime={assignment.publishedAt}>Assigned {new Date(assignment.publishedAt).toLocaleDateString()}</time>{assignment.dueAt && <time data-due dateTime={assignment.dueAt}>Due {new Date(assignment.dueAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>}</div></div><div className="portal-assignment-row-actions">{classroom.role === 'teacher' && <button data-secondary onClick={() => setSelectedAssignmentId(assignment.id)} type="button"><BarChart3 size={14} /> Progress</button>}<button disabled={props.busy} onClick={() => props.onOpenAssignment(classroom, assignment.id)} type="button">{classroom.role === 'student' ? <><Download size={14} /> Open assignment</> : <><DoorOpen size={14} /> Open project</>}</button></div></article>)}</div>}
+      {classroom.role === 'teacher' && selectedAssignment && <AssignmentProgressDashboard assignment={selectedAssignment} classroom={classroom} loading={props.assignmentProgressBusy} onOpenSubmission={props.onOpenCloudSubmission} openingSubmission={props.cloudSubmissionBusy} snapshot={props.assignmentProgress} />}
     </section>
   </div>
+}
+
+function progressPresentation(progress: ClassroomAssignmentStudentProgress, dueAt: string | null): { label: string; tone: string } {
+  const due = dueAt ? Date.parse(dueAt) : null
+  const overdue = due !== null && Number.isFinite(due) && Date.now() > due
+  if (progress.status === 'submitted') {
+    const late = due !== null && progress.submittedAt !== null && Date.parse(progress.submittedAt) > due
+    return { label: late ? 'Submitted late' : 'Submitted', tone: late ? 'late' : 'submitted' }
+  }
+  if (overdue) return { label: progress.status === 'in-progress' ? 'Late' : 'Missing', tone: 'late' }
+  return progress.status === 'in-progress' ? { label: 'In progress', tone: 'active' } : { label: 'Not started', tone: 'idle' }
+}
+
+function AssignmentProgressDashboard({ assignment, classroom, loading, onOpenSubmission, openingSubmission, snapshot }: {
+  assignment: Classroom['assignments'][number]
+  classroom: Classroom
+  loading: boolean
+  onOpenSubmission: (assignmentId: string, studentId: string) => void
+  openingSubmission: boolean
+  snapshot: ClassroomAssignmentProgressSnapshot | null
+}): React.JSX.Element {
+  const students = classroom.members.filter((member) => member.role === 'student')
+  const entries = snapshot?.classroomId === classroom.id ? snapshot.entries.filter((entry) => entry.assignmentId === assignment.id) : []
+  const byStudent = new Map(entries.map((entry) => [entry.studentId, entry]))
+  const fallbackTotal = Math.max(1, entries[0]?.totalTasks ?? 1)
+  const rows = students.map((student) => ({
+    student,
+    progress: byStudent.get(student.userId) ?? {
+      assignmentId: assignment.id,
+      studentId: student.userId,
+      status: 'not-started' as const,
+      completedTasks: 0,
+      totalTasks: fallbackTotal,
+      startedAt: null,
+      updatedAt: null,
+      submittedAt: null,
+      submissionAvailable: false,
+      aiUsage: {
+        requestCount: 0,
+        averageRequestCharacters: 0,
+        quizAttemptCount: 0,
+        quizQuestionCount: 0,
+        averageQuizScore: null,
+        requestScopes: { micro: 0, small: 0, medium: 0, large: 0 },
+        totalTokens: 0,
+        reportedCredits: null,
+        lastActivityAt: null
+      }
+    }
+  }))
+  const submitted = rows.filter(({ progress }) => progress.status === 'submitted').length
+  const active = rows.filter(({ progress }) => progress.status === 'in-progress').length
+  const notStarted = rows.length - submitted - active
+
+  return <section className="portal-progress-dashboard">
+    <header><div><span className="portal-overline">Live coursework</span><h3>{assignment.title}</h3></div><div className="portal-progress-summary"><span data-tone="submitted"><b>{submitted}</b> submitted</span><span data-tone="active"><b>{active}</b> working</span><span data-tone="idle"><b>{notStarted}</b> not started</span></div></header>
+    {loading && !snapshot ? <div className="portal-progress-state"><RefreshCw className="spin" size={18} /> Loading student progress...</div> : students.length === 0 ? <div className="portal-progress-state"><UsersRound size={18} /> No students are enrolled.</div> : <div className="portal-progress-table" role="table" aria-label={`Student progress for ${assignment.title}`}>
+      <div className="portal-progress-row portal-progress-columns" role="row"><span role="columnheader">Student</span><span role="columnheader">Progress</span><span role="columnheader">AI usage</span><span role="columnheader">Status</span><span role="columnheader">Last activity</span><span role="columnheader">Submission</span></div>
+      {rows.map(({ progress, student }) => {
+        const presentation = progressPresentation(progress, assignment.dueAt)
+        const percentage = progress.totalTasks ? Math.round((progress.completedTasks / progress.totalTasks) * 100) : 0
+        const scopeEntries = Object.entries(progress.aiUsage.requestScopes) as Array<[keyof typeof progress.aiUsage.requestScopes, number]>
+        const dominantScope = scopeEntries.reduce((largest, current) => current[1] > largest[1] ? current : largest, scopeEntries[0])[1] > 0
+          ? scopeEntries.reduce((largest, current) => current[1] > largest[1] ? current : largest, scopeEntries[0])[0]
+          : null
+        const activityTimes = [progress.updatedAt, progress.aiUsage.lastActivityAt].filter((value): value is string => Boolean(value))
+        const lastActivityAt = activityTimes.sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null
+        const hasAiActivity = progress.aiUsage.requestCount > 0 || progress.aiUsage.quizAttemptCount > 0 || progress.aiUsage.totalTokens > 0
+        return <div className="portal-progress-row" key={student.userId} role="row"><span role="cell"><b>{student.displayName}</b><small>{student.email ?? 'No email available'}</small></span><span role="cell" className="portal-student-progress"><span><b>{progress.completedTasks}/{progress.totalTasks}</b><small>{percentage}%</small></span><i><em style={{ width: `${percentage}%` }} /></i></span><span className="portal-assignment-ai" role="cell">{hasAiActivity ? <><span><b>{formatCount(progress.aiUsage.requestCount)} request{progress.aiUsage.requestCount === 1 ? '' : 's'}</b><small>{formatCount(progress.aiUsage.totalTokens)} tokens</small></span><div>{progress.aiUsage.requestCount > 0 && <small>{formatCount(progress.aiUsage.averageRequestCharacters)} avg chars{dominantScope ? ` / ${dominantScope}` : ''}</small>}{progress.aiUsage.quizAttemptCount > 0 && <small>{progress.aiUsage.averageQuizScore === null ? '-' : `${Math.round(progress.aiUsage.averageQuizScore)}%`} quiz avg / {formatCount(progress.aiUsage.quizQuestionCount)} questions</small>}{progress.aiUsage.reportedCredits !== null && <small>{formatCredits(progress.aiUsage.reportedCredits)} credits</small>}</div></> : <small>No AI activity</small>}</span><span role="cell"><strong className="portal-progress-status" data-tone={presentation.tone}>{presentation.label}</strong></span><span role="cell"><time>{lastActivityAt ? new Date(lastActivityAt).toLocaleString() : '-'}</time></span><span role="cell">{progress.submissionAvailable ? <button disabled={openingSubmission} onClick={() => onOpenSubmission(assignment.id, student.userId)} type="button"><FileCode2 size={13} /> Review</button> : <small>Not available</small>}</span></div>
+      })}
+    </div>}
+  </section>
+}
+
+function CloudSubmissionDialog({ classroom, onClose, review }: {
+  classroom: Classroom | null
+  onClose: () => void
+  review: { assignmentId: string; studentId: string; submission: AssignmentSubmission }
+}): React.JSX.Element {
+  const [selectedPath, setSelectedPath] = useState(review.submission.files[0]?.path ?? '')
+  const selectedFile = review.submission.files.find((file) => file.path === selectedPath)
+  const member = classroom?.members.find((candidate) => candidate.userId === review.studentId)
+  let content = ''
+  if (selectedFile) {
+    try {
+      const bytes = Uint8Array.from(atob(selectedFile.contentBase64), (character) => character.charCodeAt(0))
+      content = new TextDecoder().decode(bytes)
+    } catch {
+      content = 'This snapshot could not be displayed as UTF-8 text.'
+    }
+  }
+  return <div className="portal-submission-backdrop" role="presentation"><section aria-labelledby="cloud-submission-title" aria-modal="true" className="portal-submission-dialog" role="dialog"><header><div><span className="portal-overline">Cloud submission</span><h2 id="cloud-submission-title">{member?.displayName ?? review.submission.student.name}</h2><p>{member?.email ?? ''}</p></div><button aria-label="Close submission" onClick={onClose} type="button"><X size={18} /></button></header><div className="portal-submission-meta"><span><CheckCircle2 size={14} /> Submitted {new Date(review.submission.submittedAt).toLocaleString()}</span><span><MessageSquareText size={14} /> {review.submission.aiActivity.length} AI evidence events</span><span><FileCode2 size={14} /> {review.submission.files.length} file snapshots</span></div>{review.submission.files.length ? <div className="portal-submission-code"><label><span>Submitted file</span><select onChange={(event) => setSelectedPath(event.target.value)} value={selectedPath}>{review.submission.files.map((file) => <option key={file.path} value={file.path}>{file.path}</option>)}</select></label><pre>{content}</pre></div> : <div className="portal-progress-state"><Clock3 size={18} /> This assignment did not request file snapshots.</div>}</section></div>
 }
 
 function PeopleTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {

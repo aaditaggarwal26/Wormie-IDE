@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Code2, Search, Settings2 } from 'lucide-react'
@@ -6,19 +6,13 @@ import { ActivityRail } from '@/components/ActivityRail'
 import { AuthScreen } from '@/components/AuthScreen'
 import { AssignmentPanel } from '@/components/AssignmentPanel'
 import { AssignmentStudio } from '@/components/AssignmentStudio'
-import { BottomPanel } from '@/components/BottomPanel'
 import { CommandPalette } from '@/components/CommandPalette'
 import { ClassroomPortal } from '@/components/ClassroomPortal'
-import { EditorPane } from '@/components/EditorPane'
 import { DirtyFilesDialog } from '@/components/DirtyFilesDialog'
-import { ExternalChangeReview } from '@/components/ExternalChangeReview'
 import { Explorer } from '@/components/Explorer'
 import { GoToLine } from '@/components/GoToLine'
-import { OutlinePanel } from '@/components/OutlinePanel'
 import { PanelResizeHandle } from '@/components/PanelResizeHandle'
-import { SearchPanel } from '@/components/SearchPanel'
 import { SourceControlPanel } from '@/components/SourceControlPanel'
-import { TutorPane } from '@/components/TutorPane'
 import { QuickOpen } from '@/components/QuickOpen'
 import { WormieLauncher } from '@/components/WormieLauncher'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
@@ -29,7 +23,8 @@ import { dirtyDocuments } from '@/editing/editingPolicy'
 import { useSafeEditing } from '@/editing/useSafeEditing'
 import { isTypeScriptProjectFile } from '@/typescript/projectFiles'
 import { useWorkbench } from '@/store/workbench'
-import { useApplicationNavigation } from '@/navigation/applicationMode'
+import { useApplicationNavigation, workspacePurposeForMode } from '@/navigation/applicationMode'
+import { isCurrentClassroomRequest } from '@/classrooms/classroomRequestGuard'
 import type {
   AgentConfig,
   AgentConfigUpdate,
@@ -42,6 +37,7 @@ import type {
   AssignmentTaskProgressUpdate,
   AssignmentWorkspaceState,
   Classroom,
+  ClassroomAssignmentProgressSnapshot,
   ClassroomAiAnalyticsSnapshot,
   ClassroomMasterySnapshot,
   CloudAuthCredentials,
@@ -50,6 +46,13 @@ import type {
   CodexModelOption,
   FileTreeNode
 } from '@shared/contracts'
+
+const BottomPanel = lazy(() => import('@/components/BottomPanel').then((module) => ({ default: module.BottomPanel })))
+const EditorPane = lazy(() => import('@/components/EditorPane').then((module) => ({ default: module.EditorPane })))
+const ExternalChangeReview = lazy(() => import('@/components/ExternalChangeReview').then((module) => ({ default: module.ExternalChangeReview })))
+const OutlinePanel = lazy(() => import('@/components/OutlinePanel').then((module) => ({ default: module.OutlinePanel })))
+const SearchPanel = lazy(() => import('@/components/SearchPanel').then((module) => ({ default: module.SearchPanel })))
+const TutorPane = lazy(() => import('@/components/TutorPane').then((module) => ({ default: module.TutorPane })))
 
 function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : 'An unexpected error occurred.'
@@ -135,13 +138,19 @@ export default function App(): React.JSX.Element {
   const [resetEmailSent, setResetEmailSent] = useState(false)
   const [gitError, setGitError] = useState<string | null>(null)
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [classroomAssignmentProgress, setClassroomAssignmentProgress] = useState<ClassroomAssignmentProgressSnapshot | null>(null)
   const [classroomMastery, setClassroomMastery] = useState<ClassroomMasterySnapshot | null>(null)
   const [classroomAnalytics, setClassroomAnalytics] = useState<ClassroomAiAnalyticsSnapshot | null>(null)
+  const [cloudSubmission, setCloudSubmission] = useState<{ assignmentId: string; studentId: string; submission: AssignmentSubmission } | null>(null)
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
   const restored = useRef(false)
   const assignmentLoadSequence = useRef(0)
+  const classroomMasterySequence = useRef(0)
+  const classroomAnalyticsSequence = useRef(0)
+  const classroomProgressSequence = useRef(0)
+  const cloudSubmissionSequence = useRef(0)
   const assignmentEditorRevision = useRef<string | null>(null)
   const assignmentReturnFocus = useRef<HTMLElement | null>(null)
   const assignmentOpenLoad = useRef(false)
@@ -461,7 +470,7 @@ export default function App(): React.JSX.Element {
       if (!result) return
       setAssignmentState((current) => current?.workspaceRoot === request.workspaceRoot ? { ...current, progress: result.submission.progress } : current)
       setAssignmentProgressError(null)
-      addOutput(`Saved submission to ${result.filePath}.`)
+      addOutput(result.destination === 'cloud' ? 'Submitted the assignment to the classroom.' : `Saved submission to ${result.filePath}.`)
     },
     onError: (error) => setAssignmentProgressError(errorMessage(error))
   })
@@ -562,21 +571,68 @@ export default function App(): React.JSX.Element {
   })
 
   const classroomMasteryMutation = useMutation({
-    mutationFn: window.desktop.listClassroomMastery,
+    mutationFn: async ({ classroomId, requestId }: { classroomId: string; requestId: number }) => ({
+      classroomId,
+      requestId,
+      snapshot: await window.desktop.listClassroomMastery(classroomId)
+    }),
     onSuccess: (result) => {
       const mode = useApplicationNavigation.getState().mode
-      if (mode.kind === 'classrooms' && mode.classroomId === result.classroomId) setClassroomMastery(result)
+      if (isCurrentClassroomRequest(mode, result.classroomId, 'mastery', result.requestId, classroomMasterySequence.current)) setClassroomMastery(result.snapshot)
     },
-    onError: (error) => setCloudError(errorMessage(error))
+    onError: (error, request) => {
+      if (isCurrentClassroomRequest(useApplicationNavigation.getState().mode, request.classroomId, 'mastery', request.requestId, classroomMasterySequence.current)) setCloudError(errorMessage(error))
+    }
   })
 
   const classroomAnalyticsMutation = useMutation({
-    mutationFn: window.desktop.listClassroomAiAnalytics,
+    mutationFn: async ({ classroomId, requestId }: { classroomId: string; requestId: number }) => ({
+      classroomId,
+      requestId,
+      snapshot: await window.desktop.listClassroomAiAnalytics(classroomId)
+    }),
     onSuccess: (result) => {
       const mode = useApplicationNavigation.getState().mode
-      if (mode.kind === 'classrooms' && mode.classroomId === result.classroomId && mode.tab === 'analytics') setClassroomAnalytics(result)
+      if (isCurrentClassroomRequest(mode, result.classroomId, 'analytics', result.requestId, classroomAnalyticsSequence.current)) setClassroomAnalytics(result.snapshot)
     },
-    onError: (error) => setCloudError(errorMessage(error))
+    onError: (error, request) => {
+      if (isCurrentClassroomRequest(useApplicationNavigation.getState().mode, request.classroomId, 'analytics', request.requestId, classroomAnalyticsSequence.current)) setCloudError(errorMessage(error))
+    }
+  })
+
+  const classroomAssignmentProgressMutation = useMutation({
+    mutationFn: async ({ classroomId, requestId }: { classroomId: string; requestId: number }) => ({
+      requestId,
+      snapshot: await window.desktop.listClassroomAssignmentProgress(classroomId)
+    }),
+    onSuccess: (result) => {
+      const mode = useApplicationNavigation.getState().mode
+      if (result.requestId === classroomProgressSequence.current && mode.kind === 'classrooms' && mode.classroomId === result.snapshot.classroomId && mode.tab === 'assignments') {
+        setClassroomAssignmentProgress(result.snapshot)
+      }
+    },
+    onError: (error, request) => {
+      if (isCurrentClassroomRequest(useApplicationNavigation.getState().mode, request.classroomId, 'assignments', request.requestId, classroomProgressSequence.current)) setCloudError(errorMessage(error))
+    }
+  })
+
+  const cloudSubmissionMutation = useMutation({
+    mutationFn: async ({ assignmentId, classroomId, requestId, studentId }: { assignmentId: string; classroomId: string; requestId: number; studentId: string }) => ({
+      assignmentId,
+      classroomId,
+      requestId,
+      studentId,
+      submission: await window.desktop.openClassroomAssignmentSubmission(assignmentId, studentId)
+    }),
+    onSuccess: (result) => {
+      const mode = useApplicationNavigation.getState().mode
+      if (result.requestId === cloudSubmissionSequence.current && mode.kind === 'classrooms' && mode.classroomId === result.classroomId && mode.tab === 'assignments') {
+        setCloudSubmission(result)
+      }
+    },
+    onError: (error, request) => {
+      if (isCurrentClassroomRequest(useApplicationNavigation.getState().mode, request.classroomId, 'assignments', request.requestId, cloudSubmissionSequence.current)) setCloudError(errorMessage(error))
+    }
   })
 
   const addClassroomStudentMutation = useMutation({
@@ -630,12 +686,11 @@ export default function App(): React.JSX.Element {
     onSuccess: async ({ result, transitionId }) => {
       if (!result) {
         if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        else await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
         return
       }
-      if (!isCurrentModeTransition(transitionId)) return
       if (!isCurrentModeTransition(transitionId)) {
-        const currentMode = useApplicationNavigation.getState().mode
-        await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
+        await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
         return
       }
       if (!openAssignmentMode(transitionId, result.context)) return
@@ -644,7 +699,11 @@ export default function App(): React.JSX.Element {
       addOutput(`Opened classroom assignment ${result.assignmentTitle}.`)
     },
     onError: async (error, variables) => {
-      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      if (!isCurrentModeTransition(variables.transitionId)) {
+        await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
+        return
+      }
+      await window.desktop.setWorkspacePurpose('sandbox')
       setCloudError(errorMessage(error))
     }
   })
@@ -658,12 +717,11 @@ export default function App(): React.JSX.Element {
     onSuccess: async ({ context, result, transitionId }) => {
       if (!result) {
         if (isCurrentModeTransition(transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+        else await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
         return
       }
-      if (!isCurrentModeTransition(transitionId)) return
       if (!isCurrentModeTransition(transitionId)) {
-        const currentMode = useApplicationNavigation.getState().mode
-        await window.desktop.setWorkspacePurpose(currentMode.kind === 'assignment' ? 'assignment' : 'sandbox')
+        await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
         return
       }
       if (!openAssignmentMode(transitionId, context)) return
@@ -672,7 +730,11 @@ export default function App(): React.JSX.Element {
       addOutput(`Opened ${result.name} for assignment authoring.`)
     },
     onError: async (error, variables) => {
-      if (isCurrentModeTransition(variables.transitionId)) await window.desktop.setWorkspacePurpose('sandbox')
+      if (!isCurrentModeTransition(variables.transitionId)) {
+        await window.desktop.setWorkspacePurpose(workspacePurposeForMode(useApplicationNavigation.getState().mode))
+        return
+      }
+      await window.desktop.setWorkspacePurpose('sandbox')
       setCloudError(errorMessage(error))
     }
   })
@@ -855,16 +917,36 @@ export default function App(): React.JSX.Element {
   }, [cloudAuth?.user?.id])
 
   useEffect(() => {
+    const requestId = ++classroomMasterySequence.current
     if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'mastery' || !applicationMode.classroomId) return
     setClassroomMastery(null)
-    classroomMasteryMutation.mutate(applicationMode.classroomId)
+    classroomMasteryMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
   }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
 
   useEffect(() => {
+    const requestId = ++classroomAnalyticsSequence.current
     if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'analytics' || !applicationMode.classroomId) return
     setClassroomAnalytics(null)
-    classroomAnalyticsMutation.mutate(applicationMode.classroomId)
+    classroomAnalyticsMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
   }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null])
+
+  useEffect(() => {
+    cloudSubmissionSequence.current += 1
+    classroomProgressSequence.current += 1
+    setCloudSubmission(null)
+    if (applicationMode.kind !== 'classrooms' || applicationMode.tab !== 'assignments' || !applicationMode.classroomId) {
+      setClassroomAssignmentProgress(null)
+      return
+    }
+    const classroom = classrooms.find((candidate) => candidate.id === applicationMode.classroomId)
+    if (classroom?.role !== 'teacher') {
+      setClassroomAssignmentProgress(null)
+      return
+    }
+    setClassroomAssignmentProgress(null)
+    const requestId = classroomProgressSequence.current
+    classroomAssignmentProgressMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
+  }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null, classrooms])
 
   useEffect(() => {
     if (restored.current) return
@@ -1038,12 +1120,16 @@ export default function App(): React.JSX.Element {
       <ClassroomPortal
         actionVersion={classroomActionVersion}
         assignment={assignmentState}
+        assignmentProgress={classroomAssignmentProgress}
+        assignmentProgressBusy={classroomAssignmentProgressMutation.isPending}
         analytics={classroomAnalytics}
         analyticsBusy={classroomAnalyticsMutation.isPending}
         busy={classroomBusy}
         mastery={classroomMastery}
         masteryBusy={classroomMasteryMutation.isPending}
         classrooms={classrooms}
+        cloudSubmission={cloudSubmission}
+        cloudSubmissionBusy={cloudSubmissionMutation.isPending}
         error={cloudError}
         onBack={returnToLauncher}
         onCopyInvite={(inviteLink) => {
@@ -1057,13 +1143,33 @@ export default function App(): React.JSX.Element {
         onAddStudent={(classroomId, email) => addClassroomStudentMutation.mutate({ classroomId, email })}
         onAuthorAssignment={authorClassroomAssignment}
         onOpenAssignment={openClassroomAssignment}
+        onOpenCloudSubmission={(assignmentId, studentId) => {
+          if (applicationMode.classroomId) {
+            const requestId = ++cloudSubmissionSequence.current
+            cloudSubmissionMutation.mutate({ assignmentId, classroomId: applicationMode.classroomId, requestId, studentId })
+          }
+        }}
+        onCloseCloudSubmission={() => {
+          cloudSubmissionSequence.current += 1
+          setCloudSubmission(null)
+        }}
         onPublish={(classroomId, dueAt) => {
           if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath, dueAt })
         }}
         onRefresh={() => {
           classroomListMutation.mutate()
-          if (applicationMode.tab === 'mastery' && applicationMode.classroomId) classroomMasteryMutation.mutate(applicationMode.classroomId)
-          if (applicationMode.tab === 'analytics' && applicationMode.classroomId) classroomAnalyticsMutation.mutate(applicationMode.classroomId)
+          if (applicationMode.tab === 'assignments' && applicationMode.classroomId) {
+            const requestId = ++classroomProgressSequence.current
+            classroomAssignmentProgressMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
+          }
+          if (applicationMode.tab === 'mastery' && applicationMode.classroomId) {
+            const requestId = ++classroomMasterySequence.current
+            classroomMasteryMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
+          }
+          if (applicationMode.tab === 'analytics' && applicationMode.classroomId) {
+            const requestId = ++classroomAnalyticsSequence.current
+            classroomAnalyticsMutation.mutate({ classroomId: applicationMode.classroomId, requestId })
+          }
         }}
         onRemoveStudent={(classroomId, userId) => removeClassroomStudentMutation.mutate({ classroomId, userId })}
         onRotateInvite={(classroomId) => rotateInviteMutation.mutate(classroomId)}
@@ -1081,7 +1187,8 @@ export default function App(): React.JSX.Element {
   }
 
   return (
-    <div className="app-shell" data-platform={window.desktop.platform}>
+    <Suspense fallback={<main className="workbench-loading" role="status">Loading workbench...</main>}>
+      <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
         <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
         <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
@@ -1137,6 +1244,7 @@ export default function App(): React.JSX.Element {
         {applicationMode.kind === 'assignment' && activity === 'assignments' && (
           <AssignmentPanel
             assignment={assignmentState}
+            cloudSubmission={applicationMode.kind === 'assignment' && applicationMode.context.role === 'student' && applicationMode.context.assignmentId !== null}
             busy={assignmentLoading}
             error={assignmentError}
             progressError={assignmentProgressError}
@@ -1324,7 +1432,8 @@ export default function App(): React.JSX.Element {
           />
         )}
       </AnimatePresence>
-    </div>
+      </div>
+    </Suspense>
   )
 }
 

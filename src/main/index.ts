@@ -22,6 +22,7 @@ import { IPC_CHANNELS, type ClassroomAssignmentContext, type CloudAuthUpdate, ty
 import { classroomInviteFromArguments, classroomInviteLink } from './cloud/invite'
 import { MasterySyncQueue } from './cloud/masterySync'
 import { AiAnalyticsSyncQueue, type AiAnalyticsSyncEvent } from './cloud/aiAnalyticsSync'
+import { AssignmentProgressSyncQueue } from './cloud/assignmentProgressSync'
 import {
   authCallback,
   authCallbackFromArguments,
@@ -39,6 +40,8 @@ const masterySyncStore = new Store<{ queue?: unknown }>({ name: 'mastery-sync' }
 const masterySyncQueue = new MasterySyncQueue(masterySyncStore)
 const analyticsSyncStore = new Store<{ queue?: unknown }>({ name: 'classroom-ai-analytics-sync' })
 const analyticsSyncQueue = new AiAnalyticsSyncQueue(analyticsSyncStore)
+const assignmentProgressSyncStore = new Store<{ queue?: unknown }>({ name: 'assignment-progress-sync' })
+const assignmentProgressSyncQueue = new AssignmentProgressSyncQueue(assignmentProgressSyncStore)
 let workspacePurpose: WorkspacePurpose = 'sandbox'
 let activeAssignmentContext: (ClassroomAssignmentContext & { userId: string }) | null = null
 const understandingRepository = new UnderstandingRepository(understandingStore)
@@ -138,6 +141,7 @@ function createWindow(): void {
   const webContentsId = mainWindow.webContents.id
   let allowClose = process.argv.includes('--smoke-test')
   let closeRequestPending = false
+  let crashDialogPending = false
   trustedWebContents.add(webContentsId)
   mainWindow.webContents.once('destroyed', () => trustedWebContents.delete(webContentsId))
 
@@ -189,6 +193,33 @@ function createWindow(): void {
     if (response === 0) event.preventDefault()
     else allowClose = false
   })
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit' || mainWindow.isDestroyed() || crashDialogPending) return
+    console.error(`Wormie renderer process exited (${details.reason}, code ${details.exitCode}).`)
+    crashDialogPending = true
+    void dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Wormie stopped responding',
+      message: 'The Wormie interface stopped unexpectedly.',
+      detail: 'Reload Wormie to restore the last eligible editing session.',
+      buttons: ['Reload Wormie', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    }).then(({ response }) => {
+      crashDialogPending = false
+      if (mainWindow.isDestroyed()) return
+      if (response === 0) mainWindow.reload()
+      else {
+        allowClose = true
+        mainWindow.close()
+      }
+    }).catch((error) => {
+      crashDialogPending = false
+      console.error('Could not show renderer recovery dialog:', error)
+      if (!mainWindow.isDestroyed()) mainWindow.reload()
+    })
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -209,13 +240,6 @@ if (!app.requestSingleInstanceLock()) {
   })
   const progressStorageRoot = path.join(app.getPath('userData'), 'assignment-progress')
   registerEditorRecoveryHandlers(editorRecoveryStore, workspace.getWorkspaceRoot, isTrustedSender)
-  registerAssignmentHandlers(
-    store,
-    progressStorageRoot,
-    workspace.getWorkspaceRoot,
-    workspace.setWorkspace,
-    isTrustedSender
-  )
   understanding.registerIpc(isTrustedSender)
   registerMasteryIpc(mastery, isTrustedSender)
   registerGitHandlers(workspace.getWorkspaceRoot, understanding, isTrustedSender)
@@ -281,8 +305,14 @@ if (!app.requestSingleInstanceLock()) {
       workspace.setWorkspace,
       () => workspacePurpose,
       (context) => { activeAssignmentContext = context },
+      (rootPath) => {
+        const studentWorkspaces = store.get('studentWorkspaces') ?? []
+        const remaining = studentWorkspaces.filter((candidate) => !samePath(candidate, rootPath))
+        if (remaining.length !== studentWorkspaces.length) store.set('studentWorkspaces', remaining)
+      },
       masterySyncQueue,
       analyticsSyncQueue,
+      assignmentProgressSyncQueue,
       isTrustedSender,
       takePendingClassroomInvite,
       notifyCloudAuthChanged
@@ -290,6 +320,19 @@ if (!app.requestSingleInstanceLock()) {
     understanding.setCompletionListener(cloud.recordUnderstandingCompletion)
     recordAiAnalyticsEvent = cloud.recordAiAnalyticsEvent
     handleAuthCallback = cloud.handleAuthCallback
+    registerAssignmentHandlers(
+      store,
+      progressStorageRoot,
+      workspace.getWorkspaceRoot,
+      workspace.setWorkspace,
+      isTrustedSender,
+      {
+        getContext: () => activeAssignmentContext,
+        syncProgress: cloud.syncAssignmentProgress,
+        uploadSubmission: cloud.uploadAssignmentSubmission,
+        removeSubmission: cloud.removeAssignmentSubmission
+      }
+    )
     createWindow()
     if (pendingAuthCallback) {
       const callback = pendingAuthCallback
@@ -304,4 +347,13 @@ if (!app.requestSingleInstanceLock()) {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Wormie main-process rejection:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Wormie main-process exception:', error)
+  app.exit(1)
 })

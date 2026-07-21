@@ -101,6 +101,8 @@ export const IPC_CHANNELS = {
   cloudBeginAssignmentAuthoring: 'cloud:begin-assignment-authoring',
   cloudListClassroomMastery: 'cloud:list-classroom-mastery',
   cloudListClassroomAiAnalytics: 'cloud:list-classroom-ai-analytics',
+  cloudListAssignmentProgress: 'cloud:list-assignment-progress',
+  cloudOpenAssignmentSubmission: 'cloud:open-assignment-submission',
   cloudCopyInvite: 'cloud:copy-invite',
   cloudPublishAssignment: 'cloud:publish-assignment',
   cloudOpenAssignment: 'cloud:open-assignment'
@@ -1063,7 +1065,8 @@ export type AssignmentSubmission = {
 }
 
 export type AssignmentSubmissionExportResult = {
-  filePath: string
+  filePath: string | null
+  destination: 'cloud' | 'file'
   submission: AssignmentSubmission
 }
 
@@ -1162,6 +1165,34 @@ export type ClassroomAssignmentContext = {
 }
 
 export type ClassroomOpenAssignmentResult = AssignmentImportResult & { context: ClassroomAssignmentContext }
+
+export type ClassroomAssignmentStudentProgress = {
+  assignmentId: string
+  studentId: string
+  status: 'not-started' | 'in-progress' | 'submitted'
+  completedTasks: number
+  totalTasks: number
+  startedAt: string | null
+  updatedAt: string | null
+  submittedAt: string | null
+  submissionAvailable: boolean
+  aiUsage: {
+    requestCount: number
+    averageRequestCharacters: number
+    quizAttemptCount: number
+    quizQuestionCount: number
+    averageQuizScore: number | null
+    requestScopes: { micro: number; small: number; medium: number; large: number }
+    totalTokens: number
+    reportedCredits: number | null
+    lastActivityAt: string | null
+  }
+}
+
+export type ClassroomAssignmentProgressSnapshot = {
+  classroomId: string
+  entries: ClassroomAssignmentStudentProgress[]
+}
 
 export type ClassroomMasteryConcept = {
   studentId: string
@@ -1336,6 +1367,8 @@ export type DesktopApi = {
   beginClassroomAssignmentAuthoring: (classroomId: string) => Promise<ClassroomAssignmentContext>
   listClassroomMastery: (classroomId: string) => Promise<ClassroomMasterySnapshot>
   listClassroomAiAnalytics: (classroomId: string) => Promise<ClassroomAiAnalyticsSnapshot>
+  listClassroomAssignmentProgress: (classroomId: string) => Promise<ClassroomAssignmentProgressSnapshot>
+  openClassroomAssignmentSubmission: (assignmentId: string, studentId: string) => Promise<AssignmentSubmission>
   copyClassroomInvite: (inviteLink: string) => Promise<void>
   publishAssignment: (request: ClassroomPublishRequest) => Promise<Classroom[]>
   openClassroomAssignment: (assignmentId: string) => Promise<ClassroomOpenAssignmentResult | null>

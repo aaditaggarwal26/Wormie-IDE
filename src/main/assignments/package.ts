@@ -46,11 +46,13 @@ const assignmentPackageSchema = z.object({
   files: z.array(packageFileSchema).max(maxPackageFiles)
 }).strict()
 
-const studentWorkspaceMarkerSchema = z.object({
+const assignmentImportMarkerSchema = z.object({
   schemaVersion: z.literal(1),
   packageId: z.uuid(),
   importedAt: z.iso.datetime()
 }).strict()
+
+export type AssignmentImportRole = 'student' | 'teacher'
 
 function validatePackagePath(relativePath: string): string {
   if (!portableWorkspacePathSchema.safeParse(relativePath).success) throw new Error(`Package contains an invalid path: ${relativePath}`)
@@ -66,7 +68,12 @@ function importFolderName(title: string): string {
   return `${name || 'Wormie assignment'} - assignment`
 }
 
-async function reopenExistingImport(canonicalParent: string, rootPath: string, assignmentPackage: AssignmentPackage): Promise<boolean> {
+async function reopenExistingImport(
+  canonicalParent: string,
+  rootPath: string,
+  assignmentPackage: AssignmentPackage,
+  role: AssignmentImportRole
+): Promise<boolean> {
   const rootStats = await fs.lstat(rootPath).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null
     throw error
@@ -78,12 +85,22 @@ async function reopenExistingImport(canonicalParent: string, rootPath: string, a
   const canonicalRoot = await fs.realpath(rootPath)
   if (!isPathInside(canonicalParent, canonicalRoot)) throw new Error('The existing assignment workspace is outside the selected folder.')
 
-  const markerPath = path.join(rootPath, '.wormie', 'student.json')
+  const markerName = role === 'student' ? 'student.json' : 'teacher.json'
+  let markerPath = path.join(rootPath, '.wormie', markerName)
   const markerStats = await fs.lstat(markerPath).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null
     throw error
   })
-  if (!markerStats || !markerStats.isFile() || markerStats.isSymbolicLink() || markerStats.size > 4_096) {
+  let migratingStudentImport = false
+  if (!markerStats && role === 'teacher') {
+    markerPath = path.join(rootPath, '.wormie', 'student.json')
+    migratingStudentImport = true
+  }
+  const resolvedMarkerStats = markerStats ?? await fs.lstat(markerPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  if (!resolvedMarkerStats || !resolvedMarkerStats.isFile() || resolvedMarkerStats.isSymbolicLink() || resolvedMarkerStats.size > 4_096) {
     throw new Error('A different folder with the assignment project name already exists in that location.')
   }
   if (!isPathInside(canonicalRoot, await fs.realpath(markerPath))) throw new Error('The existing assignment workspace marker is outside the project.')
@@ -95,7 +112,7 @@ async function reopenExistingImport(canonicalParent: string, rootPath: string, a
     if (error instanceof SyntaxError) throw new Error('The existing assignment workspace marker is invalid.')
     throw error
   }
-  const parsedMarker = studentWorkspaceMarkerSchema.safeParse(marker)
+  const parsedMarker = assignmentImportMarkerSchema.safeParse(marker)
   if (!parsedMarker.success || parsedMarker.data.packageId !== assignmentPackage.id) {
     throw new Error('A different assignment project with the same name already exists in that location.')
   }
@@ -103,6 +120,11 @@ async function reopenExistingImport(canonicalParent: string, rootPath: string, a
   const existing = await readAssignment(rootPath)
   if (!existing.manifest || existing.manifest.id !== assignmentPackage.assignment.id || existing.manifest.title !== assignmentPackage.assignment.title) {
     throw new Error('The existing assignment workspace does not match this assignment.')
+  }
+  if (migratingStudentImport) {
+    const teacherMarkerPath = path.join(rootPath, '.wormie', 'teacher.json')
+    await fs.writeFile(teacherMarkerPath, `${JSON.stringify(parsedMarker.data, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    await fs.unlink(markerPath)
   }
   return true
 }
@@ -221,7 +243,8 @@ export async function createAssignmentPackage(workspaceRoot: string): Promise<{
 
 export async function importAssignmentPackage(
   packageFilePath: string,
-  destinationParent: string
+  destinationParent: string,
+  role: AssignmentImportRole = 'student'
 ): Promise<{ rootPath: string; assignmentTitle: string; fileCount: number }> {
   const packageStats = await fs.lstat(packageFilePath)
   if (!packageStats.isFile() || packageStats.isSymbolicLink()) throw new Error('Choose a regular Wormie package file.')
@@ -260,7 +283,7 @@ export async function importAssignmentPackage(
   const canonicalParent = await fs.realpath(destinationParent)
   const rootPath = path.join(canonicalParent, importFolderName(parsed.data.assignment.title))
   if (!isPathInside(canonicalParent, rootPath)) throw new Error('The package destination is invalid.')
-  if (await reopenExistingImport(canonicalParent, rootPath, parsed.data)) {
+  if (await reopenExistingImport(canonicalParent, rootPath, parsed.data, role)) {
     return { rootPath, assignmentTitle: parsed.data.assignment.title, fileCount: parsed.data.files.length }
   }
   await fs.mkdir(rootPath)
@@ -314,7 +337,7 @@ export async function importAssignmentPackage(
     const assignmentDirectory = path.join(rootPath, '.wormie')
     await fs.mkdir(assignmentDirectory)
     await fs.writeFile(path.join(assignmentDirectory, 'assignment.json'), `${JSON.stringify(parsed.data.assignment, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-    await fs.writeFile(path.join(assignmentDirectory, 'student.json'), `${JSON.stringify({ schemaVersion: 1, packageId: parsed.data.id, importedAt: new Date().toISOString() }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    await fs.writeFile(path.join(assignmentDirectory, role === 'student' ? 'student.json' : 'teacher.json'), `${JSON.stringify({ schemaVersion: 1, packageId: parsed.data.id, importedAt: new Date().toISOString() }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
     await assertImportRoot(rootPath, rootIdentity)
     await readAssignment(rootPath)
     return { rootPath, assignmentTitle: parsed.data.assignment.title, fileCount: parsed.data.files.length }

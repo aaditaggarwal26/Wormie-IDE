@@ -40,13 +40,18 @@ Opening a classroom assignment or starting a teacher draft launches Assignment I
 
 The renderer stores only validated portal selection preferences. It does not restore directly into a classroom or assignment after restart. Editor recovery remains independent and workspace-scoped.
 
-## Local assignment workflow
+## Assignment workflows
 
-1. A teacher opens a starter project, chooses Assignments, creates the brief and tasks, sets the AI and evidence policies, and exports a `*.wormie-package.json` file.
-2. A student chooses Import assignment package. Wormie creates an isolated student copy, records explicit local evidence consent, and tracks task progress outside the repository.
-3. The assignment AI policy is enforced by the Electron main process. Learning sessions, quizzes, proposals, and applied changes are recorded only when the student accepted AI evidence collection.
-4. After every task is complete, the student saves a `*.wormie-submission.json` file outside the project.
-5. The teacher opens the original assignment and chooses Open student submission to review progress, AI-use evidence, and final task files.
+For classroom assignments, a teacher authors a starter workspace from the classroom portal and publishes its integrity-checked package to private Supabase storage. A student opens the assignment from that classroom, and Wormie creates or safely reopens an isolated local workspace. Task progress is stored locally first and synchronized through a bounded, versioned retry queue. Once every task is complete, the student submits directly to the classroom. The teacher can review status, assignment-scoped AI-use summaries, and uploaded submission files from the classroom portal.
+
+Wormie also retains a local package workflow for offline or manually distributed assignments:
+
+1. A teacher exports a `*.wormie-package.json` file from an authored assignment.
+2. A student imports the package. Wormie creates an isolated copy and records explicit evidence consent.
+3. After completing every task, the student saves a `*.wormie-submission.json` outside the project.
+4. The teacher opens that file from the matching teacher assignment workspace.
+
+In both workflows, the Electron main process enforces the assignment AI policy. Learning sessions, quizzes, proposals, and applied changes are recorded only when the student accepted the corresponding evidence collection.
 
 Packages and submissions are integrity checked but are not cryptographically signed. See [docs/ASSIGNMENT_FORMAT.md](docs/ASSIGNMENT_FORMAT.md) for schemas, limits, privacy behavior, and the hosted-service migration boundary.
 
@@ -56,7 +61,10 @@ Supabase migrations are additive and must be applied in filename order. The prod
 
 - `202607190001_classroom_roster_management.sql` for privacy-filtered member reads and teacher-authorized add/remove operations.
 - `202607190002_classroom_mastery.sql` for classroom/student mastery snapshots, immutable quiz events, and Row Level Security.
+- `202607210001_assignment_progress_submissions.sql` for classroom assignment progress, private submission storage, and teacher review access.
+- `202607210002_assignment_progress_hardening.sql` for stricter progress validation, rollback safety, storage authorization, and assignment revision checks.
+- `202607210003_assignment_ai_analytics.sql` for privacy-bounded, assignment-scoped AI usage summaries.
 
-The desktop uses only the publishable Supabase key. Roster changes and mastery writes go through narrow database functions that re-check the authenticated user, membership, classroom ownership, and assignment relationship. Failed mastery synchronization stays in a bounded, versioned local queue and does not erase local quiz history.
+The desktop uses only the publishable Supabase key. Roster changes, mastery writes, AI analytics, assignment progress, and submissions go through narrow database functions or private storage policies that re-check the authenticated user, membership, classroom ownership, and assignment relationship. Failed mastery, analytics, and assignment-progress synchronization stays in bounded, versioned local queues and does not erase local history.
 
 The Electron renderer receives only named preload methods. Workspace purpose, classroom IDs, assignment IDs, and request bodies are validated in the main process. Assignment context is derived from Supabase access checks rather than a renderer-provided role. See [the product modes architecture](docs/superpowers/specs/2026-07-19-product-modes-classroom-portal-design.md) for navigation, persistence, and IPC boundaries.

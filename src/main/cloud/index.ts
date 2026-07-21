@@ -6,8 +6,11 @@ import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import {
   IPC_CHANNELS,
+  type AssignmentProgress,
+  type AssignmentSubmission,
   type Classroom,
   type ClassroomAssignmentContext,
+  type ClassroomAssignmentProgressSnapshot,
   type ClassroomAiAnalyticsSnapshot,
   type ClassroomCreateRequest,
   type ClassroomUpdateRequest,
@@ -21,16 +24,20 @@ import {
   type WorkspacePurpose
 } from '../../shared/contracts'
 import { createAssignmentPackage, importAssignmentPackage } from '../assignments/package'
-import { assignmentBucket, supabasePublishableKey, supabaseUrl } from './config'
+import { assignmentSubmissionSchema, validateAssignmentSubmission } from '../assignments/submission'
+import { assignmentManifestSchema } from '../assignments/schema'
+import { assignmentBucket, assignmentSubmissionBucket, supabasePublishableKey, supabaseUrl } from './config'
 import { inviteCodeFrom } from './invite'
 import { authCallback, authCallbackUrl, authTokensFromLink, passwordResetCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 import { MasterySyncQueue, type MasterySyncEvent } from './masterySync'
 import { AiAnalyticsSyncQueue, isoTimestampSchema, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
+import { AssignmentProgressSyncQueue, type AssignmentProgressSyncEvent } from './assignmentProgressSync'
 import { classroomUpdateSchema } from './classroomDetails'
 import type { UnderstandingCompletion } from '../understanding/gate'
 
 const maxCloudPackageBytes = 40 * 1024 * 1024
+const maxCloudSubmissionBytes = 16 * 1024 * 1024
 const credentialsSchema = z.object({
   email: z.email().max(320).transform((value) => value.trim().toLowerCase()),
   password: z.string().min(8).max(128)
@@ -86,6 +93,45 @@ const analyticsRowSchema = z.object({
   reported_credits: z.coerce.number().min(0).max(1_000_000).nullable(),
   last_activity_at: isoTimestampSchema.nullable()
 })
+const assignmentProgressRowSchema = z.object({
+  assignment_id: z.uuid(),
+  student_id: z.uuid(),
+  status: z.enum(['not-started', 'in-progress', 'submitted']),
+  completed_tasks: z.coerce.number().int().min(0).max(50),
+  total_tasks: z.coerce.number().int().min(1).max(50),
+  started_at: isoTimestampSchema.nullable(),
+  updated_at: isoTimestampSchema.nullable(),
+  submitted_at: isoTimestampSchema.nullable(),
+  submission_available: z.boolean(),
+  request_count: analyticsNumberSchema,
+  average_request_characters: analyticsNumberSchema,
+  quiz_attempt_count: analyticsNumberSchema,
+  quiz_question_count: analyticsNumberSchema,
+  average_quiz_score: z.coerce.number().min(0).max(100).nullable(),
+  micro_requests: analyticsNumberSchema,
+  small_requests: analyticsNumberSchema,
+  medium_requests: analyticsNumberSchema,
+  large_requests: analyticsNumberSchema,
+  total_tokens: analyticsNumberSchema,
+  reported_credits: z.coerce.number().min(0).max(1_000_000).nullable(),
+  ai_last_activity_at: isoTimestampSchema.nullable()
+})
+const submissionMetadataSchema = z.object({
+  classroom_id: z.uuid(),
+  assignment_id: z.uuid(),
+  student_id: z.uuid(),
+  submission_path: z.string().min(1).max(500),
+  submission_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  submission_bytes: z.coerce.number().int().min(1).max(maxCloudSubmissionBytes)
+})
+const submissionAssignmentSchema = z.object({
+  classroom_id: z.uuid(),
+  local_assignment_id: z.uuid(),
+  manifest: assignmentManifestSchema,
+  manifest_revision: z.string().regex(/^[a-f0-9]{64}$/)
+})
+
+type ActiveAssignmentContext = ClassroomAssignmentContext & { userId: string }
 
 function cleanError(error: unknown, fallback: string): Error {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -139,8 +185,10 @@ export function registerCloudHandlers(
   setWorkspace: (rootPath: string, isCurrent?: () => boolean) => Promise<WorkspaceSnapshot>,
   getWorkspacePurpose: () => WorkspacePurpose,
   setAssignmentContext: (context: (ClassroomAssignmentContext & { userId: string }) | null) => void,
+  clearStudentWorkspace: (rootPath: string) => void,
   masteryQueue: MasterySyncQueue,
   analyticsQueue: AiAnalyticsSyncQueue,
+  progressQueue: AssignmentProgressSyncQueue,
   isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
   takePendingInvite: () => string | null,
   notifyAuthChanged: (update: CloudAuthUpdate) => void
@@ -148,6 +196,9 @@ export function registerCloudHandlers(
   handleAuthCallback: (callback: AuthCallback) => Promise<void>
   recordUnderstandingCompletion: (completion: UnderstandingCompletion) => void
   recordAiAnalyticsEvent: (event: AiAnalyticsSyncEvent) => void
+  syncAssignmentProgress: (context: ActiveAssignmentContext, progress: AssignmentProgress) => Promise<void>
+  uploadAssignmentSubmission: (context: ActiveAssignmentContext, submission: AssignmentSubmission, payload: string) => Promise<void>
+  removeAssignmentSubmission: (context: ActiveAssignmentContext, progress: AssignmentProgress) => Promise<void>
 } {
   const client = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
@@ -226,6 +277,96 @@ export function registerCloudHandlers(
     if (error) throw cleanError(error, 'Could not synchronize classroom AI analytics.')
   }
 
+  async function sendAssignmentProgressEvent(event: AssignmentProgressSyncEvent): Promise<void> {
+    const user = await requireUser()
+    if (user.id !== event.studentId) throw new Error('The assignment progress belongs to a different account.')
+    const result = await client.rpc('record_assignment_progress', { event_payload: event })
+    if (result.error) throw cleanError(result.error, 'Could not synchronize assignment progress.')
+  }
+
+  async function requireStudentAssignmentContext(context: ActiveAssignmentContext): Promise<{ assignmentId: string; userId: string }> {
+    const user = await requireUser()
+    if (context.role !== 'student' || !context.assignmentId || context.userId !== user.id || getWorkspacePurpose() !== 'assignment') {
+      throw new Error('The classroom assignment session is no longer active.')
+    }
+    return { assignmentId: context.assignmentId, userId: user.id }
+  }
+
+  async function syncAssignmentProgress(context: ActiveAssignmentContext, progress: AssignmentProgress): Promise<void> {
+    if (context.role !== 'student' || !context.assignmentId) throw new Error('The classroom assignment session is invalid.')
+    const tasks = Object.values(progress.tasks)
+    progressQueue.enqueue({
+      classroomId: context.classroomId,
+      assignmentId: context.assignmentId,
+      studentId: context.userId,
+      localAssignmentId: progress.assignmentId,
+      assignmentRevision: progress.assignmentRevision,
+      progressRevision: progress.revision,
+      completedTasks: tasks.filter((task) => task.status === 'completed').length,
+      totalTasks: tasks.length,
+      startedAt: progress.startedAt
+    })
+    await progressQueue.flush(sendAssignmentProgressEvent)
+  }
+
+  async function uploadAssignmentSubmission(context: ActiveAssignmentContext, submission: AssignmentSubmission, payload: string): Promise<void> {
+    const active = await requireStudentAssignmentContext(context)
+    const validated = assignmentSubmissionSchema.parse(submission)
+    if (validated.progress.status !== 'submitted' || validated.progress.revision !== submission.progress.revision) {
+      throw new Error('The classroom submission is invalid.')
+    }
+    const bytes = Buffer.byteLength(payload, 'utf8')
+    if (bytes < 1 || bytes > maxCloudSubmissionBytes) throw new Error('The submission is larger than 16 MB.')
+    const assignmentResult = await client.from('classroom_assignments')
+      .select('classroom_id,local_assignment_id,manifest_revision')
+      .eq('id', active.assignmentId)
+      .single()
+    if (assignmentResult.error) throw cleanError(assignmentResult.error, 'Could not verify the classroom assignment.')
+    const assignment = z.object({ classroom_id: z.uuid(), local_assignment_id: z.uuid(), manifest_revision: z.string().regex(/^[a-f0-9]{64}$/) }).parse(assignmentResult.data)
+    if (assignment.classroom_id !== context.classroomId || assignment.local_assignment_id !== validated.assignmentId || assignment.manifest_revision !== validated.assignmentRevision) {
+      throw new Error('The submission does not match the classroom assignment.')
+    }
+    const submissionPath = `${context.classroomId}/${active.assignmentId}/${active.userId}/submission.json`
+    const submissionSha256 = createHash('sha256').update(payload).digest('hex')
+    const upload = await client.storage.from(assignmentSubmissionBucket).upload(
+      submissionPath,
+      new Blob([payload], { type: 'application/json' }),
+      { contentType: 'application/json', upsert: false }
+    )
+    if (upload.error) throw cleanError(upload.error, 'Could not upload the assignment submission.')
+    const record = await client.rpc('record_assignment_submission', { event_payload: {
+      classroomId: context.classroomId,
+      assignmentId: active.assignmentId,
+      studentId: active.userId,
+      localAssignmentId: validated.assignmentId,
+      assignmentRevision: validated.assignmentRevision,
+      progressRevision: validated.progress.revision,
+      startedAt: validated.progress.startedAt,
+      submittedAt: validated.submittedAt,
+      submissionPath,
+      submissionSha256,
+      submissionBytes: bytes
+    } })
+    if (record.error) {
+      await client.storage.from(assignmentSubmissionBucket).remove([submissionPath])
+      throw cleanError(record.error, 'Could not record the assignment submission.')
+    }
+  }
+
+  async function removeAssignmentSubmission(context: ActiveAssignmentContext, progress: AssignmentProgress): Promise<void> {
+    const active = await requireStudentAssignmentContext(context)
+    const submissionPath = `${context.classroomId}/${active.assignmentId}/${active.userId}/submission.json`
+    const rollback = await client.rpc('rollback_assignment_submission', { event_payload: {
+      classroomId: context.classroomId,
+      assignmentId: active.assignmentId,
+      studentId: active.userId,
+      progressRevision: progress.revision
+    } })
+    if (rollback.error) throw cleanError(rollback.error, 'Could not roll back the classroom submission status.')
+    const result = await client.storage.from(assignmentSubmissionBucket).remove([submissionPath])
+    if (result.error) throw cleanError(result.error, 'Could not roll back the classroom submission.')
+  }
+
   function recordAiAnalyticsEvent(event: AiAnalyticsSyncEvent): void {
     analyticsQueue.enqueue(event)
     void analyticsQueue.flush(sendAiAnalyticsEvent)
@@ -259,7 +400,11 @@ export function registerCloudHandlers(
 
   async function listClassrooms(): Promise<Classroom[]> {
     const currentUser = await requireUser()
-    await Promise.all([masteryQueue.flush(sendMasteryEvent), analyticsQueue.flush(sendAiAnalyticsEvent)])
+    await Promise.all([
+      masteryQueue.flush(sendMasteryEvent),
+      analyticsQueue.flush(sendAiAnalyticsEvent),
+      progressQueue.flush(sendAssignmentProgressEvent)
+    ])
     const [classroomsResult, membersResult, invitesResult, assignmentsResult, visibleMembersResult] = await Promise.all([
       client.from('classrooms').select('id,name,description,owner_id,created_at').order('created_at'),
       client.from('classroom_members').select('classroom_id,user_id,role,joined_at'),
@@ -608,6 +753,86 @@ export function registerCloudHandlers(
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.cloudListAssignmentProgress, async (event, classroomId: string): Promise<ClassroomAssignmentProgressSnapshot> => {
+    assertTrusted(event)
+    const id = z.uuid().parse(classroomId)
+    await requireUser()
+    const result = await client.rpc('get_classroom_assignment_overview', { target_classroom_id: id })
+    if (result.error) throw cleanError(result.error, 'Could not load assignment progress.')
+    return {
+      classroomId: id,
+      entries: z.array(assignmentProgressRowSchema).parse(result.data ?? []).map((row) => ({
+        assignmentId: row.assignment_id,
+        studentId: row.student_id,
+        status: row.status,
+        completedTasks: row.completed_tasks,
+        totalTasks: row.total_tasks,
+        startedAt: row.started_at,
+        updatedAt: row.updated_at,
+        submittedAt: row.submitted_at,
+        submissionAvailable: row.submission_available,
+        aiUsage: {
+          requestCount: row.request_count,
+          averageRequestCharacters: row.average_request_characters,
+          quizAttemptCount: row.quiz_attempt_count,
+          quizQuestionCount: row.quiz_question_count,
+          averageQuizScore: row.average_quiz_score,
+          requestScopes: {
+            micro: row.micro_requests,
+            small: row.small_requests,
+            medium: row.medium_requests,
+            large: row.large_requests
+          },
+          totalTokens: row.total_tokens,
+          reportedCredits: row.reported_credits,
+          lastActivityAt: row.ai_last_activity_at
+        }
+      }))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.cloudOpenAssignmentSubmission, async (event, assignmentId: string, studentId: string): Promise<AssignmentSubmission> => {
+    assertTrusted(event)
+    const targetAssignmentId = z.uuid().parse(assignmentId)
+    const targetStudentId = z.uuid().parse(studentId)
+    await requireUser()
+    const [metadataResult, assignmentResult] = await Promise.all([
+      client.from('classroom_assignment_progress')
+        .select('classroom_id,assignment_id,student_id,submission_path,submission_sha256,submission_bytes')
+        .eq('assignment_id', targetAssignmentId)
+        .eq('student_id', targetStudentId)
+        .eq('status', 'submitted')
+        .single(),
+      client.from('classroom_assignments')
+        .select('classroom_id,local_assignment_id,manifest,manifest_revision')
+        .eq('id', targetAssignmentId)
+        .single()
+    ])
+    if (metadataResult.error) throw cleanError(metadataResult.error, 'Could not find this student submission.')
+    if (assignmentResult.error) throw cleanError(assignmentResult.error, 'Could not verify the submitted assignment.')
+    const metadata = submissionMetadataSchema.parse(metadataResult.data)
+    const assignment = submissionAssignmentSchema.parse(assignmentResult.data)
+    if (metadata.assignment_id !== targetAssignmentId || metadata.student_id !== targetStudentId || metadata.classroom_id !== assignment.classroom_id) {
+      throw new Error('The submission metadata does not match the classroom assignment.')
+    }
+    const download = await client.storage.from(assignmentSubmissionBucket).download(metadata.submission_path)
+    if (download.error) throw cleanError(download.error, 'Could not download the student submission.')
+    if (download.data.size !== metadata.submission_bytes || download.data.size > maxCloudSubmissionBytes) {
+      throw new Error('The cloud submission size does not match its recorded metadata.')
+    }
+    const payload = Buffer.from(await download.data.arrayBuffer())
+    if (createHash('sha256').update(payload).digest('hex') !== metadata.submission_sha256) {
+      throw new Error('The cloud submission failed its integrity check.')
+    }
+    let raw: unknown
+    try {
+      raw = JSON.parse(payload.toString('utf8'))
+    } catch {
+      throw new Error('The cloud submission contains invalid JSON.')
+    }
+    return validateAssignmentSubmission(raw, assignment.manifest, assignment.manifest_revision)
+  })
+
   ipcMain.handle(IPC_CHANNELS.cloudCopyInvite, (event, inviteLink: string): void => {
     assertTrusted(event)
     if (!/^wormie:\/\/join\/[a-f0-9]{32}$/.test(inviteLink)) throw new Error('The classroom invitation is invalid.')
@@ -655,10 +880,14 @@ export function registerCloudHandlers(
   ipcMain.handle(IPC_CHANNELS.cloudOpenAssignment, async (event, assignmentId: string): Promise<ClassroomOpenAssignmentResult | null> => {
     assertTrusted(event)
     const id = z.uuid().parse(assignmentId)
-    await requireUser()
+    const user = await requireUser()
     const assignmentResult = await client.from('classroom_assignments').select('id,classroom_id,title,package_path,package_sha256').eq('id', id).single()
     if (assignmentResult.error) throw cleanError(assignmentResult.error, 'Could not find the assignment.')
     const assignment = downloadableAssignmentSchema.parse(assignmentResult.data)
+    const classroomResult = await client.from('classrooms').select('id,name,owner_id').eq('id', assignment.classroom_id).single()
+    if (classroomResult.error) throw cleanError(classroomResult.error, 'Could not verify assignment access.')
+    const classroom = z.object({ id: z.uuid(), name: z.string(), owner_id: z.uuid() }).parse(classroomResult.data)
+    const role = classroom.owner_id === user.id ? 'teacher' : 'student'
     const destination = await dialog.showOpenDialog({
       title: 'Choose where to create the assignment project',
       properties: ['openDirectory', 'createDirectory']
@@ -677,18 +906,15 @@ export function registerCloudHandlers(
         throw new Error('The classroom assignment failed its integrity check.')
       }
       await fs.writeFile(temporaryPath, packageBuffer, { flag: 'wx' })
-      const imported = await importAssignmentPackage(temporaryPath, destination.filePaths[0])
-      const user = await requireUser()
-      const classroomResult = await client.from('classrooms').select('id,name,owner_id').eq('id', assignment.classroom_id).single()
-      if (classroomResult.error) throw cleanError(classroomResult.error, 'Could not verify assignment access.')
-      const classroom = z.object({ id: z.uuid(), name: z.string(), owner_id: z.uuid() }).parse(classroomResult.data)
+      const imported = await importAssignmentPackage(temporaryPath, destination.filePaths[0], role)
+      if (role === 'teacher') clearStudentWorkspace(imported.rootPath)
       if (getWorkspacePurpose() !== 'assignment') throw new Error('The assignment request is no longer active.')
       const context: ClassroomAssignmentContext = {
         classroomId: classroom.id,
         classroomName: classroom.name,
         assignmentId: assignment.id,
         assignmentTitle: imported.assignmentTitle,
-        role: classroom.owner_id === user.id ? 'teacher' : 'student'
+        role
       }
       setAssignmentContext({ ...context, userId: user.id })
       return {
@@ -705,6 +931,9 @@ export function registerCloudHandlers(
   return {
     recordUnderstandingCompletion,
     recordAiAnalyticsEvent,
+    syncAssignmentProgress,
+    uploadAssignmentSubmission,
+    removeAssignmentSubmission,
     handleAuthCallback: processAuthCallback
   }
 }

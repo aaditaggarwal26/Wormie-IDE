@@ -5,6 +5,14 @@ import { ClassroomPortal } from './ClassroomPortal'
 import { WormieLauncher } from './WormieLauncher'
 
 const action = () => undefined
+const submissionProps = {
+  assignmentProgress: null,
+  assignmentProgressBusy: false,
+  cloudSubmission: null,
+  cloudSubmissionBusy: false,
+  onCloseCloudSubmission: action,
+  onOpenCloudSubmission: action
+}
 const classroom: Classroom = {
   id: 'classroom-1',
   name: 'Mobile App Studio',
@@ -36,6 +44,7 @@ describe('authenticated product modes', () => {
 
   it('renders classroom management without IDE chrome', () => {
     const markup = renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
       actionVersion={0}
       analytics={null}
       analyticsBusy={false}
@@ -75,6 +84,7 @@ describe('authenticated product modes', () => {
 
   it('shows roster management only to teachers', () => {
     const renderPortal = (value: Classroom) => renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
       actionVersion={0}
       analytics={null}
       analyticsBusy={false}
@@ -113,6 +123,7 @@ describe('authenticated product modes', () => {
 
   it('shows editable classroom details only in teacher settings', () => {
     const markup = renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
       actionVersion={0} analytics={null} analyticsBusy={false} assignment={null} busy={false} classrooms={[classroom]} error={null} mastery={null} masteryBusy={false}
       onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
       onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
@@ -126,6 +137,7 @@ describe('authenticated product modes', () => {
 
   it('shows aggregate AI analytics to teachers without privacy boilerplate', () => {
     const markup = renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
       actionVersion={0} analytics={{ classroomId: classroom.id, pendingSyncCount: 0, students: [{
         studentId: 'student-1', requestCount: 2, totalRequestCharacters: 300, averageRequestCharacters: 150,
         quizAttemptCount: 1, quizQuestionCount: 3, averageQuizScore: 90,
@@ -158,6 +170,7 @@ describe('authenticated product modes', () => {
       }]
     }
     const markup = renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
       actionVersion={0} analytics={null} analyticsBusy={false} assignment={null} busy={false} classrooms={[assignmentClassroom]} error={null} mastery={null} masteryBusy={false}
       onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
       onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
@@ -169,5 +182,47 @@ describe('authenticated product modes', () => {
     expect(markup).toContain('Due')
     expect(markup).toContain('type="datetime-local"')
     expect(markup).not.toContain('Course work')
+  })
+
+  it('shows cloud-backed assignment progress to teachers', () => {
+    const assignmentClassroom: Classroom = {
+      ...classroom,
+      members: [{ userId: 'student-1', displayName: 'Ryan Audit', email: 'ryan@example.com', role: 'student', joinedAt: '2026-07-19T00:00:00.000Z' }],
+      assignments: [{
+        id: 'assignment-1',
+        localAssignmentId: 'local-1',
+        title: 'Profile screen',
+        summary: 'Complete the profile screen.',
+        publishedAt: '2026-07-20T16:00:00.000Z',
+        dueAt: null,
+        publishedBy: 'teacher-1'
+      }]
+    }
+    const markup = renderToStaticMarkup(<ClassroomPortal
+      {...submissionProps}
+      actionVersion={0} analytics={null} analyticsBusy={false} assignment={null}
+      assignmentProgress={{ classroomId: classroom.id, entries: [{
+        assignmentId: 'assignment-1', studentId: 'student-1', status: 'submitted', completedTasks: 4, totalTasks: 4,
+        startedAt: '2026-07-20T17:00:00.000Z', updatedAt: '2026-07-20T18:00:00.000Z', submittedAt: '2026-07-20T18:00:00.000Z', submissionAvailable: true,
+        aiUsage: {
+          requestCount: 3, averageRequestCharacters: 142, quizAttemptCount: 1, quizQuestionCount: 4, averageQuizScore: 88,
+          requestScopes: { micro: 2, small: 1, medium: 0, large: 0 }, totalTokens: 1250, reportedCredits: null,
+          lastActivityAt: '2026-07-20T17:55:00.000Z'
+        }
+      }] }}
+      busy={false} classrooms={[assignmentClassroom]} error={null} mastery={null} masteryBusy={false}
+      onAddStudent={action} onAuthorAssignment={action} onBack={action} onCopyInvite={action} onCreate={action} onJoin={action}
+      onLeaveClassroom={action} onOpenAssignment={action} onPublish={action} onRefresh={action} onRemoveStudent={action}
+      onRotateInvite={action} onSelectClassroom={action} onSelectTab={action} onSignOut={action} onUpdateClassroom={action}
+      selectedClassroomId={classroom.id} selectedTab="assignments" user={{ id: 'teacher-1', email: 'teacher@example.com' }} workspace={null}
+    />)
+
+    expect(markup).toContain('Live coursework')
+    expect(markup).toContain('Ryan Audit')
+    expect(markup).toContain('4/4')
+    expect(markup).toContain('3 requests')
+    expect(markup).toContain('88% quiz avg')
+    expect(markup).toContain('1,250 tokens')
+    expect(markup).toContain('Review')
   })
 })

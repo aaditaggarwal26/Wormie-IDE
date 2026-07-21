@@ -6,13 +6,15 @@ import {
   IPC_CHANNELS,
   type AssignmentExportResult,
   type AssignmentImportResult,
+  type AssignmentProgress,
   type AssignmentSaveRequest,
   type AssignmentStartRequest,
   type AssignmentSubmitRequest,
   type AssignmentSubmission,
   type AssignmentSubmissionExportResult,
   type AssignmentTaskProgressRequest,
-  type AssignmentWorkspaceState
+  type AssignmentWorkspaceState,
+  type ClassroomAssignmentContext
 } from '../../shared/contracts'
 import type { AppPreferences } from '../preferences'
 import { isPathInside } from '../pathSafety'
@@ -24,12 +26,22 @@ import { createAssignmentSubmission, readAssignmentSubmission } from './submissi
 
 const maxAssignmentIpcBytes = 256 * 1024
 
+type ActiveAssignmentContext = ClassroomAssignmentContext & { userId: string }
+
+export type AssignmentCloudHooks = {
+  getContext: () => ActiveAssignmentContext | null
+  syncProgress: (context: ActiveAssignmentContext, progress: AssignmentProgress) => Promise<void>
+  uploadSubmission: (context: ActiveAssignmentContext, submission: AssignmentSubmission, payload: string) => Promise<void>
+  removeSubmission: (context: ActiveAssignmentContext, progress: AssignmentProgress) => Promise<void>
+}
+
 export function registerAssignmentHandlers(
   store: Store<AppPreferences>,
   progressStorageRoot: string,
   getWorkspaceRoot: () => string | null,
   setWorkspace: (rootPath: string) => Promise<import('../../shared/contracts').WorkspaceSnapshot>,
-  isTrustedSender: (event: IpcMainInvokeEvent) => boolean
+  isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
+  cloudHooks: AssignmentCloudHooks
 ): void {
   function workspaceKey(rootPath: string): string {
     const resolved = path.resolve(rootPath)
@@ -196,19 +208,29 @@ export function registerAssignmentHandlers(
   ipcMain.handle(IPC_CHANNELS.assignmentStart, async (event, request: AssignmentStartRequest) => {
     assertTrustedSender(event)
     const workspaceRoot = requireWorkspaceRoot(request?.workspaceRoot)
+    const context = cloudHooks.getContext()
     const state = await readAssignment(workspaceRoot)
     if (!state.manifest || !state.revision) throw new Error('Open a project with a Wormie assignment first.')
     if (request.assignmentId !== state.manifest.id || request.assignmentRevision !== state.revision) throw new Error('The assignment changed. Reload it before starting.')
-    return startProgress(progressStorageRoot, workspaceRoot, state.manifest, state.revision, request)
+    const progress = await startProgress(progressStorageRoot, workspaceRoot, state.manifest, state.revision, request)
+    if (context?.role === 'student') {
+      await cloudHooks.syncProgress(context, progress).catch((error) => console.warn('Could not queue assignment progress:', error))
+    }
+    return progress
   })
 
   ipcMain.handle(IPC_CHANNELS.assignmentUpdateTask, async (event, request: AssignmentTaskProgressRequest) => {
     assertTrustedSender(event)
     const workspaceRoot = requireWorkspaceRoot(request?.workspaceRoot)
+    const context = cloudHooks.getContext()
     const state = await readAssignment(workspaceRoot)
     if (!state.manifest || !state.revision) throw new Error('Open a project with a Wormie assignment first.')
     if (request.assignmentId !== state.manifest.id || request.assignmentRevision !== state.revision) throw new Error('The assignment changed. Reload it before saving progress.')
-    return updateTaskProgress(progressStorageRoot, workspaceRoot, state.manifest, state.revision, request)
+    const progress = await updateTaskProgress(progressStorageRoot, workspaceRoot, state.manifest, state.revision, request)
+    if (context?.role === 'student') {
+      await cloudHooks.syncProgress(context, progress).catch((error) => console.warn('Could not queue assignment progress:', error))
+    }
+    return progress
   })
 
   ipcMain.handle(IPC_CHANNELS.assignmentSubmit, async (event, request: AssignmentSubmitRequest): Promise<AssignmentSubmissionExportResult | null> => {
@@ -228,32 +250,52 @@ export function registerAssignmentHandlers(
       ? await readAiActivity(progressStorageRoot, workspaceRoot, state.manifest, state.revision)
       : []
     const prepared = await createAssignmentSubmission(workspaceRoot, state.manifest, state.revision, submittedProgress, activity)
-    const result = await dialog.showSaveDialog({
-      title: 'Save Wormie submission',
-      defaultPath: path.join(path.dirname(workspaceRoot), `${state.manifest.title} - ${progress.student.name}.wormie-submission.json`),
-      filters: [{ name: 'Wormie submission', extensions: ['json'] }]
-    })
-    if (result.canceled || !result.filePath) return null
-    if (isPathInside(workspaceRoot, path.resolve(result.filePath))) throw new Error('Save submissions outside the project so student identity and evidence cannot enter source control.')
-    const destinationStats = await fs.lstat(result.filePath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return null
-      throw error
-    })
-    if (destinationStats && (!destinationStats.isFile() || destinationStats.isSymbolicLink())) throw new Error('Choose a regular submission destination.')
-    await fs.writeFile(result.filePath, prepared.payload, 'utf8')
+    const context = cloudHooks.getContext()
+    let filePath: string | null = null
+    if (context?.role !== 'student') {
+      const result = await dialog.showSaveDialog({
+        title: 'Save Wormie submission',
+        defaultPath: path.join(path.dirname(workspaceRoot), `${state.manifest.title} - ${progress.student.name}.wormie-submission.json`),
+        filters: [{ name: 'Wormie submission', extensions: ['json'] }]
+      })
+      if (result.canceled || !result.filePath) return null
+      if (isPathInside(workspaceRoot, path.resolve(result.filePath))) throw new Error('Save submissions outside the project so student identity and evidence cannot enter source control.')
+      const destinationStats = await fs.lstat(result.filePath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (destinationStats && (!destinationStats.isFile() || destinationStats.isSymbolicLink())) throw new Error('Choose a regular submission destination.')
+      await fs.writeFile(result.filePath, prepared.payload, 'utf8')
+      filePath = result.filePath
+    }
+    let cloudUploaded = false
     try {
+      if (context?.role === 'student') {
+        await cloudHooks.uploadSubmission(context, prepared.submission, prepared.payload)
+        cloudUploaded = true
+      }
       await commitSubmittedProgress(progressStorageRoot, workspaceRoot, state.manifest, state.revision, request.expectedProgressRevision, submittedProgress)
     } catch (error) {
-      try {
-        await fs.unlink(result.filePath)
-      } catch (cleanupError) {
+      const cleanupErrors: string[] = []
+      if (cloudUploaded && context) {
+        await cloudHooks.removeSubmission(context, progress).catch((cleanupError) => {
+          cleanupErrors.push(cleanupError instanceof Error ? cleanupError.message : 'Unknown cloud cleanup error.')
+        })
+      }
+      if (filePath) {
+        try {
+          await fs.unlink(filePath)
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError instanceof Error ? cleanupError.message : 'Unknown local cleanup error.')
+        }
+      }
+      if (cleanupErrors.length) {
         const original = error instanceof Error ? error.message : 'Progress could not be finalized.'
-        const cleanup = cleanupError instanceof Error ? cleanupError.message : 'Unknown cleanup error.'
-        throw new Error(`${original} The incomplete submission file could not be removed: ${cleanup}`)
+        throw new Error(`${original} Incomplete submission cleanup also failed: ${cleanupErrors.join(' ')}`)
       }
       throw error
     }
-    return { filePath: result.filePath, submission: prepared.submission }
+    return { filePath, destination: context?.role === 'student' ? 'cloud' : 'file', submission: prepared.submission }
   })
 
   ipcMain.handle(IPC_CHANNELS.assignmentOpenSubmission, async (event, expectedRoot: string): Promise<AssignmentSubmission | null> => {

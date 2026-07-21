@@ -123,29 +123,11 @@ export async function createAssignmentSubmission(
   return { submission, payload }
 }
 
-export async function readAssignmentSubmission(
-  filePath: string,
+export function validateAssignmentSubmission(
+  raw: unknown,
   manifest: AssignmentManifest,
   assignmentRevision: string
-): Promise<AssignmentSubmission> {
-  const pathStats = await fs.lstat(filePath)
-  if (!pathStats.isFile() || pathStats.isSymbolicLink()) throw new Error('Choose a regular Wormie submission file.')
-  if (pathStats.size > maxSubmissionJsonBytes) throw new Error('The submission is larger than 16 MB.')
-  const handle = await fs.open(filePath, 'r')
-  let raw: unknown
-  try {
-    const before = await handle.stat({ bigint: true })
-    const content = await readBoundedHandle(handle, maxSubmissionJsonBytes, 'The submission')
-    const after = await handle.stat({ bigint: true })
-    const pathIdentity = await fs.stat(await fs.realpath(filePath), { bigint: true })
-    if (!isUnchangedFile(before, after) || !isUnchangedFile(before, pathIdentity)) throw new Error('The submission changed while opening.')
-    raw = JSON.parse(content.toString('utf8'))
-  } catch (error) {
-    if (error instanceof SyntaxError) throw new Error('The submission contains invalid JSON.')
-    throw error
-  } finally {
-    await handle.close()
-  }
+): AssignmentSubmission {
   const parsed = assignmentSubmissionSchema.safeParse(raw)
   if (!parsed.success) throw new Error(`The submission is invalid: ${parsed.error.issues[0]?.message ?? 'Unknown validation error.'}`)
   const submission = parsed.data
@@ -186,4 +168,30 @@ export async function readAssignmentSubmission(
     }
   }
   return submission
+}
+
+export async function readAssignmentSubmission(
+  filePath: string,
+  manifest: AssignmentManifest,
+  assignmentRevision: string
+): Promise<AssignmentSubmission> {
+  const pathStats = await fs.lstat(filePath)
+  if (!pathStats.isFile() || pathStats.isSymbolicLink()) throw new Error('Choose a regular Wormie submission file.')
+  if (pathStats.size > maxSubmissionJsonBytes) throw new Error('The submission is larger than 16 MB.')
+  const handle = await fs.open(filePath, 'r')
+  let raw: unknown
+  try {
+    const before = await handle.stat({ bigint: true })
+    const content = await readBoundedHandle(handle, maxSubmissionJsonBytes, 'The submission')
+    const after = await handle.stat({ bigint: true })
+    const pathIdentity = await fs.stat(await fs.realpath(filePath), { bigint: true })
+    if (!isUnchangedFile(before, after) || !isUnchangedFile(before, pathIdentity)) throw new Error('The submission changed while opening.')
+    raw = JSON.parse(content.toString('utf8'))
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('The submission contains invalid JSON.')
+    throw error
+  } finally {
+    await handle.close()
+  }
+  return validateAssignmentSubmission(raw, manifest, assignmentRevision)
 }

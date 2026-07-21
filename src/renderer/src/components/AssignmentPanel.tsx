@@ -13,6 +13,7 @@ import type {
 type AssignmentPanelProps = {
   workspace: WorkspaceSnapshot | null
   assignment: AssignmentWorkspaceState | null
+  cloudSubmission: boolean
   busy: boolean
   exporting: boolean
   importing: boolean
@@ -38,11 +39,11 @@ export function AssignmentPanel(props: AssignmentPanelProps): React.JSX.Element 
   const { workspace, assignment, busy, error } = props
   const manifest = assignment?.manifest
   const studentOnly = assignment?.role === 'student'
-  const [view, setView] = useState<'student' | 'teacher'>(studentOnly || assignment?.progress ? 'student' : 'teacher')
+  const [view, setView] = useState<'student' | 'teacher'>(studentOnly ? 'student' : 'teacher')
 
   useEffect(() => {
-    if (studentOnly || assignment?.progress) setView('student')
-  }, [assignment?.progress?.student.id, studentOnly])
+    setView(studentOnly ? 'student' : 'teacher')
+  }, [assignment?.workspaceRoot, studentOnly])
 
   return (
     <aside className="side-panel assignment-panel">
@@ -166,8 +167,8 @@ function StudentView(props: AssignmentPanelProps): React.JSX.Element | null {
       {manifest.tasks.map((task, index) => <StudentTask key={task.id} task={task} index={index} progress={progress.tasks[task.id]} busy={props.progressBusy || submitted} onOpen={() => props.onOpenTask(task)} onUpdate={props.onUpdateTask} />)}
     </div>
     {submitted
-      ? <section className="submission-complete" role="status"><ClipboardCheck size={16} /><div><strong>Submission saved</strong><p>This local assignment is now read-only.</p></div></section>
-      : <button className="assignment-submit-button" disabled={props.submitting || completed !== manifest.tasks.length} onClick={props.onSubmit} type="button"><Upload size={14} /> {props.submitting ? 'Preparing submission...' : completed === manifest.tasks.length ? 'Review and save submission' : `Complete ${manifest.tasks.length - completed} more task${manifest.tasks.length - completed === 1 ? '' : 's'}`}</button>}
+      ? <section className="submission-complete" role="status"><ClipboardCheck size={16} /><div><strong>{props.cloudSubmission ? 'Assignment submitted' : 'Submission saved'}</strong><p>{props.cloudSubmission ? 'Your teacher can now review this submission.' : 'This local assignment is now read-only.'}</p></div></section>
+      : <button className="assignment-submit-button" disabled={props.submitting || completed !== manifest.tasks.length} onClick={props.onSubmit} type="button"><Upload size={14} /> {props.submitting ? 'Preparing submission...' : completed === manifest.tasks.length ? props.cloudSubmission ? 'Submit assignment' : 'Review and save submission' : `Complete ${manifest.tasks.length - completed} more task${manifest.tasks.length - completed === 1 ? '' : 's'}`}</button>}
   </>
 }
 

@@ -99,6 +99,55 @@ describe('assignment packages', () => {
     expect(await fs.readFile(path.join(reopened.rootPath, 'src', 'screen.tsx'), 'utf8')).toContain('studentWork = true')
   })
 
+  it('imports teacher review workspaces without a student marker', async () => {
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-source-'))
+    const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-destination-'))
+    temporaryDirectories.push(source, destination)
+    await fs.writeFile(path.join(source, 'task.ts'), 'export const task = true\n')
+    await saveAssignment(source, {
+      title: 'Teacher review', summary: 'Review it.', instructions: 'Read first.',
+      tasks: [{ id: 'task', title: 'Task', description: 'Complete it.', filePath: 'task.ts', kind: 'implement', acceptanceCriteria: ['It works.'] }],
+      aiPolicy: { mode: 'disabled', passingScore: 80, allowGeneration: false },
+      evidencePolicy: { includeAiActivity: false, includeFileSnapshots: true }
+    })
+    const assignmentPackage = await createAssignmentPackage(source)
+    const packagePath = path.join(destination, 'assignment.wormie-package.json')
+    await fs.writeFile(packagePath, assignmentPackage.payload)
+
+    const imported = await importAssignmentPackage(packagePath, destination, 'teacher')
+
+    expect(JSON.parse(await fs.readFile(path.join(imported.rootPath, '.wormie', 'teacher.json'), 'utf8'))).toMatchObject({
+      schemaVersion: 1,
+      packageId: assignmentPackage.value.id
+    })
+    await expect(fs.stat(path.join(imported.rootPath, '.wormie', 'student.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('upgrades a matching workspace imported by the old teacher path', async () => {
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-source-'))
+    const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-destination-'))
+    temporaryDirectories.push(source, destination)
+    await fs.writeFile(path.join(source, 'task.ts'), 'export const task = true\n')
+    await saveAssignment(source, {
+      title: 'Teacher migration', summary: 'Review it.', instructions: 'Read first.',
+      tasks: [{ id: 'task', title: 'Task', description: 'Complete it.', filePath: 'task.ts', kind: 'implement', acceptanceCriteria: ['It works.'] }],
+      aiPolicy: { mode: 'disabled', passingScore: 80, allowGeneration: false },
+      evidencePolicy: { includeAiActivity: false, includeFileSnapshots: true }
+    })
+    const assignmentPackage = await createAssignmentPackage(source)
+    const packagePath = path.join(destination, 'assignment.wormie-package.json')
+    await fs.writeFile(packagePath, assignmentPackage.payload)
+    const oldImport = await importAssignmentPackage(packagePath, destination)
+    await fs.writeFile(path.join(oldImport.rootPath, 'task.ts'), 'export const preserved = true\n')
+
+    const reopened = await importAssignmentPackage(packagePath, destination, 'teacher')
+
+    expect(reopened.rootPath).toBe(oldImport.rootPath)
+    expect(await fs.readFile(path.join(reopened.rootPath, 'task.ts'), 'utf8')).toContain('preserved = true')
+    expect(JSON.parse(await fs.readFile(path.join(reopened.rootPath, '.wormie', 'teacher.json'), 'utf8'))).toMatchObject({ packageId: assignmentPackage.value.id })
+    await expect(fs.stat(path.join(reopened.rootPath, '.wormie', 'student.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('does not reuse or remove an unrelated folder with the same assignment name', async () => {
     const source = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-source-'))
     const destination = await fs.mkdtemp(path.join(os.tmpdir(), 'wormie-package-destination-'))

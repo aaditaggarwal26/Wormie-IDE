@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { useApplicationNavigation } from './applicationMode'
+import { useApplicationNavigation, workspacePurposeForMode } from './applicationMode'
 
 afterEach(() => useApplicationNavigation.getState().reset())
 
 describe('application navigation', () => {
+  it('keeps privileged assignment purpose limited to assignment mode', () => {
+    expect(workspacePurposeForMode({ kind: 'launcher' })).toBe('sandbox')
+    expect(workspacePurposeForMode({ kind: 'sandbox' })).toBe('sandbox')
+    expect(workspacePurposeForMode({ kind: 'classrooms', classroomId: null, tab: 'assignments' })).toBe('sandbox')
+    expect(workspacePurposeForMode({
+      kind: 'assignment',
+      context: { classroomId: 'classroom-1', classroomName: 'Class', assignmentId: 'assignment-1', assignmentTitle: 'Task', role: 'student' }
+    })).toBe('assignment')
+  })
+
   it('starts at the authenticated launcher and enters explicit product modes', () => {
     expect(useApplicationNavigation.getState().mode).toEqual({ kind: 'launcher' })
     useApplicationNavigation.getState().openSandbox()

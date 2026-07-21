@@ -2,6 +2,24 @@
 
 Wormie is an Electron desktop IDE built around one rule: understand first, generate second.
 
+## Built with Codex and GPT-5.6
+
+I treated Codex as an active engineering partner throughout Wormie’s development, not as the source of the product idea or final decision-maker. I set the learning-first product direction, chose what behavior felt right, defined the security and privacy boundaries, and reviewed the resulting experience. Codex helped turn those decisions into working, tested software much faster than I could have built each cross-cutting system alone.
+
+| Area | Decisions I made | How Codex accelerated the work |
+| --- | --- | --- |
+| Product | Code generation must follow understanding, but routine edits should remain fast. Major-change gates, remediation, challenge mode, and configurable strictness came from that balance. | Codex traced the complete request-to-proposal flow, converted product rules into typed state machines and services, and kept lessons, quizzes, grading, mastery evidence, and proposal review connected. |
+| Architecture and security | Wormie is local-first, Electron renderers are untrusted, IPC stays narrow, secrets never enter the renderer, and classroom authority must be verified outside client-provided state. | Codex implemented and reviewed main/preload/renderer boundaries, path validation, secret redaction, secure credential storage, file fingerprints, recovery behavior, Supabase policies, and adversarial tests. |
+| Learning system | I chose a persistent knowledge graph, prerequisite detection, spaced review, misconceptions, goals, and evidence-based mastery instead of a generic chatbot memory. | Codex helped model these systems, connect assessment evidence to personalization and review scheduling, and cover migrations and edge cases with tests. |
+| UX and design | I chose explicit Sandbox, Classroom, and Assignment modes; a focused IDE layout; review-before-apply controls; restrained motion; and accessibility that never communicates status through color alone. | Codex built and refined the React, Monaco, xterm.js, and Framer Motion interactions, including resizable panels, recovery dialogs, diff review, command navigation, appearance settings, light/dark themes, high contrast, reduced motion, and color-vision-safe palettes. |
+| Quality | I made final scope and tradeoff calls and rejected behavior that weakened safety, clarity, or the “understand first” principle. | Codex searched existing flows before editing, made coordinated changes across contracts and process boundaries, diagnosed failing checks, and repeatedly ran Vitest, TypeScript, and production builds until the implementation passed. |
+
+GPT-5.6 was especially useful during the final engineering passes because it could reason across a large TypeScript/Electron codebase while preserving interactions between the renderer, preload bridge, main-process services, local persistence, cloud synchronization, and tests. It accelerated repo-wide refactors and caught failure modes such as stale asynchronous responses, unsafe paths, external file changes, untrusted AI output, missing authorization checks, and accessibility inconsistencies.
+
+Codex also shortened the design loop. I could describe the intended behavior, inspect a concrete implementation, test it in the running product, and give targeted feedback in the same session. GPT-5.6 then revised the smallest relevant surface instead of restarting the feature. That loop let me spend more time on product judgment, teaching quality, and interaction details while still understanding and approving the code being shipped.
+
+All Codex-generated work remained subject to human review and the same verification as handwritten code. The final result reflects my product choices and design taste, with Codex and GPT-5.6 contributing implementation speed, breadth, consistency, and a much tighter test-and-refine cycle.
+
 ## Run locally
 
 ```powershell

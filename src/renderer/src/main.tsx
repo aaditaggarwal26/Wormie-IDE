@@ -4,9 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { RendererErrorBoundary } from './components/RendererErrorBoundary'
 import './styles.css'
-import { initializeAppearance } from './store/appearance'
-
-initializeAppearance()
 
 const queryClient = new QueryClient({
   defaultOptions: {

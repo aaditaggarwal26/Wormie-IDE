@@ -3,7 +3,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { Plus, SplitSquareVertical, TerminalSquare, Trash2 } from 'lucide-react'
 import { shouldHandleTerminalCopy, shouldHandleTerminalPaste } from '@/components/terminalShortcuts'
-import { CODE_FONT_STACKS, shouldReduceMotion, terminalColors, useAppearance } from '@/store/appearance'
 import '@xterm/xterm/css/xterm.css'
 
 type TerminalPaneProps = {
@@ -257,7 +256,6 @@ function TerminalSession({
   const onActivateRef = useRef(onActivate)
   const onNameRef = useRef(onName)
   const onStatusRef = useRef(onStatus)
-  const appearance = useAppearance((state) => state.preferences)
 
   useEffect(() => {
     activeRef.current = active
@@ -273,13 +271,27 @@ function TerminalSession({
     const terminal = new Terminal({
       allowTransparency: true,
       convertEol: false,
-      cursorBlink: !shouldReduceMotion(appearance),
+      cursorBlink: true,
       cursorStyle: 'bar',
-      fontFamily: CODE_FONT_STACKS[appearance.codeFont],
-      fontSize: Math.max(10, appearance.editorFontSize - 1),
-      lineHeight: appearance.editorLineHeight,
+      fontFamily: "'Cascadia Code', 'SFMono-Regular', Consolas, monospace",
+      fontSize: 12,
+      lineHeight: 1.4,
       scrollback: 4000,
-      theme: terminalColors(appearance)
+      theme: {
+        background: '#181818',
+        foreground: '#d0d4d1',
+        cursor: '#79a8d8',
+        cursorAccent: '#181818',
+        selectionBackground: '#33507055',
+        black: '#181818',
+        brightBlack: '#858585',
+        green: '#75a384',
+        brightGreen: '#8fbc9b',
+        yellow: '#c5a66f',
+        brightYellow: '#d7ba7d',
+        cyan: '#75a7ad',
+        brightCyan: '#9cc5ca'
+      }
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -366,18 +378,6 @@ function TerminalSession({
       terminal.dispose()
     }
   }, [sessionId])
-
-  useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal) return
-    terminal.options.cursorBlink = !shouldReduceMotion(appearance)
-    terminal.options.fontFamily = CODE_FONT_STACKS[appearance.codeFont]
-    terminal.options.fontSize = Math.max(10, appearance.editorFontSize - 1)
-    terminal.options.lineHeight = appearance.editorLineHeight
-    terminal.options.theme = terminalColors(appearance)
-    const frame = requestAnimationFrame(() => fitAddonRef.current?.fit())
-    return () => cancelAnimationFrame(frame)
-  }, [appearance])
 
   useEffect(() => {
     if (!active || !terminalRef.current || !fitAddonRef.current) return

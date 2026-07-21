@@ -16,7 +16,7 @@ import { SourceControlPanel } from '@/components/SourceControlPanel'
 import { QuickOpen } from '@/components/QuickOpen'
 import { WormieLauncher } from '@/components/WormieLauncher'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
-import { AppearanceSettings } from '@/components/AppearanceSettings'
+import { BrandLogo } from '@/components/BrandLogo'
 import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
 import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
 import { dirtyDocuments } from '@/editing/editingPolicy'
@@ -1196,7 +1196,7 @@ export default function App(): React.JSX.Element {
     <Suspense fallback={<main className="workbench-loading" role="status">Loading workbench...</main>}>
       <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
-        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
+        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><BrandLogo /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
         <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
           <Search size={13} />
           <span>Search commands</span>
@@ -1552,7 +1552,6 @@ function SettingsSidebar(): React.JSX.Element {
   return (
     <aside className="side-panel info-panel">
       <div className="panel-heading"><span>Settings</span><Settings2 size={15} /></div>
-      <AppearanceSettings />
       <div className="settings-block">
         <label htmlFor="passing-score"><span>Passing score</span><b>{passingScore}%</b></label>
         <input

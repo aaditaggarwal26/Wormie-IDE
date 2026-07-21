@@ -4,6 +4,7 @@ import { ArrowLeft, BarChart3, BookOpenCheck, BrainCircuit, CheckCircle2, Clipbo
 import type { AssignmentSubmission, AssignmentWorkspaceState, Classroom, ClassroomAiAnalyticsSnapshot, ClassroomAssignmentProgressSnapshot, ClassroomAssignmentStudentProgress, ClassroomCreateRequest, ClassroomMasterySnapshot, ClassroomUpdateRequest, CloudUser, WorkspaceSnapshot } from '@shared/contracts'
 import { classroomTabsForRole, groupClassrooms, summarizeClassroomAnalytics, validClassroomTab } from '../classrooms/classroomPortalModel'
 import type { ClassroomPortalTab } from '../navigation/applicationMode'
+import { BrandLogo } from './BrandLogo'
 
 type ClassroomPortalProps = {
   actionVersion: number
@@ -81,7 +82,7 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
   return <main className="classroom-portal" data-platform={platform}>
     <header className="portal-titlebar">
       <button className="portal-back" onClick={props.onBack} type="button"><ArrowLeft size={15} /> Home</button>
-      <div className="portal-brand"><span className="launcher-worm"><i /><i /><i /></span><b>Wormie Classrooms</b></div>
+      <div className="portal-brand"><BrandLogo /><b>Wormie Classrooms</b></div>
       <div className="portal-account"><span>{props.user.email}</span><button disabled={props.busy} onClick={props.onSignOut} type="button"><LogOut size={14} /><span className="sr-only">Sign out</span></button></div>
     </header>
 

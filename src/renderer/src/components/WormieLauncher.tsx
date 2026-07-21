@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { ArrowRight, Code2, GraduationCap, LogOut } from 'lucide-react'
 import type { CloudUser, WorkspaceSnapshot } from '@shared/contracts'
+import { BrandLogo } from './BrandLogo'
 
 type WormieLauncherProps = {
   user: CloudUser
@@ -17,7 +18,7 @@ export function WormieLauncher(props: WormieLauncherProps): React.JSX.Element {
   return <main className="launcher-screen" data-platform={platform}>
     <div className="launcher-glow" aria-hidden="true" />
     <header className="launcher-header">
-      <div className="launcher-brand"><span className="launcher-worm"><i /><i /><i /></span><b>Wormie</b></div>
+      <div className="launcher-brand"><BrandLogo /><b>Wormie</b></div>
       <div className="launcher-account"><span>{props.user.email}</span><button onClick={props.onSignOut} type="button"><LogOut size={14} /> Sign out</button></div>
     </header>
 

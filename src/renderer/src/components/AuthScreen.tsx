@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowRight, KeyRound, Link2, Mail } from 'lucide-react'
 import type { CloudAuthCredentials } from '@shared/contracts'
+import { BrandLogo } from './BrandLogo'
 
 type AuthScreenProps = {
   busy: boolean
@@ -35,7 +36,7 @@ export function AuthScreen({ busy, confirmationRequired, error, googleBusy, load
   return <main className="auth-screen">
     <section className="auth-entry">
       <div className="auth-card">
-        <div className="auth-brand"><span className="auth-worm"><i /><i /><i /></span><b>Wormie</b></div>
+        <div className="auth-brand"><BrandLogo /><b>Wormie</b></div>
         <h2>{passwordResetRequired ? 'Set a new password' : mode === 'sign-in' ? 'Sign in' : 'Create account'}</h2>
 
         {confirmationRequired && <div className="auth-notice" role="status"><Mail size={16} /><span>If this is a new account, check your email to confirm it. Otherwise, sign in.</span></div>}

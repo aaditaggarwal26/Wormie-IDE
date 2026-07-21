@@ -1,6 +1,7 @@
 import { Braces, ClipboardCheck, FolderTree, GitBranch, Search, Settings2 } from 'lucide-react'
 import { useWorkbench } from '@/store/workbench'
 import { activityIdsForMode, type IdeActivityId } from './activityItems'
+import { BrandLogo } from './BrandLogo'
 
 const activityDefinitions: Record<IdeActivityId, { id: IdeActivityId; label: string; icon: typeof FolderTree }> = {
   explorer: { id: 'explorer', label: 'Explorer', icon: FolderTree },
@@ -17,11 +18,7 @@ export function ActivityRail({ assignmentMode }: { assignmentMode: boolean }): R
 
   return (
     <nav className="activity-rail" aria-label="Workbench views">
-      <div className="worm-mark" aria-label="Wormie">
-        <span />
-        <span />
-        <span />
-      </div>
+      <div className="worm-mark" aria-label="Wormie"><BrandLogo /></div>
 
       <div className="activity-group">
         {activities.map(({ id, label, icon: Icon }) => (

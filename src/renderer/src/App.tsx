@@ -17,6 +17,7 @@ import { QuickOpen } from '@/components/QuickOpen'
 import { WormieLauncher } from '@/components/WormieLauncher'
 import { UnderstandingSettings } from '@/components/UnderstandingSettings'
 import { AppearanceSettings } from '@/components/AppearanceSettings'
+import { BrandLogo } from '@/components/BrandLogo'
 import { parseRecentItems, pushRecentItem, type RecentItems } from '@/commands/recentItems'
 import { workbenchCommandRegistry, type WorkbenchCommandContext } from '@/commands/workbenchCommands'
 import { dirtyDocuments } from '@/editing/editingPolicy'
@@ -1190,7 +1191,7 @@ export default function App(): React.JSX.Element {
     <Suspense fallback={<main className="workbench-loading" role="status">Loading workbench...</main>}>
       <div className="app-shell" data-platform={window.desktop.platform}>
       <header className="titlebar" inert={assignmentStudioOpen ? true : undefined}>
-        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
+        <button className="titlebar-brand titlebar-home" onClick={leaveIde} type="button"><ArrowLeft size={13} /><BrandLogo /><span>{applicationMode.kind === 'assignment' ? 'Classroom' : 'Wormie'}</span></button>
         <button className="command-trigger" onClick={() => setActivePicker('commands')} type="button">
           <Search size={13} />
           <span>Search commands</span>

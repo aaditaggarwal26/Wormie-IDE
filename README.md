@@ -1,5 +1,7 @@
 # Wormie IDE
 
+<img src="build/icon.png" alt="Wormie logo" width="140">
+
 Wormie is an Electron desktop IDE built around one rule: understand first, generate second.
 
 ## Built with Codex and GPT-5.6

@@ -6,7 +6,7 @@ Wormie is an Electron desktop IDE built around one rule: understand first, gener
 
 ## Built with Codex and GPT-5.6
 
-I treated Codex as an active engineering partner throughout Wormie’s development, not as the source of the product idea or final decision-maker. I set the learning-first product direction, chose what behavior felt right, defined the security and privacy boundaries, and reviewed the resulting experience. Codex helped turn those decisions into working, tested software much faster than I could have built each cross-cutting system alone.
+We treated Codex as an active engineering partner throughout Wormie’s development, not as the source of the product idea or final decision-maker. I set the learning-first product direction, chose what behavior felt right, defined the security and privacy boundaries, and reviewed the resulting experience. Codex helped turn those decisions into working, tested software much faster than I could have built each cross-cutting system alone.
 
 | Area | Decisions I made | How Codex accelerated the work |
 | --- | --- | --- |

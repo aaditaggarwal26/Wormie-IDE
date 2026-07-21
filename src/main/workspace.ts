@@ -183,6 +183,17 @@ export function registerWorkspaceHandlers(
     return operation
   }
 
+  function closeWorkspace(): Promise<void> {
+    const operation = workspaceTransition.then(() => {
+      activeWorkspaceRoot = null
+      searchGeneration += 1
+      clearFileWatchers()
+      invalidateFileIndex()
+    })
+    workspaceTransition = operation.then(() => undefined, () => undefined)
+    return operation
+  }
+
   async function resolveWorkspaceFile(filePath: string): Promise<string> {
     const workspaceRoot = requireWorkspaceRoot()
 
@@ -223,6 +234,11 @@ export function registerWorkspaceHandlers(
       result.filePaths[0],
       typeof expectedPurpose === 'string' ? () => getWorkspacePurpose() === expectedPurpose : undefined
     )
+  })
+
+  ipcMain.handle(IPC_CHANNELS.closeWorkspace, async (event) => {
+    assertTrusted(event)
+    await closeWorkspace()
   })
 
   ipcMain.handle(IPC_CHANNELS.restoreWorkspace, async (event) => {

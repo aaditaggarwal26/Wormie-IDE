@@ -1,5 +1,6 @@
 export const IPC_CHANNELS = {
   openWorkspace: 'workspace:open',
+  closeWorkspace: 'workspace:close',
   restoreWorkspace: 'workspace:restore',
   refreshWorkspace: 'workspace:refresh',
   workspaceSetPurpose: 'workspace:set-purpose',
@@ -1266,6 +1267,7 @@ export type DesktopApi = {
   platform: string
   setWorkspacePurpose: (purpose: WorkspacePurpose) => Promise<void>
   openWorkspace: (purpose?: WorkspacePurpose) => Promise<WorkspaceSnapshot | null>
+  closeWorkspace: () => Promise<void>
   restoreWorkspace: () => Promise<WorkspaceSnapshot | null>
   refreshWorkspace: () => Promise<WorkspaceSnapshot>
   readFile: (filePath: string) => Promise<OpenFile>

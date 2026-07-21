@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { useApplicationNavigation, workspacePurposeForMode } from './applicationMode'
+import { shouldRetainDraftWorkspace, useApplicationNavigation, workspacePurposeForMode } from './applicationMode'
 
 afterEach(() => useApplicationNavigation.getState().reset())
 
@@ -56,5 +56,23 @@ describe('application navigation', () => {
       classroomId: 'classroom-1',
       tab: 'assignments'
     })
+  })
+
+  it('retains only a saved teacher draft when returning to the classroom for publishing', () => {
+    const teacherDraft = {
+      kind: 'assignment' as const,
+      context: { classroomId: 'classroom-1', classroomName: 'Build Lab', assignmentId: null, assignmentTitle: 'Assignment authoring', role: 'teacher' as const }
+    }
+
+    expect(shouldRetainDraftWorkspace(teacherDraft, true)).toBe(true)
+    expect(shouldRetainDraftWorkspace(teacherDraft, false)).toBe(false)
+    expect(shouldRetainDraftWorkspace({
+      kind: 'assignment',
+      context: { ...teacherDraft.context, assignmentId: 'assignment-1' }
+    }, true)).toBe(false)
+    expect(shouldRetainDraftWorkspace({
+      kind: 'assignment',
+      context: { ...teacherDraft.context, role: 'student' }
+    }, true)).toBe(false)
   })
 })

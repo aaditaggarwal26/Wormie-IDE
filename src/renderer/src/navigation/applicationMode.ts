@@ -36,6 +36,13 @@ export function workspacePurposeForMode(mode: ApplicationMode): WorkspacePurpose
   return mode.kind === 'assignment' ? 'assignment' : 'sandbox'
 }
 
+export function shouldRetainDraftWorkspace(mode: ApplicationMode, hasSavedManifest: boolean): boolean {
+  return mode.kind === 'assignment' &&
+    mode.context.role === 'teacher' &&
+    mode.context.assignmentId === null &&
+    hasSavedManifest
+}
+
 export const useApplicationNavigation = create<ApplicationNavigationState>((set, get) => ({
   mode: launcherMode(),
   transitionId: 0,

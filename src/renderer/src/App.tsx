@@ -23,7 +23,7 @@ import { dirtyDocuments } from '@/editing/editingPolicy'
 import { useSafeEditing } from '@/editing/useSafeEditing'
 import { isTypeScriptProjectFile } from '@/typescript/projectFiles'
 import { useWorkbench } from '@/store/workbench'
-import { useApplicationNavigation, workspacePurposeForMode } from '@/navigation/applicationMode'
+import { shouldRetainDraftWorkspace, useApplicationNavigation, workspacePurposeForMode } from '@/navigation/applicationMode'
 import { isCurrentClassroomRequest } from '@/classrooms/classroomRequestGuard'
 import type {
   AgentConfig,
@@ -145,7 +145,6 @@ export default function App(): React.JSX.Element {
   const [classroomActionVersion, setClassroomActionVersion] = useState(0)
   const [pendingClassroomInvite, setPendingClassroomInvite] = useState<string | null>(null)
   const [panelLayout, setPanelLayout] = useState<PanelLayout>(loadPanelLayout)
-  const restored = useRef(false)
   const assignmentLoadSequence = useRef(0)
   const classroomMasterySequence = useRef(0)
   const classroomAnalyticsSequence = useRef(0)
@@ -164,6 +163,7 @@ export default function App(): React.JSX.Element {
   const cursorLine = useWorkbench((state) => state.cursorLine)
   const cursorColumn = useWorkbench((state) => state.cursorColumn)
   const setWorkspace = useWorkbench((state) => state.setWorkspace)
+  const clearWorkspace = useWorkbench((state) => state.clearWorkspace)
   const openDocument = useWorkbench((state) => state.openDocument)
   const markSaved = useWorkbench((state) => state.markSaved)
   const moveDocuments = useWorkbench((state) => state.moveDocuments)
@@ -667,7 +667,10 @@ export default function App(): React.JSX.Element {
 
   const publishAssignmentMutation = useMutation({
     mutationFn: window.desktop.publishAssignment,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await window.desktop.closeWorkspace()
+      clearWorkspace()
+      setAssignmentState(null)
       setClassrooms(result)
       setClassroomActionVersion((version) => version + 1)
       setCloudError(null)
@@ -949,14 +952,6 @@ export default function App(): React.JSX.Element {
   }, [applicationMode.kind, applicationMode.kind === 'classrooms' ? applicationMode.classroomId : null, applicationMode.kind === 'classrooms' ? applicationMode.tab : null, classrooms])
 
   useEffect(() => {
-    if (restored.current) return
-    restored.current = true
-    void window.desktop.restoreWorkspace().then((result) => {
-      if (result) setWorkspace(result)
-    })
-  }, [setWorkspace])
-
-  useEffect(() => {
     if (applicationMode.kind !== 'assignment') return
     setAssignmentState(null)
     setAssignmentError(null)
@@ -1052,9 +1047,20 @@ export default function App(): React.JSX.Element {
   }
 
   const leaveIde = () => {
+    const leavingAssignment = applicationMode.kind === 'assignment'
+    const retainDraftWorkspace = shouldRetainDraftWorkspace(
+      applicationMode,
+      Boolean(workspace && assignmentState?.manifest && assignmentState.workspaceRoot === workspace.rootPath)
+    )
     safeEditing.runWorkspaceChangingAction(() => {
       setActivePicker(null)
-      void window.desktop.setWorkspacePurpose('sandbox').then(leaveCurrentIde).catch((error) => addOutput(`Could not leave the IDE: ${errorMessage(error)}`))
+      void window.desktop.setWorkspacePurpose('sandbox').then(async () => {
+        if (leavingAssignment && !retainDraftWorkspace) {
+          await window.desktop.closeWorkspace()
+          clearWorkspace()
+        }
+        leaveCurrentIde()
+      }).catch((error) => addOutput(`Could not leave the IDE: ${errorMessage(error)}`))
     })
   }
 

@@ -48,6 +48,7 @@ type WorkbenchState = {
   autosave: AutosaveSettings
   externalChanges: Record<string, ExternalFileChange>
   setWorkspace: (workspace: WorkspaceSnapshot) => void
+  clearWorkspace: () => void
   openDocument: (file: OpenFile, line?: number) => void
   updateDocument: (filePath: string, content: string) => void
   discardDocumentChanges: (filePaths: string[]) => void
@@ -107,6 +108,17 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
         output: changedWorkspace ? [...state.output, `Opened workspace ${workspace.name}.`] : state.output
       }
     }),
+  clearWorkspace: () => set({
+    workspace: null,
+    documents: [],
+    activePath: null,
+    revealLine: null,
+    cursorLine: 1,
+    cursorColumn: 1,
+    proposalReview: null,
+    closedPaths: [],
+    externalChanges: {}
+  }),
   openDocument: (file, line) =>
     set((state) => {
       const existingDocument = state.documents.some((document) => document.path === file.path)

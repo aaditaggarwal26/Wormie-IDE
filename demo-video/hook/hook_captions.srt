@@ -1,0 +1,12 @@
+1
+00:00:00,450 --> 00:00:04,050
+Computer science classes have not caught up with AI.
+
+2
+00:00:04,150 --> 00:00:09,100
+A student can paste in an entire assignment
+and get a finished solution in seconds,
+
+3
+00:00:09,200 --> 00:00:13,200
+bypassing the struggle where real learning happens.

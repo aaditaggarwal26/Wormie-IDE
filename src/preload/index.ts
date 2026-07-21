@@ -13,6 +13,7 @@ const desktopApi: DesktopApi = {
   platform: process.platform,
   setWorkspacePurpose: (purpose) => ipcRenderer.invoke(IPC_CHANNELS.workspaceSetPurpose, purpose),
   openWorkspace: (purpose) => ipcRenderer.invoke(IPC_CHANNELS.openWorkspace, purpose),
+  closeWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.closeWorkspace),
   restoreWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.restoreWorkspace),
   refreshWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.refreshWorkspace),
   readFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.readFile, filePath),

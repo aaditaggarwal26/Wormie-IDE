@@ -226,7 +226,7 @@ export function AssignmentStudio({
             <div className="studio-alert" role="alert"><AlertTriangle size={15} /><span>{recovering ? 'The invalid manifest will be backed up before this replacement is saved.' : error ?? 'Correct the highlighted fields before saving.'}</span></div>
           )}
           <section className="studio-section studio-brief">
-            <div className="studio-section-heading"><span>01</span><div><h3>The brief</h3><p>Give students enough context to understand the outcome without prescribing the implementation.</p></div></div>
+            <div className="studio-section-heading"><span>01</span><div><h3>The brief</h3></div></div>
             <div className="studio-field-grid">
               <label className="studio-field studio-field-wide"><span>Assignment title</span><input aria-describedby={errorText('title') ? 'title-error' : undefined} aria-invalid={Boolean(errorText('title'))} data-error-key="title" maxLength={120} onChange={(event) => { clearErrors('title'); setTitle(event.target.value) }} placeholder="Complete the profile screen" ref={titleRef} value={title} />{errorText('title')}</label>
               <label className="studio-field studio-field-wide"><span>One-line summary</span><input aria-describedby={errorText('summary') ? 'summary-error' : undefined} aria-invalid={Boolean(errorText('summary'))} data-error-key="summary" maxLength={500} onChange={(event) => { clearErrors('summary'); setSummary(event.target.value) }} placeholder="Build the final screen in the starter mobile app." value={summary} />{errorText('summary')}</label>
@@ -235,7 +235,7 @@ export function AssignmentStudio({
           </section>
 
           <section className="studio-section">
-            <div className="studio-section-heading"><span>02</span><div><h3>Student work</h3><p>Each task anchors intent to a real file and a visible definition of done.</p></div><button className="studio-add-task" disabled={tasks.length >= 50} onClick={() => { clearErrors(); setTasks((current) => [...current, emptyTask(nextTaskId(current), files[0] ?? '')]) }} type="button"><Plus size={13} /> Add task</button></div>
+            <div className="studio-section-heading"><span>02</span><div><h3>Student work</h3></div><button className="studio-add-task" disabled={tasks.length >= 50} onClick={() => { clearErrors(); setTasks((current) => [...current, emptyTask(nextTaskId(current), files[0] ?? '')]) }} type="button"><Plus size={13} /> Add task</button></div>
             <div className="studio-task-stack">
               <AnimatePresence initial={false}>
                 {tasks.map((task, index) => (
@@ -260,7 +260,7 @@ export function AssignmentStudio({
           </section>
 
           <section className="studio-section studio-guardrails">
-            <div className="studio-section-heading"><span>03</span><div><h3>Learning guardrails</h3><p>Make the AI policy explicit before students begin.</p></div></div>
+            <div className="studio-section-heading"><span>03</span><div><h3>Learning guardrails</h3></div></div>
             <div className="guardrail-grid">
               <div className="guardrail-card">
                 <div className="guardrail-icon"><BookMarked size={17} /></div><div><h4>AI access</h4><p>Choose whether Wormie can tutor and generate inside this assignment.</p></div>
@@ -280,7 +280,7 @@ export function AssignmentStudio({
         <footer className="studio-footer">
           <div aria-live="polite" className="studio-save-status">
             {(error || Object.keys(validationErrors).length > 0) && <><AlertTriangle size={14} /><span>{error ?? 'Correct the highlighted fields before saving.'}</span></>}
-            {!error && Object.keys(validationErrors).length === 0 && <><ShieldCheck size={14} /><span>{recovering ? 'The original invalid file will be preserved as a backup.' : manifest ? 'Changes are validated before the manifest is replaced.' : 'The assignment will be saved inside this starter project.'}</span></>}
+            {!error && Object.keys(validationErrors).length === 0 && (recovering || manifest) && <><ShieldCheck size={14} /><span>{recovering ? 'The original invalid file will be preserved as a backup.' : 'Changes are validated before the manifest is replaced.'}</span></>}
           </div>
           <button className="studio-cancel" disabled={saving} onClick={requestClose} type="button">Cancel</button>
           {error?.includes('outside this editor') && <button className="studio-cancel" disabled={saving} onClick={onReload} type="button">Reload from disk</button>}

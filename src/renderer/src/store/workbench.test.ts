@@ -84,6 +84,28 @@ describe('safe editor state', () => {
     expect(useWorkbench.getState().closedPaths).toEqual([])
   })
 
+  it('clears assignment workspace state before entering another IDE mode', () => {
+    useWorkbench.setState({
+      workspace: { name: 'Assignment', rootPath: '/repo', entries: [], truncated: false },
+      documents: [file('/repo/a.ts', 'local')],
+      activePath: '/repo/a.ts',
+      proposalReview: { proposalId: 'proposal-1', files: [] },
+      closedPaths: ['/repo/closed.ts'],
+      externalChanges: { '/repo/a.ts': { kind: 'deleted', diskFile: null } }
+    })
+
+    useWorkbench.getState().clearWorkspace()
+
+    expect(useWorkbench.getState()).toMatchObject({
+      workspace: null,
+      documents: [],
+      activePath: null,
+      proposalReview: null,
+      closedPaths: [],
+      externalChanges: {}
+    })
+  })
+
   it('reloads clean disk content and preserves local content when explicitly kept', () => {
     useWorkbench.setState({ documents: [file('/repo/a.ts', 'local')], activePath: '/repo/a.ts', externalChanges: {} })
     const diskFile = { path: '/repo/a.ts', name: 'a.ts', language: 'typescript', content: 'external', fingerprint: 'b'.repeat(64) }

@@ -937,38 +937,38 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 .titlebar-home { -webkit-app-region: no-drag; width: max-content; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .titlebar-home svg { color: #7f8984; }
 
-.launcher-screen, .classroom-portal { width: 100%; height: 100%; color: #d3d9d4; background: #0a0d0c; }
+.launcher-screen, .classroom-portal { width: 100%; height: 100%; color: #d3d9d4; background: #0e1110; }
 .launcher-screen { position: relative; display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; isolation: isolate; }
-.launcher-atmosphere { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-.launcher-atmosphere::before { position: absolute; inset: 0; content: ""; opacity: .38; background-image: linear-gradient(#273027 1px, transparent 1px), linear-gradient(90deg, #273027 1px, transparent 1px); background-size: 56px 56px; mask-image: linear-gradient(to bottom, transparent 5%, #000 54%, transparent 98%); }
-.launcher-atmosphere span { position: absolute; border-radius: 50%; filter: blur(100px); opacity: .13; }
-.launcher-atmosphere span:nth-child(1) { width: 430px; height: 430px; top: 18%; left: 12%; background: #b6d64d; }
-.launcher-atmosphere span:nth-child(2) { width: 380px; height: 380px; right: 9%; bottom: 4%; background: #d79257; }
-.launcher-atmosphere span:nth-child(3) { width: 240px; height: 240px; top: -90px; right: 30%; background: #7a9b78; }
-.launcher-header, .portal-titlebar { -webkit-app-region: drag; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 142px 0 28px; border-bottom: 1px solid #202720; background: rgba(10, 13, 12, .88); }
-.launcher-brand, .portal-brand { display: flex; gap: 10px; align-items: center; color: #dfe6d8; font-size: 13px; letter-spacing: .02em; }
-.launcher-worm { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
-.launcher-worm i { display: block; width: 4px; border-radius: 3px 3px 1px 1px; background: #c3dd57; }
-.launcher-worm i:nth-child(1) { height: 7px; }.launcher-worm i:nth-child(2) { height: 12px; }.launcher-worm i:nth-child(3) { height: 16px; }
-.launcher-account, .portal-account { -webkit-app-region: no-drag; display: flex; gap: 16px; align-items: center; color: #c0cbc4; font-size: 13px; }
+.launcher-glow { position: absolute; top: 24%; left: 18%; z-index: -1; width: 640px; height: 640px; border-radius: 50%; background: radial-gradient(circle, rgba(121, 168, 216, .15), rgba(121, 168, 216, .04) 45%, transparent 70%); filter: blur(60px); pointer-events: none; transform: translate(-50%, -50%); }
+.launcher-header, .portal-titlebar { -webkit-app-region: drag; display: flex; align-items: center; justify-content: space-between; min-width: 0; padding: 0 28px; border-bottom: 1px solid #1c2320; background: rgba(14, 17, 16, .88); }
+.launcher-screen:not([data-platform="darwin"]) .launcher-header, .classroom-portal:not([data-platform="darwin"]) .portal-titlebar { padding-right: 142px; }
+.launcher-screen[data-platform="darwin"] .launcher-header, .classroom-portal[data-platform="darwin"] .portal-titlebar { padding-left: 80px; }
+.launcher-brand, .portal-brand { display: flex; gap: 8px; align-items: center; color: #dfe6d8; font-size: 13px; font-weight: 600; letter-spacing: -.005em; }
+.launcher-worm { display: inline-flex; gap: 2px; align-items: flex-end; height: 15px; }
+.launcher-worm i { display: block; width: 3px; border-radius: 2px 2px 1px 1px; background: var(--acid); }
+.launcher-worm i:nth-child(1) { height: 6px; }.launcher-worm i:nth-child(2) { height: 11px; }.launcher-worm i:nth-child(3) { height: 15px; }
+.launcher-account, .portal-account { -webkit-app-region: no-drag; display: flex; gap: 14px; align-items: center; color: #c0cbc4; font-size: 13px; }
 .launcher-account > span, .portal-account > span { max-width: min(34vw, 360px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.launcher-account button, .portal-account button, .portal-back { display: inline-flex; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid #303932; border-radius: 5px; color: #a9b4ad; background: #121713; cursor: pointer; }
-.launcher-content { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(580px, 1.28fr); gap: clamp(42px, 7vw, 112px); align-items: center; width: min(1370px, calc(100% - 96px)); margin: 0 auto; }
-.launcher-intro { max-width: 510px; }
-.launcher-kicker, .portal-overline { display: flex; gap: 7px; align-items: center; color: #bdd454; font: 700 10px/1.3 "Cascadia Code", monospace; letter-spacing: .13em; text-transform: uppercase; }
-.launcher-intro h1 { margin: 18px 0 20px; color: #f0f2ed; font: 500 clamp(45px, 5vw, 76px)/.95 Georgia, serif; letter-spacing: -.045em; }
-.launcher-intro p { max-width: 470px; margin: 0; color: #8d9992; font: 15px/1.75 "Avenir Next", system-ui, sans-serif; }
-.launcher-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.launcher-card { position: relative; display: flex; flex-direction: column; min-height: 410px; padding: 24px; overflow: hidden; border: 1px solid #303a31; border-radius: 10px; color: inherit; background: linear-gradient(155deg, #151a16, #0f1311 70%); text-align: left; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
-.launcher-card::after { position: absolute; right: -60px; bottom: -85px; width: 220px; height: 220px; border: 1px solid #4a5847; border-radius: 50%; content: ""; opacity: .35; }
-.launcher-card:hover { transform: translateY(-4px); border-color: #7b8d50; background: linear-gradient(155deg, #1b211a, #111612 70%); }
-.launcher-card-classrooms:hover { border-color: #9a704c; }
-.launcher-card-index { color: #aeb9b1; font: 11px "Cascadia Code", monospace; letter-spacing: .11em; }
-.launcher-card-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-top: 62px; border: 1px solid #4b5840; border-radius: 8px; color: #c5db65; background: #20271c; }
-.launcher-card-classrooms .launcher-card-icon { border-color: #5d4635; color: #dda16a; background: #281d17; }
-.launcher-card h2 { margin: 22px 0 12px; color: #e9eee7; font: 500 31px/1.05 Georgia, serif; }
-.launcher-card p { margin: 0; color: #8d9991; font: 12px/1.7 "Avenir Next", system-ui, sans-serif; }
-.launcher-card-meta { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 28px; color: #b9c5b7; font-size: 11px; }
+.launcher-account button, .portal-account button, .portal-back { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; color: #9aa59e; background: transparent; cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
+.launcher-account button:hover, .portal-account button:hover, .portal-back:hover { border-color: #262e29; color: #d3d9d4; background: #141816; }
+.launcher-content { display: grid; grid-template-columns: minmax(260px, .72fr) minmax(580px, 1.28fr); gap: clamp(42px, 7vw, 96px); align-items: center; width: min(1300px, calc(100% - 96px)); margin: 0 auto; }
+.launcher-intro { max-width: 480px; }
+.launcher-kicker, .portal-overline { color: #647069; font: 600 11px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.launcher-intro h1 { margin: 14px 0 14px; color: #f0f2ed; font: 700 clamp(30px, 3.2vw, 40px)/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.025em; }
+.launcher-intro p { max-width: 430px; margin: 0; color: #808c85; font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.launcher-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.launcher-card { position: relative; display: flex; flex-direction: column; min-height: 240px; padding: 20px; border: 1px solid #232925; border-radius: 14px; color: inherit; background-color: #131614; box-shadow: inset 0 1px #ffffff08, 0 1px 2px #00000040; text-align: left; cursor: pointer; transition: border-color .15s, background-color .15s, box-shadow .15s, transform .15s; }
+.launcher-card:hover { background-color: #161a17; transform: translateY(-1px); }
+.launcher-card-sandbox:hover { border-color: #3d6a8f; box-shadow: inset 0 1px #ffffff08, 0 1px 2px #00000040, 0 0 0 1px rgba(121, 168, 216, .4), 0 0 26px rgba(121, 168, 216, .22); }
+.launcher-card-classrooms:hover { border-color: #4a7a54; box-shadow: inset 0 1px #ffffff08, 0 1px 2px #00000040, 0 0 0 1px rgba(117, 163, 132, .4), 0 0 26px rgba(117, 163, 132, .22); }
+.launcher-card-top { display: flex; align-items: center; justify-content: space-between; }
+.launcher-card-index { color: #aeb9b1; font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.005em; }
+.launcher-card-icon { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #262e29; border-radius: 7px; color: #8b968f; background: #171b19; transition: color .15s, border-color .15s; }
+.launcher-card:hover .launcher-card-icon { color: var(--acid); border-color: #33454f; }
+.launcher-card-classrooms:hover .launcher-card-icon { color: var(--green); border-color: #34402f; }
+.launcher-card h2 { margin: 30px 0 8px; color: #e9eee7; font: 600 19px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -.015em; }
+.launcher-card p { margin: 0; color: #838f88; font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.launcher-card-meta { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 22px; color: #9aa59e; font-size: 12px; }
 
 .classroom-portal { display: grid; grid-template-rows: 54px minmax(0, 1fr); overflow: hidden; }
 .portal-titlebar { display: grid; grid-template-columns: 1fr auto 1fr; }
@@ -1083,9 +1083,7 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
 @media (max-width: 1180px) {
   .titlebar-brand b { display: none; }
   .launcher-content { grid-template-columns: 1fr; align-content: center; max-width: 850px; }
-  .launcher-intro h1 br { display: none; }
-  .launcher-intro h1 { font-size: 48px; }
-  .launcher-card { min-height: 310px; }.launcher-card-icon { margin-top: 30px; }
+  .launcher-card { min-height: 220px; }
   .portal-section-grid { grid-template-columns: 1fr; }.portal-invite-card { max-width: 440px; }
 }
 
@@ -1095,7 +1093,7 @@ body[data-resize-orientation="horizontal"], body[data-resize-orientation="horizo
   .assignment-studio-backdrop { padding: 12px; }
   .assignment-studio { width: calc(100vw - 24px); }
   .guardrail-grid { grid-template-columns: 1fr; }
-  .launcher-header, .portal-titlebar { padding-right: 90px; padding-left: 16px; }
+  .launcher-screen:not([data-platform="darwin"]) .launcher-header, .classroom-portal:not([data-platform="darwin"]) .portal-titlebar { padding-right: 90px; }
   .launcher-content { width: calc(100% - 36px); }.launcher-destinations { grid-template-columns: 1fr; overflow-y: auto; }.launcher-card { min-height: 250px; }
   .portal-layout { grid-template-columns: 230px minmax(0, 1fr); }.portal-classroom-header { align-items: flex-start; flex-direction: column; }.portal-people, .portal-mastery { grid-template-columns: 1fr; }.portal-analytics-cards { grid-template-columns: repeat(2, minmax(150px, 1fr)); }.portal-analytics-grid { grid-template-columns: 1fr; }
 }

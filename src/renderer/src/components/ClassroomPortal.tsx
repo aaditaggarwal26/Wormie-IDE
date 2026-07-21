@@ -71,7 +71,8 @@ export function ClassroomPortal(props: ClassroomPortalProps): React.JSX.Element 
     setInvite('')
   }
 
-  return <main className="classroom-portal">
+  const platform = typeof window === 'undefined' ? undefined : window.desktop.platform
+  return <main className="classroom-portal" data-platform={platform}>
     <header className="portal-titlebar">
       <button className="portal-back" onClick={props.onBack} type="button"><ArrowLeft size={15} /> Home</button>
       <div className="portal-brand"><span className="launcher-worm"><i /><i /><i /></span><b>Wormie Classrooms</b></div>

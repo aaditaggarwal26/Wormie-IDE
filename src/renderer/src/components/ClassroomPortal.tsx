@@ -28,7 +28,7 @@ type ClassroomPortalProps = {
   onLeaveClassroom: (classroomId: string) => void
   onAuthorAssignment: (classroom: Classroom) => void
   onOpenAssignment: (classroom: Classroom, assignmentId: string) => void
-  onPublish: (classroomId: string) => void
+  onPublish: (classroomId: string, dueAt: string | null) => void
   onRefresh: () => void
   onRemoveStudent: (classroomId: string, userId: string) => void
   onRotateInvite: (classroomId: string) => void
@@ -134,13 +134,17 @@ function ClassroomGroup({ classrooms, label, onSelect, selectedId }: { classroom
 
 function AssignmentsTab(props: ClassroomPortalProps & { classroom: Classroom }): React.JSX.Element {
   const classroom = props.classroom
+  const [dueDate, setDueDate] = useState('')
   const publishableAssignment = props.assignment?.manifest && props.workspace && props.assignment.workspaceRoot === props.workspace.rootPath && props.assignment.role !== 'student'
     ? props.assignment
     : null
+  const dueTimestamp = dueDate ? Date.parse(dueDate) : null
+  const invalidDueDate = dueTimestamp !== null && (!Number.isFinite(dueTimestamp) || dueTimestamp <= Date.now())
+  useEffect(() => setDueDate(''), [classroom.id, props.actionVersion])
   return <div className="portal-section-grid portal-section-grid-single">
     <section className="portal-section-main">
-      <div className="portal-section-heading"><div><span>Course work</span><h2>Assignments</h2></div>{classroom.role === 'teacher' && <div className="portal-assignment-actions"><button className="portal-secondary-button" disabled={props.busy} onClick={() => props.onAuthorAssignment(classroom)} type="button"><FolderInput size={14} /> Author from folder</button><button className="portal-accent-button" disabled={props.busy || !publishableAssignment} onClick={() => props.onPublish(classroom.id)} type="button"><Send size={14} /> {publishableAssignment ? `Publish ${publishableAssignment.manifest!.title}` : 'No draft ready'}</button></div>}</div>
-      {classroom.assignments.length === 0 ? <div className="portal-section-empty"><BookOpenCheck size={21} /><p>No assignments have been published.</p></div> : <div className="portal-assignment-grid">{classroom.assignments.map((assignment, index) => <article key={assignment.id}><span className="portal-assignment-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{assignment.title}</h3><time>{new Date(assignment.publishedAt).toLocaleDateString()}</time></div><button disabled={props.busy} onClick={() => props.onOpenAssignment(classroom, assignment.id)} type="button">{classroom.role === 'student' ? <><Download size={14} /> Open assignment</> : <><DoorOpen size={14} /> Open project</>}</button></article>)}</div>}
+      <div className="portal-section-heading portal-assignment-heading"><div><h2>Assignments</h2></div>{classroom.role === 'teacher' && <div className="portal-assignment-actions"><button className="portal-secondary-button" disabled={props.busy} onClick={() => props.onAuthorAssignment(classroom)} type="button"><FolderInput size={14} /> Author from folder</button><label className="portal-due-date"><span>Due date</span><input aria-invalid={invalidDueDate} aria-label="Assignment due date" onChange={(event) => setDueDate(event.target.value)} title={invalidDueDate ? 'Choose a future date and time.' : undefined} type="datetime-local" value={dueDate} /></label><button className="portal-accent-button" disabled={props.busy || !publishableAssignment || invalidDueDate} onClick={() => props.onPublish(classroom.id, dueTimestamp === null ? null : new Date(dueTimestamp).toISOString())} type="button"><Send size={14} /> {publishableAssignment ? `Publish ${publishableAssignment.manifest!.title}` : 'No draft ready'}</button></div>}</div>
+      {classroom.assignments.length === 0 ? <div className="portal-section-empty"><BookOpenCheck size={21} /><p>No assignments have been published.</p></div> : <div className="portal-assignment-grid">{classroom.assignments.map((assignment, index) => <article key={assignment.id}><span className="portal-assignment-number">{String(index + 1).padStart(2, '0')}</span><div><h3>{assignment.title}</h3><div className="portal-assignment-dates"><time dateTime={assignment.publishedAt}>Assigned {new Date(assignment.publishedAt).toLocaleDateString()}</time>{assignment.dueAt && <time data-due dateTime={assignment.dueAt}>Due {new Date(assignment.dueAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>}</div></div><button disabled={props.busy} onClick={() => props.onOpenAssignment(classroom, assignment.id)} type="button">{classroom.role === 'student' ? <><Download size={14} /> Open assignment</> : <><DoorOpen size={14} /> Open project</>}</button></article>)}</div>}
     </section>
   </div>
 }
@@ -173,12 +177,12 @@ function ClassroomSettings(props: ClassroomPortalProps & { classroom: Classroom 
       event.preventDefault()
       props.onUpdateClassroom({ classroomId: classroom.id, name, description })
     }}>
-      <div><BookOpenCheck size={18} /><div><h3>Classroom details</h3><p>Update the name and description shown to everyone in this classroom.</p></div></div>
+      <div><BookOpenCheck size={18} /><div><h3>Classroom details</h3></div></div>
       <label><span>Name</span><input maxLength={120} onChange={(event) => setName(event.target.value)} required value={name} /></label>
       <label><span>Description</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} value={description} /></label>
       <button disabled={props.busy || !name.trim() || (name.trim() === classroom.name && description.trim() === classroom.description)} type="submit">Save changes</button>
     </form>
-    <section className="portal-settings-card"><div><Link2 size={18} /><div><h3>Student invitation</h3><p>Share this invitation with students, or replace it to invalidate the previous link.</p></div></div>{classroom.inviteLink ? <><code>{classroom.inviteLink}</code><div><button onClick={() => props.onCopyInvite(classroom.inviteLink!)} type="button"><Clipboard size={13} /> Copy invitation</button><button disabled={props.busy} onClick={() => props.onRotateInvite(classroom.id)} type="button"><RotateCw size={13} /> Replace link</button></div></> : <p className="portal-settings-unavailable">Invitation data is unavailable. Refresh the classroom and try again.</p>}</section>
+    <section className="portal-settings-card"><div><Link2 size={18} /><div><h3>Student invitation</h3></div></div>{classroom.inviteLink ? <><code>{classroom.inviteLink}</code><div><button onClick={() => props.onCopyInvite(classroom.inviteLink!)} type="button"><Clipboard size={13} /> Copy invitation</button><button disabled={props.busy} onClick={() => props.onRotateInvite(classroom.id)} type="button"><RotateCw size={13} /> Replace link</button></div></> : <p className="portal-settings-unavailable">Invitation data is unavailable. Refresh the classroom and try again.</p>}</section>
   </div>
 }
 
@@ -219,7 +223,7 @@ function AnalyticsTab(props: ClassroomPortalProps & { classroom: Classroom }): R
   const memberEmail = (studentId: string) => props.classroom.members.find((member) => member.userId === studentId)?.email ?? ''
 
   return <div className="portal-analytics">
-    <header className="portal-analytics-heading"><div><span className="portal-overline">Classroom signals</span><h2>AI learning analytics</h2><p>Usage metadata only. Student prompts, responses, and conversations are never shown here.</p></div>{summary.lastActivityAt && <time>Updated {new Date(summary.lastActivityAt).toLocaleString()}</time>}</header>
+    <header className="portal-analytics-heading"><div><span className="portal-overline">Classroom signals</span><h2>AI learning analytics</h2></div>{summary.lastActivityAt && <time>Updated {new Date(summary.lastActivityAt).toLocaleString()}</time>}</header>
     <section className="portal-analytics-cards" aria-label="Classroom AI analytics summary">
       <article><MessageSquareText size={17} /><span>AI requests</span><strong>{formatCount(summary.requestCount)}</strong><small>{formatCount(summary.averageRequestCharacters)} average characters</small></article>
       <article><CheckCircle2 size={17} /><span>Average quiz score</span><strong>{summary.averageQuizScore === null ? '-' : `${Math.round(summary.averageQuizScore)}%`}</strong><small>{formatCount(summary.quizAttemptCount)} quiz attempts</small></article>

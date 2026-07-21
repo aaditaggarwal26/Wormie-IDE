@@ -612,6 +612,7 @@ export default function App(): React.JSX.Element {
     mutationFn: window.desktop.publishAssignment,
     onSuccess: (result) => {
       setClassrooms(result)
+      setClassroomActionVersion((version) => version + 1)
       setCloudError(null)
       addOutput('Published the assignment to the classroom.')
     },
@@ -1055,8 +1056,8 @@ export default function App(): React.JSX.Element {
         onAddStudent={(classroomId, email) => addClassroomStudentMutation.mutate({ classroomId, email })}
         onAuthorAssignment={authorClassroomAssignment}
         onOpenAssignment={openClassroomAssignment}
-        onPublish={(classroomId) => {
-          if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath })
+        onPublish={(classroomId, dueAt) => {
+          if (workspace) publishAssignmentMutation.mutate({ classroomId, workspaceRoot: workspace.rootPath, dueAt })
         }}
         onRefresh={() => {
           classroomListMutation.mutate()
@@ -1453,7 +1454,7 @@ function SettingsSidebar(): React.JSX.Element {
         <p>Code generation unlocks after this threshold.</p>
       </div>
       <div className="settings-block autosave-settings">
-        <div className="settings-title"><span>Autosave</span><b>{autosave.mode === 'off' ? 'Off' : 'Enabled'}</b></div>
+        <div className="settings-title"><span>Autosave</span><b>{autosave.mode === 'off' && !autosave.saveOnExit ? 'Off' : 'Enabled'}</b></div>
         <label className="field-label" htmlFor="autosave-mode">Save files</label>
         <select
           id="autosave-mode"
@@ -1478,7 +1479,14 @@ function SettingsSidebar(): React.JSX.Element {
             />
           </>
         )}
-        <p>AI proposal-review files are never autosaved.</p>
+        <label className="autosave-close-setting">
+          <input
+            checked={autosave.saveOnExit}
+            onChange={(event) => setAutosave({ ...autosave, saveOnExit: event.target.checked })}
+            type="checkbox"
+          />
+          <span>Save when closing Wormie</span>
+        </label>
       </div>
       <div className="settings-block ai-settings">
         <div className="settings-title"><span>AI provider</span><b>{connectionLabel}</b></div>
@@ -1526,9 +1534,7 @@ function SettingsSidebar(): React.JSX.Element {
                 {connectCodexMutation.isPending ? 'Waiting for sign-in…' : codexReady ? 'Account connected' : 'Connect ChatGPT'}
               </button>
             </div>
-            <p>{codexReady
-              ? 'Wormie uses this account automatically. The connection persists across restarts.'
-              : 'Connecting selects Codex for the tutor automatically.'}</p>
+            {!codexReady && <p>Connecting selects Codex for the tutor automatically.</p>}
             <button
               className="settings-link-button"
               disabled={codexStatusMutation.isPending}

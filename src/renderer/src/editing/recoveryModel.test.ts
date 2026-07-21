@@ -19,8 +19,9 @@ describe('recovery model', () => {
     const state = buildEditorRecovery('/repo', [
       { path: '/repo/clean.ts', name: 'clean.ts', language: 'typescript', content: 'a', savedContent: 'a', fingerprint: 'a', view: { line: 1, column: 1, scrollTop: 0, scrollLeft: 0 } },
       { path: '/repo/dirty.ts', name: 'dirty.ts', language: 'typescript', content: 'local', savedContent: 'disk', fingerprint: 'b', view: { line: 2, column: 1, scrollTop: 0, scrollLeft: 0 } }
-    ], '/repo/dirty.ts', [], { mode: 'off', delayMs: 1000 })
+    ], '/repo/dirty.ts', [], { mode: 'off', delayMs: 1000, saveOnExit: false })
 
+    expect(state.schemaVersion).toBe(2)
     expect(state.documents[0].dirtyContent).toBeUndefined()
     expect(state.documents[1].dirtyContent).toBe('local')
   })

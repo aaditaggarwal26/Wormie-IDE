@@ -32,6 +32,12 @@ const desktopApi: DesktopApi = {
   },
   loadEditorRecovery: (workspaceRoot) => ipcRenderer.invoke(IPC_CHANNELS.editorRecoveryLoad, workspaceRoot),
   saveEditorRecovery: (state) => ipcRenderer.invoke(IPC_CHANNELS.editorRecoverySave, state),
+  onBeforeAppClose: (callback) => {
+    const listener = () => callback()
+    ipcRenderer.on(IPC_CHANNELS.appBeforeClose, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.appBeforeClose, listener)
+  },
+  finishAppClose: (proceed) => ipcRenderer.send(IPC_CHANNELS.appCloseReady, proceed),
   getGitStatus: () => ipcRenderer.invoke(IPC_CHANNELS.gitStatus),
   trustGitRepository: (repositoryRoot) => ipcRenderer.invoke(IPC_CHANNELS.gitTrustRepository, repositoryRoot),
   startTerminal: (request) => ipcRenderer.invoke(IPC_CHANNELS.terminalStart, request),

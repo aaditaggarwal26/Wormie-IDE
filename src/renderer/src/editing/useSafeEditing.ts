@@ -152,6 +152,23 @@ export function useSafeEditing() {
     return () => window.removeEventListener('beforeunload', preventUnload)
   }, [documents, proposalReview])
 
+  useEffect(() => window.desktop.onBeforeAppClose(() => {
+    const state = useWorkbench.getState()
+    if (!state.autosave.saveOnExit) {
+      window.desktop.finishAppClose(true)
+      return
+    }
+    const proposalPaths = new Set(state.proposalReview?.files.map((file) => file.absolutePath) ?? [])
+    const paths = autosaveCandidates(state.documents, proposalPaths).map((document) => document.path)
+    void saveDocumentPaths(paths)
+      .then(persistRecovery)
+      .then(() => window.desktop.finishAppClose(true))
+      .catch((error) => {
+        addOutput(`Could not save files before closing: ${message(error)}`)
+        window.desktop.finishAppClose(false)
+      })
+  }), [addOutput, persistRecovery, saveDocumentPaths])
+
   useEffect(() => {
     if (!workspace) return
     const proposalPaths = new Set(useWorkbench.getState().proposalReview?.files.map((file) => file.absolutePath) ?? [])

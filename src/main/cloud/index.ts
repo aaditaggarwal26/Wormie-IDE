@@ -26,7 +26,7 @@ import { inviteCodeFrom } from './invite'
 import { authCallback, authCallbackUrl, authTokensFromLink, passwordResetCallbackUrl, type AuthCallback } from './oauth'
 import { SecureAuthStorage } from './secureAuthStorage'
 import { MasterySyncQueue, type MasterySyncEvent } from './masterySync'
-import { AiAnalyticsSyncQueue, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
+import { AiAnalyticsSyncQueue, isoTimestampSchema, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
 import { classroomUpdateSchema } from './classroomDetails'
 import type { UnderstandingCompletion } from '../understanding/gate'
 
@@ -43,7 +43,8 @@ const createClassroomSchema = z.object({
 }).strict()
 const publishSchema = z.object({
   classroomId: z.uuid(),
-  workspaceRoot: z.string().min(1).max(4096)
+  workspaceRoot: z.string().min(1).max(4096),
+  dueAt: z.iso.datetime().refine((value) => Date.parse(value) > Date.now(), 'The due date must be in the future.').nullable()
 }).strict()
 const classroomRowSchema = z.object({
   id: z.uuid(), name: z.string(), description: z.string(), owner_id: z.uuid(), created_at: z.string()
@@ -59,7 +60,7 @@ const inviteRowSchema = z.object({ classroom_id: z.uuid(), code: z.string().rege
 const profileRowSchema = z.object({ id: z.uuid(), display_name: z.string() })
 const assignmentRowSchema = z.object({
   id: z.uuid(), classroom_id: z.uuid(), local_assignment_id: z.uuid(), title: z.string(), summary: z.string(),
-  published_at: z.string(), published_by: z.uuid()
+  published_at: z.string(), due_at: z.string().nullable(), published_by: z.uuid()
 })
 const downloadableAssignmentSchema = z.object({ id: z.uuid(), classroom_id: z.uuid(), title: z.string(), package_path: z.string(), package_sha256: z.string().regex(/^[a-f0-9]{64}$/) })
 const masteryRowSchema = z.object({ classroom_id: z.uuid(), student_id: z.uuid(), concept_id: z.string(), concept_name: z.string(), mastery: z.number(), attempts: z.number(), correct: z.number(), updated_at: z.string() })
@@ -83,7 +84,7 @@ const analyticsRowSchema = z.object({
   reasoning_output_tokens: analyticsNumberSchema,
   total_tokens: analyticsNumberSchema,
   reported_credits: z.coerce.number().min(0).max(1_000_000).nullable(),
-  last_activity_at: z.string().datetime().nullable()
+  last_activity_at: isoTimestampSchema.nullable()
 })
 
 function cleanError(error: unknown, fallback: string): Error {
@@ -263,7 +264,7 @@ export function registerCloudHandlers(
       client.from('classrooms').select('id,name,description,owner_id,created_at').order('created_at'),
       client.from('classroom_members').select('classroom_id,user_id,role,joined_at'),
       client.from('classroom_invites').select('classroom_id,code').is('revoked_at', null),
-      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,published_by').order('published_at', { ascending: false }),
+      client.from('classroom_assignments').select('id,classroom_id,local_assignment_id,title,summary,published_at,due_at,published_by').order('published_at', { ascending: false }),
       client.rpc('list_visible_classroom_members')
     ])
     for (const result of [classroomsResult, membersResult, invitesResult, assignmentsResult]) {
@@ -327,6 +328,7 @@ export function registerCloudHandlers(
             title: assignment.title,
             summary: assignment.summary,
             publishedAt: assignment.published_at,
+            dueAt: assignment.due_at,
             publishedBy: assignment.published_by
           }))
       }
@@ -640,6 +642,7 @@ export function registerCloudHandlers(
       manifest_revision: assignmentPackage.assignmentRevision,
       package_sha256: packageSha256,
       package_path: packagePath,
+      due_at: request.dueAt,
       published_by: user.id
     })
     if (insert.error) {

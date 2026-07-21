@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const requestScopeSchema = z.enum(['micro', 'small', 'medium', 'large'])
+export const isoTimestampSchema = z.string().datetime({ offset: true })
 
 const eventSchema = z.object({
   eventKey: z.uuid(),
@@ -22,7 +23,7 @@ const eventSchema = z.object({
   reasoningOutputTokens: z.number().int().min(0).max(1_000_000_000),
   totalTokens: z.number().int().min(0).max(1_000_000_000),
   reportedCredits: z.number().min(0).max(1_000_000).nullable(),
-  occurredAt: z.string().datetime()
+  occurredAt: isoTimestampSchema
 }).strict().superRefine((event, context) => {
   if (event.eventType === 'request' && (event.requestLength === null || event.quizQuestionCount === null || event.quizScore !== null || event.passed !== null)) {
     context.addIssue({ code: 'custom', message: 'Request analytics fields are invalid.' })

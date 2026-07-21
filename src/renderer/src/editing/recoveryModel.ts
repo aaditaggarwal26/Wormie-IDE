@@ -19,7 +19,7 @@ export function buildEditorRecovery(
   autosave: AutosaveSettings
 ): EditorRecoveryState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     workspaceRoot,
     activePath,
     autosave,

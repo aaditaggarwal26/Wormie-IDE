@@ -91,7 +91,7 @@ export const useWorkbench = create<WorkbenchState>((set) => ({
   passingScore: 80,
   proposalReview: null,
   closedPaths: [],
-  autosave: { mode: 'off', delayMs: 1000 },
+  autosave: { mode: 'afterDelay', delayMs: 1000, saveOnExit: true },
   externalChanges: {},
   setWorkspace: (workspace) =>
     set((state) => {

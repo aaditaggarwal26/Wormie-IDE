@@ -16,6 +16,8 @@ export const IPC_CHANNELS = {
   workspaceFileChanged: 'workspace:file-changed',
   editorRecoveryLoad: 'editor-recovery:load',
   editorRecoverySave: 'editor-recovery:save',
+  appBeforeClose: 'app:before-close',
+  appCloseReady: 'app:close-ready',
   gitStatus: 'git:status',
   gitTrustRepository: 'git:trust-repository',
   terminalStart: 'terminal:start',
@@ -149,6 +151,7 @@ export type FileViewState = {
 export type AutosaveSettings = {
   mode: 'off' | 'afterDelay' | 'onFocusChange'
   delayMs: number
+  saveOnExit: boolean
 }
 
 export type EditorRecoveryDocument = {
@@ -158,7 +161,7 @@ export type EditorRecoveryDocument = {
 }
 
 export type EditorRecoveryState = {
-  schemaVersion: 1
+  schemaVersion: 2
   workspaceRoot: string
   activePath: string | null
   autosave: AutosaveSettings
@@ -1118,6 +1121,7 @@ export type ClassroomAssignment = {
   title: string
   summary: string
   publishedAt: string
+  dueAt: string | null
   publishedBy: string
 }
 
@@ -1146,6 +1150,7 @@ export type ClassroomUpdateRequest = ClassroomCreateRequest & {
 export type ClassroomPublishRequest = {
   classroomId: string
   workspaceRoot: string
+  dueAt: string | null
 }
 
 export type ClassroomAssignmentContext = {
@@ -1245,6 +1250,8 @@ export type DesktopApi = {
   onWorkspaceFileChanged: (callback: (change: WorkspaceFileChange) => void) => () => void
   loadEditorRecovery: (workspaceRoot: string) => Promise<EditorRecoveryState | null>
   saveEditorRecovery: (state: EditorRecoveryState) => Promise<void>
+  onBeforeAppClose: (callback: () => void) => () => void
+  finishAppClose: (proceed: boolean) => void
   getGitStatus: () => Promise<GitStatusSnapshot>
   trustGitRepository: (repositoryRoot: string) => Promise<void>
   startTerminal: (request: TerminalSessionRequest) => Promise<TerminalSessionInfo>

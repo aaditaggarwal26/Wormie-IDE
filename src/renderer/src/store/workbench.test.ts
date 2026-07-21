@@ -10,7 +10,7 @@ afterEach(() => useWorkbench.setState({
   proposalReview: null,
   closedPaths: [],
   externalChanges: {},
-  autosave: { mode: 'off', delayMs: 1000 }
+  autosave: { mode: 'afterDelay', delayMs: 1000, saveOnExit: true }
 }))
 
 describe('proposal preview state', () => {

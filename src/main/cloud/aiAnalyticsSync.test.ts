@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AiAnalyticsSyncQueue, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
+import { AiAnalyticsSyncQueue, isoTimestampSchema, type AiAnalyticsSyncEvent } from './aiAnalyticsSync'
 
 class MemoryStorage {
   value: unknown
@@ -31,6 +31,10 @@ const requestEvent: AiAnalyticsSyncEvent = {
 }
 
 describe('AiAnalyticsSyncQueue', () => {
+  it('accepts ISO timestamps returned by Supabase with an explicit UTC offset', () => {
+    expect(isoTimestampSchema.parse('2026-07-20T12:34:56.123456+00:00')).toBe('2026-07-20T12:34:56.123456+00:00')
+  })
+
   it('ignores corrupt persistence and deduplicates event keys', () => {
     const storage = new MemoryStorage()
     storage.value = { schemaVersion: 99, items: [{ request: 'must not persist' }] }

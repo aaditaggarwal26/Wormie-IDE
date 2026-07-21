@@ -5,7 +5,7 @@ import { isPathInside } from './pathSafety'
 
 const maximumDocuments = 30
 const maximumDirtyCharacters = 2_000_000
-const defaultAutosave: AutosaveSettings = { mode: 'off', delayMs: 1000 }
+const defaultAutosave: AutosaveSettings = { mode: 'afterDelay', delayMs: 1000, saveOnExit: true }
 
 function viewState(value: unknown): FileViewState {
   const candidate = value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -18,20 +18,25 @@ function viewState(value: unknown): FileViewState {
   }
 }
 
-function autosaveSettings(value: unknown): AutosaveSettings {
+function autosaveSettings(value: unknown, legacy: boolean): AutosaveSettings {
   if (!value || typeof value !== 'object') return defaultAutosave
   const candidate = value as Record<string, unknown>
   if (!['off', 'afterDelay', 'onFocusChange'].includes(String(candidate.mode))) return defaultAutosave
   if (typeof candidate.delayMs !== 'number' || !Number.isInteger(candidate.delayMs) || candidate.delayMs < 250 || candidate.delayMs > 10_000) {
     return defaultAutosave
   }
-  return { mode: candidate.mode as AutosaveSettings['mode'], delayMs: candidate.delayMs }
+  const mode = legacy && candidate.mode === 'off' ? 'afterDelay' : candidate.mode as AutosaveSettings['mode']
+  return {
+    mode,
+    delayMs: candidate.delayMs,
+    saveOnExit: typeof candidate.saveOnExit === 'boolean' ? candidate.saveOnExit : true
+  }
 }
 
 export function parseEditorRecovery(value: unknown): EditorRecoveryState | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as Record<string, unknown>
-  if (candidate.schemaVersion !== 1 || typeof candidate.workspaceRoot !== 'string' || candidate.workspaceRoot.length === 0 || candidate.workspaceRoot.length > 2_000) return null
+  if ((candidate.schemaVersion !== 1 && candidate.schemaVersion !== 2) || typeof candidate.workspaceRoot !== 'string' || candidate.workspaceRoot.length === 0 || candidate.workspaceRoot.length > 2_000) return null
   if (!Array.isArray(candidate.documents)) return null
 
   let dirtyCharacters = 0
@@ -53,10 +58,10 @@ export function parseEditorRecovery(value: unknown): EditorRecoveryState | null 
     ? candidate.closedPaths.filter((item): item is string => typeof item === 'string' && item.length > 0 && item.length <= 2_000).slice(0, 20)
     : []
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     workspaceRoot: candidate.workspaceRoot,
     activePath,
-    autosave: autosaveSettings(candidate.autosave),
+    autosave: autosaveSettings(candidate.autosave, candidate.schemaVersion === 1),
     documents,
     closedPaths
   }

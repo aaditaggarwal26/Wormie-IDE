@@ -136,8 +136,20 @@ function createWindow(): void {
     }
   })
   const webContentsId = mainWindow.webContents.id
+  let allowClose = process.argv.includes('--smoke-test')
+  let closeRequestPending = false
   trustedWebContents.add(webContentsId)
   mainWindow.webContents.once('destroyed', () => trustedWebContents.delete(webContentsId))
+
+  const finishClose = (event: IpcMainEvent, proceed: unknown): void => {
+    if (!isTrustedSender(event) || event.sender.id !== webContentsId || typeof proceed !== 'boolean') return
+    closeRequestPending = false
+    if (!proceed || mainWindow.isDestroyed()) return
+    allowClose = true
+    mainWindow.close()
+  }
+  ipcMain.on(IPC_CHANNELS.appCloseReady, finishClose)
+  mainWindow.once('closed', () => ipcMain.removeListener(IPC_CHANNELS.appCloseReady, finishClose))
 
   mainWindow.once('ready-to-show', () => {
     if (process.argv.includes('--smoke-test')) {
@@ -146,9 +158,14 @@ function createWindow(): void {
     }
     mainWindow.show()
   })
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (event) => {
     const { width, height } = mainWindow.getBounds()
     store.set('windowBounds', { width, height })
+    if (allowClose || mainWindow.webContents.isDestroyed()) return
+    event.preventDefault()
+    if (closeRequestPending) return
+    closeRequestPending = true
+    mainWindow.webContents.send(IPC_CHANNELS.appBeforeClose)
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -170,6 +187,7 @@ function createWindow(): void {
       noLink: true
     })
     if (response === 0) event.preventDefault()
+    else allowClose = false
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
